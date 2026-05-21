@@ -1,0 +1,34 @@
+[Unit]
+Description=Axis Lore
+After=network-online.target docker.service
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# /etc/axis/lore.env must define LORE_CONTENT_DIR_HOST and LORE_DB_DIR_HOST.
+EnvironmentFile=/etc/axis/lore.env
+ExecStartPre=-/usr/bin/docker rm -f axis-lore
+# Set LORE_AUTH_MODE and LORE_AUTH_SECRET in /etc/axis/lore.env.
+# bearer and basic modes require a non-empty LORE_AUTH_SECRET.
+ExecStart=/usr/bin/docker run --rm --name axis-lore \
+    --user ${LORE_CONTAINER_USER} \
+    -p 127.0.0.1:${LORE_PORT}:${LORE_PORT} \
+    -v ${LORE_CONTENT_DIR_HOST}:/data/pages \
+    -v ${LORE_DB_DIR_HOST}:/data/db \
+    -e LORE_CONTENT_DIR=/data/pages \
+    -e LORE_SEARCH_DB=/data/db/search.db \
+    -e LORE_VECTOR_DB=/data/db/vectors.db \
+    -e LORE_LEDGER_DB=/data/db/ledger.db \
+    -e LORE_API_KEYS_DB=/data/db/api_keys.db \
+    -e LORE_AUTH_MODE=${LORE_AUTH_MODE} \
+    -e LORE_AUTH_SECRET=${LORE_AUTH_SECRET} \
+    axis-lore:latest \
+    python -m uvicorn lore_app.main:app --host 0.0.0.0 --port ${LORE_PORT}
+ExecStop=/usr/bin/docker stop -t 10 axis-lore
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=120s
+
+[Install]
+WantedBy=multi-user.target

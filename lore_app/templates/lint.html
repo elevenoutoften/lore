@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} - {{ app_name }}</title>
+  <meta name="description" content="Browse Lore lint issues.">
+  <meta name="theme-color" content="#431741">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="{{ favicon_url }}">
+  <link rel="stylesheet" href="/static/lore.css?v=20260501-lore-reader">
+  <style>
+    .lint-page {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .lint-header,
+    .filter-bar,
+    .lint-group,
+    .empty-state {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: 0 18px 60px rgba(9, 3, 7, 0.34);
+    }
+
+    .lint-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 1rem;
+    }
+
+    .lint-title,
+    .lint-stats,
+    .severity-filters {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+    }
+
+    .lint-title {
+      margin-top: 0.18rem;
+    }
+
+    .lint-count,
+    .severity-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 1.7rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 0 0.5rem;
+      font-size: 0.62rem;
+      text-transform: uppercase;
+    }
+
+    .lint-count {
+      color: var(--muted);
+      background: var(--panel-2);
+    }
+
+    .severity-badge {
+      color: var(--text);
+    }
+
+    .severity-badge--error {
+      border-color: rgba(248, 113, 113, 0.5);
+      background: rgba(248, 113, 113, 0.16);
+      color: #f87171;
+    }
+
+    .severity-badge--warning {
+      border-color: rgba(251, 191, 36, 0.5);
+      background: rgba(251, 191, 36, 0.14);
+      color: #fbbf24;
+    }
+
+    .severity-badge--info {
+      border-color: rgba(96, 165, 250, 0.5);
+      background: rgba(96, 165, 250, 0.14);
+      color: #60a5fa;
+    }
+
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      padding: 0.75rem;
+    }
+
+    .severity-filters {
+      gap: 0.5rem;
+    }
+
+    .filter-bar button,
+    .rule-filter {
+      min-height: 2rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+      color: var(--muted);
+      padding: 0 0.65rem;
+      font-size: 0.72rem;
+    }
+
+    .filter-bar button:hover,
+    .filter-bar button.active {
+      border-color: var(--line-strong);
+      background: rgba(255, 67, 162, 0.12);
+      color: var(--text);
+    }
+
+    .rule-filter {
+      width: min(100%, 18rem);
+    }
+
+    .lint-groups {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .lint-group {
+      overflow: hidden;
+      box-shadow: none;
+    }
+
+    .lint-group summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      cursor: pointer;
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--line);
+      list-style: none;
+    }
+
+    .lint-group summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .lint-group__title {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .lint-group__rule {
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+
+    .issue-list {
+      display: grid;
+      gap: 0.75rem;
+      padding: 0.75rem;
+    }
+
+    .issue-card {
+      display: grid;
+      gap: 0.75rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+      padding: 1rem;
+    }
+
+    .issue-card__header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .issue-rule {
+      color: var(--pink);
+      font-family: var(--font);
+      font-size: 0.72rem;
+      overflow-wrap: anywhere;
+    }
+
+    .issue-page {
+      display: grid;
+      gap: 0.2rem;
+    }
+
+    .issue-page a:hover {
+      color: var(--pink);
+    }
+
+    .issue-path,
+    .issue-message,
+    .issue-detail,
+    .empty-state p {
+      color: var(--muted);
+    }
+
+    .issue-path,
+    .issue-detail {
+      font-size: 0.68rem;
+      overflow-wrap: anywhere;
+    }
+
+    .issue-message {
+      overflow-wrap: anywhere;
+    }
+
+    .issue-detail {
+      display: grid;
+      gap: 0.25rem;
+      border-top: 1px solid var(--line);
+      padding-top: 0.65rem;
+    }
+
+    .issue-detail span {
+      color: var(--pink);
+      font-size: 0.62rem;
+      text-transform: uppercase;
+    }
+
+    .empty-state {
+      padding: 1rem;
+    }
+
+    .empty-state p {
+      margin-top: 0.4rem;
+    }
+
+    .filtered-empty {
+      display: none;
+    }
+
+    @media (max-width: 680px) {
+      .lint-header,
+      .issue-card__header {
+        display: grid;
+      }
+
+      .lint-stats,
+      .severity-badge {
+        justify-self: start;
+      }
+    }
+  </style>
+</head>
+<body>
+  {% set error_count = result.issues | selectattr("severity", "equalto", "error") | list | length %}
+  {% set warning_count = result.issues | selectattr("severity", "equalto", "warning") | list | length %}
+  {% set info_count = result.issues | selectattr("severity", "equalto", "info") | list | length %}
+  {% set rules = result.issues | map(attribute="rule") | unique | list %}
+  <div class="shell lint-page">
+    <header class="topbar">
+      <div>
+        <p class="wordmark">{{ brand_title }}</p>
+        <h1>{{ app_name }}</h1>
+      </div>
+      <nav class="topbar-links" aria-label="Lore endpoints">
+        <a href="/api/pages">API</a>
+        <a href="/api/catalog">Catalog</a>
+        <a href="/captures">Captures</a>
+        <a href="/api-keys">Keys</a>
+        <a href="/api/lint">Lint</a>
+        <a href="/mcp">MCP</a>
+      </nav>
+    </header>
+
+    <main class="lint-page">
+      <section class="lint-header" aria-labelledby="lint-dashboard-title">
+        <div>
+          <p class="eyebrow">Lore Quality</p>
+          <div class="lint-title">
+            <h2 id="lint-dashboard-title">Lint Dashboard</h2>
+            <span class="lint-count">{{ result.issue_count }} issues across {{ result.checked_pages }} pages</span>
+          </div>
+        </div>
+        <div class="lint-stats" aria-label="Issue severity counts">
+          <span class="severity-badge severity-badge--error">{{ error_count }} errors</span>
+          <span class="severity-badge severity-badge--warning">{{ warning_count }} warnings</span>
+          <span class="severity-badge severity-badge--info">{{ info_count }} info</span>
+        </div>
+      </section>
+
+      {% if result.issue_count == 0 %}
+      <section class="empty-state">
+        <h2>All pages pass lint checks. No issues found.</h2>
+      </section>
+      {% else %}
+      <section class="filter-bar" aria-label="Lint issue filters">
+        <div class="severity-filters" aria-label="Severity filters">
+          <button class="severity-btn active" type="button" data-severity="all">All</button>
+          <button class="severity-btn" type="button" data-severity="error">Errors</button>
+          <button class="severity-btn" type="button" data-severity="warning">Warnings</button>
+          <button class="severity-btn" type="button" data-severity="info">Info</button>
+        </div>
+        <label>
+          <span>Rule</span>
+          <select class="rule-filter" aria-label="Rule filter">
+            <option value="all">All rules</option>
+            {% for rule in rules | sort %}
+            <option value="{{ rule }}">{{ rule }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </section>
+
+      <section class="empty-state filtered-empty" aria-live="polite">
+        <h2>No issues match your filters.</h2>
+      </section>
+
+      <section class="lint-groups" aria-label="Lint issues">
+        {% for severity, severity_label in [("error", "Errors"), ("warning", "Warnings"), ("info", "Info")] %}
+          {% set severity_issues = result.issues | selectattr("severity", "equalto", severity) | list %}
+          {% if severity_issues %}
+            {% for rule in rules | sort %}
+              {% set rule_issues = severity_issues | selectattr("rule", "equalto", rule) | list %}
+              {% if rule_issues %}
+              <details class="lint-group" data-severity="{{ severity }}" data-rule="{{ rule }}" open>
+                <summary>
+                  <span class="lint-group__title">
+                    <span class="severity-badge severity-badge--{{ severity }}">{{ severity_label }}</span>
+                    <code class="issue-rule">{{ rule }}</code>
+                  </span>
+                  <span class="lint-group__rule">{{ rule_issues | length }}</span>
+                </summary>
+                <div class="issue-list">
+                  {% for issue in rule_issues %}
+                  <article class="issue-card" data-severity="{{ issue.severity }}" data-rule="{{ issue.rule }}">
+                    <div class="issue-card__header">
+                      <div class="issue-page">
+                        <h2><a href="/pages/{{ issue.page_id }}">{{ issue.title or issue.page_id or "Unknown page" }}</a></h2>
+                        {% if issue.page_id %}
+                        <p class="issue-path">{{ issue.page_id }}</p>
+                        {% endif %}
+                      </div>
+                      <span class="severity-badge severity-badge--{{ issue.severity }}">{{ issue.severity }}</span>
+                    </div>
+                    <p class="issue-rule">{{ issue.rule }}</p>
+                    <p class="issue-message">{{ issue.message }}</p>
+                    {% if issue.detail or issue.target %}
+                    <div class="issue-detail">
+                      {% if issue.target %}
+                      <p><span>Target</span> {{ issue.target }}</p>
+                      {% endif %}
+                      {% if issue.detail %}
+                      <p><span>Detail</span> {{ issue.detail }}</p>
+                      {% endif %}
+                    </div>
+                    {% endif %}
+                  </article>
+                  {% endfor %}
+                </div>
+              </details>
+              {% endif %}
+            {% endfor %}
+          {% endif %}
+        {% endfor %}
+      </section>
+      {% endif %}
+    </main>
+  </div>
+
+  <script nonce="{{ csp_nonce }}">
+    function filterIssues() {
+      const severity = document.querySelector('.severity-btn.active')?.dataset.severity || 'all';
+      const rule = document.querySelector('.rule-filter')?.value || 'all';
+      let visibleCount = 0;
+
+      document.querySelectorAll('.issue-card').forEach((card) => {
+        const matchSev = severity === 'all' || card.dataset.severity === severity;
+        const matchRule = rule === 'all' || card.dataset.rule === rule;
+        const visible = matchSev && matchRule;
+        card.style.display = visible ? '' : 'none';
+        if (visible) {
+          visibleCount += 1;
+        }
+      });
+
+      document.querySelectorAll('.lint-group').forEach((group) => {
+        const hasVisibleCards = Array.from(group.querySelectorAll('.issue-card')).some((card) => card.style.display !== 'none');
+        group.style.display = hasVisibleCards ? '' : 'none';
+      });
+
+      const emptyState = document.querySelector('.filtered-empty');
+      if (emptyState) {
+        emptyState.style.display = visibleCount === 0 ? 'block' : 'none';
+      }
+    }
+
+    document.querySelectorAll('.severity-btn').forEach((button) => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('.severity-btn').forEach((item) => item.classList.remove('active'));
+        button.classList.add('active');
+        filterIssues();
+      });
+    });
+
+    document.querySelector('.rule-filter')?.addEventListener('change', filterIssues);
+  </script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} - {{ app_name }}</title>
+  <meta name="theme-color" content="#431741">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="{{ favicon_url }}">
+  <link rel="stylesheet" href="/static/lore.css?v=20260501-lore-reader">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div>
+        <p class="wordmark">{{ brand_title }}</p>
+        <h1>{{ app_name }}</h1>
+      </div>
+      <nav class="topbar-links" aria-label="Lore endpoints">
+        <a href="/">Home</a>
+        <a href="/api/pages">API</a>
+        <a href="/captures">Captures</a>
+        <a href="/api-keys">Keys</a>
+      </nav>
+    </header>
+
+    <main class="layout">
+      <section class="search-results">
+        <form class="search-form" method="get" action="/search">
+          <div class="search-input-row">
+            <input name="q" value="{{ query }}" placeholder="Search pages..." autofocus>
+            <button type="submit">Search</button>
+          </div>
+          <div class="search-filters">
+            <label>
+              <span>Kind</span>
+              <select name="kind">
+                <option value="">All</option>
+                <option value="project" {% if kind == 'project' %}selected{% endif %}>Project</option>
+                <option value="service" {% if kind == 'service' %}selected{% endif %}>Service</option>
+                <option value="runbook" {% if kind == 'runbook' %}selected{% endif %}>Runbook</option>
+                <option value="decision" {% if kind == 'decision' %}selected{% endif %}>Decision</option>
+              </select>
+            </label>
+          </div>
+        </form>
+
+        <div class="search-meta">
+          <p>{{ hit_count }} result{% if hit_count != 1 %}s{% endif %} for "{{ query }}"</p>
+        </div>
+
+        {% for hit in hits %}
+        <a class="search-hit" href="/{{ hit.page_id }}">
+          <div class="search-hit__header">
+            <span class="search-hit__title">{{ hit.title or hit.page_id }}</span>
+            <span class="search-hit__score">{{ "%.1f" | format(hit.score) }}</span>
+          </div>
+          <div class="search-hit__meta">
+            <span class="badge">{{ hit.kind }}</span>
+            {% if hit.visibility %}<span class="badge">{{ hit.visibility }}</span>{% endif %}
+            {% if hit.status %}<span class="badge">{{ hit.status }}</span>{% endif %}
+          </div>
+          {% if hit.summary %}
+          <p class="search-hit__summary">{{ hit.summary }}</p>
+          {% endif %}
+          {% if hit.snippet %}
+          <p class="search-hit__snippet">{{ hit.snippet }}</p>
+          {% endif %}
+          {% if hit.matched_fields %}
+          <div class="search-hit__fields">
+            {% for field in hit.matched_fields %}
+            <span class="search-hit__field">{{ field }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </a>
+        {% endfor %}
+
+        {% if hit_count == 0 %}
+        <div class="welcome">
+          <h2>No results found</h2>
+          <p>Try different keywords or remove filters.</p>
+        </div>
+        {% endif %}
+      </section>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} - {{ app_name }}</title>
+  <meta name="description" content="Inspect draft Lore captures for autonomous consolidation.">
+  <meta name="theme-color" content="#431741">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="{{ favicon_url }}">
+  <link rel="stylesheet" href="/static/lore.css?v=20260501-lore-reader">
+  <style>
+    .capture-page {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .capture-header,
+    .filter-bar,
+    .capture-card,
+    .empty-state {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: 0 18px 60px rgba(9, 3, 7, 0.34);
+    }
+
+    .capture-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 1rem;
+    }
+
+    .capture-title {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-top: 0.18rem;
+    }
+
+    .capture-count,
+    .confidence-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 1.7rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 0 0.5rem;
+      font-size: 0.62rem;
+      text-transform: uppercase;
+    }
+
+    .capture-count {
+      color: var(--muted);
+      background: var(--panel-2);
+    }
+
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      padding: 0.75rem;
+    }
+
+    .filter-bar a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+      color: var(--muted);
+      padding: 0 0.65rem;
+      font-size: 0.72rem;
+    }
+
+    .filter-bar a:hover,
+    .filter-bar a[aria-current="page"] {
+      border-color: var(--line-strong);
+      background: rgba(255, 67, 162, 0.12);
+      color: var(--text);
+    }
+
+    .capture-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 27rem), 1fr));
+      gap: 0.75rem;
+    }
+
+    .capture-card {
+      display: grid;
+      gap: 0.75rem;
+      padding: 1rem;
+      box-shadow: none;
+    }
+
+    .capture-card__header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .capture-card h2 {
+      overflow-wrap: anywhere;
+    }
+
+    .capture-path,
+    .capture-label,
+    .capture-date,
+    .empty-state p {
+      color: var(--muted);
+    }
+
+    .capture-path {
+      margin-top: 0.2rem;
+      font-size: 0.68rem;
+      overflow-wrap: anywhere;
+    }
+
+    .confidence-badge {
+      flex: 0 0 auto;
+      color: var(--text);
+    }
+
+    .confidence-badge--high {
+      border-color: rgba(125, 232, 170, 0.45);
+      background: rgba(125, 232, 170, 0.18);
+      color: var(--green);
+    }
+
+    .confidence-badge--medium {
+      border-color: rgba(255, 217, 121, 0.5);
+      background: rgba(255, 217, 121, 0.16);
+      color: var(--warning);
+    }
+
+    .confidence-badge--low {
+      border-color: rgba(255, 168, 92, 0.5);
+      background: rgba(255, 168, 92, 0.16);
+      color: #ffb36f;
+    }
+
+    .confidence-badge--unknown {
+      color: var(--muted);
+      background: var(--panel-2);
+    }
+
+    .capture-meta {
+      display: grid;
+      gap: 0.5rem;
+    }
+
+    .capture-meta__row {
+      display: grid;
+      gap: 0.25rem;
+    }
+
+    .capture-label {
+      color: var(--pink);
+      font-size: 0.62rem;
+      text-transform: uppercase;
+    }
+
+    .capture-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+
+    .capture-links a,
+    .target-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 1.75rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 0 0.5rem;
+      overflow-wrap: anywhere;
+    }
+
+    .capture-links a:hover,
+    .target-link:hover,
+    .capture-card h2 a:hover {
+      color: var(--pink);
+    }
+
+    .capture-summary {
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .empty-state {
+      padding: 1rem;
+    }
+
+    .empty-state p {
+      margin-top: 0.4rem;
+    }
+
+    @media (max-width: 680px) {
+      .capture-header,
+      .capture-card__header {
+        display: grid;
+      }
+
+      .confidence-badge {
+        justify-self: start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell capture-page">
+    <header class="topbar">
+      <div>
+        <p class="wordmark">{{ brand_title }}</p>
+        <h1>{{ app_name }}</h1>
+      </div>
+      <nav class="topbar-links" aria-label="Lore endpoints">
+        <a href="/api/pages">API</a>
+        <a href="/api/catalog">Catalog</a>
+        <a href="/captures">Captures</a>
+        <a href="/api-keys">Keys</a>
+        <a href="/api/lint">Lint</a>
+        <a href="/mcp">MCP</a>
+      </nav>
+    </header>
+
+    <main class="capture-page">
+      <section class="capture-header" aria-labelledby="capture-review-title">
+        <div>
+          <p class="eyebrow">Agent Memory Intake</p>
+          <div class="capture-title">
+            <h2 id="capture-review-title">Capture Queue</h2>
+            <span class="capture-count">{{ capture_count }}</span>
+          </div>
+        </div>
+      </section>
+
+      <nav class="filter-bar" aria-label="Capture status filters">
+        {% for value, label in statuses %}
+        <a href="/captures?status={{ value }}" {% if status == value %}aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
+      </nav>
+
+      {% if capture_count == 0 %}
+      <section class="empty-state">
+        <h2>No captures with status {{ status }}.</h2>
+        <p>New draft captures appear here after agents submit rough memory to the capture API.</p>
+      </section>
+      {% else %}
+      <section class="capture-grid" aria-label="Captures">
+        {% for capture in captures %}
+        <article class="capture-card">
+          <div class="capture-card__header">
+            <div>
+              <h2><a href="/{{ capture.page.id }}">{{ capture.page.title }}</a></h2>
+              <p class="capture-path">{{ capture.page.id }}</p>
+            </div>
+            <span class="confidence-badge confidence-badge--{{ capture.confidence_key if capture.confidence_key in ['high', 'medium', 'low', 'unknown'] else 'unknown' }}">
+              {{ capture.confidence }}
+            </span>
+          </div>
+
+          <div class="capture-meta">
+            {% if capture.source_task %}
+            <div class="capture-meta__row">
+              <span class="capture-label">Source Task</span>
+              <p>{{ capture.source_task }}</p>
+            </div>
+            {% endif %}
+
+            {% if capture.related %}
+            <div class="capture-meta__row">
+              <span class="capture-label">Related Pages</span>
+              <div class="capture-links">
+                {% for page_id in capture.related %}
+                <a href="/{{ page_id }}">{{ page_id }}</a>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+
+            {% if capture.suggested_target_page %}
+            <div class="capture-meta__row">
+              <span class="capture-label">Suggested Target</span>
+              <a class="target-link" href="/{{ capture.suggested_target_page }}">{{ capture.suggested_target_page }}</a>
+            </div>
+            {% endif %}
+
+            {% if capture.captured_at %}
+            <div class="capture-meta__row">
+              <span class="capture-label">Captured At</span>
+              <p class="capture-date">{{ capture.captured_at }}</p>
+            </div>
+            {% endif %}
+          </div>
+
+          {% if capture.summary %}
+          <p class="capture-summary">{{ capture.summary }}</p>
+          {% endif %}
+        </article>
+        {% endfor %}
+      </section>
+      {% endif %}
+    </main>
+  </div>
+</body>
+</html>

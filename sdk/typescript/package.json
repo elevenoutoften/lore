@@ -1,0 +1,42 @@
+{
+  "name": "axis-lore-sdk",
+  "version": "0.1.0",
+  "description": "Native-fetch TypeScript client for the Lore REST API.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    },
+    "./error": {
+      "types": "./dist/types/error.d.ts",
+      "import": "./dist/esm/error.js",
+      "require": "./dist/cjs/error.js"
+    },
+    "./embed/lore-embed": {
+      "types": "./dist/types/embed/lore-embed.d.ts",
+      "import": "./dist/esm/embed/lore-embed.js",
+      "require": "./dist/cjs/embed/lore-embed.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "npm run build:esm && npm run build:cjs && node -e \"require('node:fs').mkdirSync('dist/esm',{recursive:true}); require('node:fs').mkdirSync('dist/cjs',{recursive:true}); require('node:fs').writeFileSync('dist/esm/package.json','{\\\"type\\\":\\\"module\\\"}\\n'); require('node:fs').writeFileSync('dist/cjs/package.json','{\\\"type\\\":\\\"commonjs\\\"}\\n')\"",
+    "build:esm": "tsc -p tsconfig.json --module NodeNext --moduleResolution NodeNext --outDir dist/esm --declaration true --declarationDir dist/types",
+    "build:cjs": "tsc -p tsconfig.json --module CommonJS --moduleResolution Node --outDir dist/cjs --declaration false",
+    "test": "npm run build && tsc tests/client.test.ts --module NodeNext --moduleResolution NodeNext --target ES2022 --lib ES2022,DOM --strict --esModuleInterop --types node --rootDir . --outDir dist/test-runner && node --test dist/test-runner/tests/client.test.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "typescript": "^5.4.0"
+  }
+}

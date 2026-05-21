@@ -1,0 +1,570 @@
+from __future__ import annotations
+
+import difflib
+import hashlib
+import json
+import uuid
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Any
+
+from .audit import AuditLog, new_audit_entry
+from .capture import is_capture_page_id
+from .frontmatter import serialize_markdown, update_frontmatter
+from .ledger import LedgerDB, utc_now
+from .link_graph import LinkGraphCache
+from .repository import InvalidPageId, LoreRepository, infer_kind, normalize_page_id, optional_string
+from .route_utils import index_vectors_for_page
+from .schemas import ExtractedClaim, PatchApplyResult, PatchOperation, PatchPlan, PatchPreview, RiskLevel
+from .search_index import LoreSearchIndex
+from .rag.vector_store import VectorStore
+
+
+def _content_hash(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class _CandidateBundle:
+    row: dict[str, Any]
+    claim: dict[str, Any]
+
+
+class PatchPlanner:
+    def __init__(
+        self,
+        repo: LoreRepository,
+        ledger: LedgerDB,
+        audit_log: AuditLog | None = None,
+        *,
+        search_index: LoreSearchIndex | None = None,
+        vector_store: "VectorStore | None" = None,
+        graph_cache: "LinkGraphCache | None" = None,
+    ):
+        self.repo = repo
+        self.ledger = ledger
+        self.audit_log = audit_log
+        self.search_index = search_index
+        self.vector_store = vector_store
+        self.graph_cache = graph_cache
+
+    def plan_batch(
+        self,
+        batch_id: str | None = None,
+        candidate_ids: list[str] | None = None,
+    ) -> list[PatchPlan]:
+        candidates = self._collect_candidates(batch_id=batch_id, candidate_ids=candidate_ids)
+        grouped: dict[str, list[_CandidateBundle]] = defaultdict(list)
+
+        for candidate in candidates:
+            target_page_id = self._target_page_id(candidate)
+            if target_page_id is None:
+                continue
+            grouped[target_page_id].append(candidate)
+
+        plans: list[PatchPlan] = []
+        for target_page_id, bundles in grouped.items():
+            plan = self._build_plan(target_page_id, bundles)
+            self.ledger.store_patch_plan(plan, batch_id=batch_id or self._batch_id_for_group(bundles))
+            plans.append(plan)
+        return plans
+
+    def preview_patch(self, plan_id: str) -> PatchPreview:
+        plan = self._load_plan(plan_id)
+        current_content = self._current_content(plan.target_page_id)
+        proposed_content = self._proposed_content(plan)
+        return PatchPreview(
+            plan_id=plan.plan_id,
+            target_page_id=plan.target_page_id,
+            operation=plan.operation,
+            current_content=current_content,
+            proposed_content=proposed_content,
+            unified_diff=_unified_diff(current_content, proposed_content, plan.target_page_id),
+            risk_level=plan.risk_level,
+            auto_appliable=plan.auto_appliable,
+        )
+
+    def apply_plan(self, plan_id: str, *, force: bool = False) -> PatchApplyResult:
+        plan = self._load_plan(plan_id)
+        if not plan.auto_appliable and not force:
+            raise ValueError(f"Patch plan {plan_id} is not auto-appliable; pass force=True to apply it.")
+
+        preview = self.preview_patch(plan_id)
+        before_hash = _content_hash(preview.current_content)
+        after_hash = _content_hash(preview.proposed_content)
+        applied_at = utc_now()
+
+        self.repo.upsert_page(plan.target_page_id, preview.proposed_content)
+        self.ledger.update_plan_status(plan_id, "applied", applied_at=applied_at, content_diff=preview.unified_diff)
+        self._accept_source_captures(plan.candidate_ids)
+        self._activate_candidates(plan.candidate_ids)
+        self._reindex_page(plan.target_page_id)
+        self._record_audit(plan, before_hash, after_hash, preview.unified_diff, before_content=preview.current_content)
+
+        return PatchApplyResult(
+            plan_id=plan.plan_id,
+            target_page_id=plan.target_page_id,
+            operation=plan.operation,
+            before_hash=before_hash,
+            after_hash=after_hash,
+            applied_at=applied_at,
+            auto_applied=plan.auto_appliable and not force,
+        )
+
+    def reject_plan(self, plan_id: str, reason: str | None = None) -> None:
+        plan = self._load_plan(plan_id)
+        rejected_at = utc_now()
+        self.ledger.update_plan_status(
+            plan_id,
+            "rejected",
+            rejected_at=rejected_at,
+            rejection_reason=reason,
+        )
+        for candidate_id in plan.candidate_ids:
+            self.ledger.reject_candidate(candidate_id, reason=reason or "Patch plan rejected")
+
+    def _collect_candidates(
+        self,
+        *,
+        batch_id: str | None,
+        candidate_ids: list[str] | None,
+    ) -> list[_CandidateBundle]:
+        clauses = ["candidate_type = 'claim'", "status = 'candidate'"]
+        params: list[Any] = []
+        if batch_id:
+            clauses.append("batch_id = ?")
+            params.append(batch_id)
+        if candidate_ids:
+            placeholders = ", ".join("?" for _ in candidate_ids)
+            clauses.append(f"candidate_id IN ({placeholders})")
+            params.extend(candidate_ids)
+        rows = self.ledger.connection.execute(
+            f"""
+            SELECT *
+            FROM extraction_candidates
+            WHERE {' AND '.join(clauses)}
+            ORDER BY created_at ASC, candidate_id
+            """,
+            params,
+        ).fetchall()
+        bundles: list[_CandidateBundle] = []
+        for row in rows:
+            decoded = self._decode_candidate_row(dict(row))
+            claim = decoded["content_json"]
+            bundles.append(_CandidateBundle(row=decoded, claim=claim))
+        return bundles
+
+    def _build_plan(self, target_page_id: str, bundles: list[_CandidateBundle]) -> PatchPlan:
+        now = utc_now()
+        page = self.repo.read_page(target_page_id)
+        contradictions = self._find_contradictions(bundles)
+        operation = self._choose_operation(target_page_id, page is not None, bundles, contradictions)
+        risk_level = self._assess_risk(target_page_id, operation, contradictions)
+        auto_appliable = self._is_auto_appliable(target_page_id, operation, bundles, contradictions)
+        target_section = self._target_section(target_page_id, operation)
+
+        preview = self._preview_for(target_page_id, operation, target_section, bundles, page_content=page.content if page else "")
+        plan = PatchPlan(
+            plan_id=str(uuid.uuid4()),
+            candidate_ids=[bundle.row["candidate_id"] for bundle in bundles],
+            target_page_id=target_page_id,
+            target_section=target_section,
+            operation=operation,
+            content_diff=preview.unified_diff,
+            risk_level=risk_level,
+            auto_appliable=auto_appliable,
+            status="pending",
+            created_at=now,
+        )
+        return plan
+
+    def _load_plan(self, plan_id: str) -> PatchPlan:
+        row = self.ledger.get_patch_plan(plan_id)
+        if row is None:
+            raise ValueError(f"Patch plan {plan_id} not found")
+        return PatchPlan.model_validate(row)
+
+    def _target_page_id(self, candidate: _CandidateBundle) -> str | None:
+        source_page_ids = [normalize_page_id(page_id) for page_id in candidate.row["source_page_ids"]]
+        non_capture_source_page_ids = [page_id for page_id in source_page_ids if not is_capture_page_id(page_id)]
+        if non_capture_source_page_ids:
+            return non_capture_source_page_ids[0]
+
+        capture_target = self._suggested_target_page(self._candidate_capture_ids(candidate))
+        if capture_target:
+            return capture_target
+
+        subject = optional_string(candidate.claim.get("subject"))
+        if subject and "/" in subject:
+            try:
+                target = normalize_page_id(subject)
+                if not is_capture_page_id(target):
+                    return target
+            except InvalidPageId:
+                return None
+        return None
+
+    def _batch_id_for_group(self, bundles: list[_CandidateBundle]) -> str | None:
+        batch_ids = {optional_string(bundle.row.get("batch_id")) for bundle in bundles}
+        batch_ids.discard(None)
+        return next(iter(batch_ids), None)
+
+    def _find_contradictions(self, bundles: list[_CandidateBundle]) -> list[dict[str, Any]]:
+        contradictions: list[dict[str, Any]] = []
+        for bundle in bundles:
+            for row in self.ledger.find_contradicting_claims(self._extracted_claim(bundle.claim)):
+                if row["candidate_id"] != bundle.row["candidate_id"]:
+                    contradictions.append(row)
+        return contradictions
+
+    def _choose_operation(
+        self,
+        target_page_id: str,
+        page_exists: bool,
+        bundles: list[_CandidateBundle],
+        contradictions: list[dict[str, Any]],
+    ) -> PatchOperation:
+        if not page_exists and self._stub_allowed(target_page_id, bundles):
+            return PatchOperation.create_stub_page
+        if contradictions:
+            current_content = self._current_content(target_page_id)
+            if any(
+                optional_string(contradiction.get("content_json", {}).get("object")) in current_content
+                for contradiction in contradictions
+            ):
+                return PatchOperation.update_existing_fact
+            return PatchOperation.mark_stale
+        if self._target_section(target_page_id, PatchOperation.append_sourced_paragraph) in self._current_content(target_page_id):
+            return PatchOperation.append_sourced_paragraph
+        return PatchOperation.insert_new_fact
+
+    def _assess_risk(
+        self,
+        target_page_id: str,
+        operation: PatchOperation,
+        contradictions: list[dict[str, Any]],
+    ) -> RiskLevel:
+        kind = self._page_kind(target_page_id)
+        if operation in {PatchOperation.update_existing_fact, PatchOperation.mark_stale}:
+            return RiskLevel.high
+        if kind in {"decision", "runbook"}:
+            return RiskLevel.high if contradictions else RiskLevel.medium
+        if kind in {"procedure", "service", "project", "ops"}:
+            return RiskLevel.low if not contradictions else RiskLevel.medium
+        return RiskLevel.medium
+
+    def _is_auto_appliable(
+        self,
+        target_page_id: str,
+        operation: PatchOperation,
+        bundles: list[_CandidateBundle],
+        contradictions: list[dict[str, Any]],
+    ) -> bool:
+        kind = self._page_kind(target_page_id)
+        high_confidence = all(optional_string(bundle.row.get("confidence")) == "high" for bundle in bundles)
+        if operation == PatchOperation.create_stub_page:
+            return high_confidence and kind != "decision" and self._has_clear_stub_metadata(bundles)
+        if operation in {PatchOperation.insert_new_fact, PatchOperation.append_sourced_paragraph}:
+            return high_confidence and not contradictions and kind not in {"decision", "runbook"}
+        return False
+
+    def _target_section(self, target_page_id: str, operation: PatchOperation) -> str | None:
+        if operation == PatchOperation.mark_stale:
+            return "## Review Notes"
+        kind = self._page_kind(target_page_id)
+        if kind == "runbook":
+            return "## Notes"
+        return "## Facts"
+
+    def _preview_for(
+        self,
+        target_page_id: str,
+        operation: PatchOperation,
+        target_section: str | None,
+        bundles: list[_CandidateBundle],
+        *,
+        page_content: str,
+    ) -> PatchPreview:
+        proposed_content = self._render_content(
+            target_page_id,
+            operation,
+            target_section,
+            bundles,
+            page_content=page_content,
+        )
+        return PatchPreview(
+            plan_id="preview",
+            target_page_id=target_page_id,
+            operation=operation,
+            current_content=page_content,
+            proposed_content=proposed_content,
+            unified_diff=_unified_diff(page_content, proposed_content, target_page_id),
+            risk_level=self._assess_risk(target_page_id, operation, self._find_contradictions(bundles)),
+            auto_appliable=self._is_auto_appliable(target_page_id, operation, bundles, self._find_contradictions(bundles)),
+        )
+
+    def _proposed_content(self, plan: PatchPlan) -> str:
+        bundles = self._bundles_for_candidate_ids(plan.candidate_ids)
+        current_content = self._current_content(plan.target_page_id)
+        return self._render_content(
+            plan.target_page_id,
+            plan.operation,
+            plan.target_section,
+            bundles,
+            page_content=current_content,
+        )
+
+    def _render_content(
+        self,
+        target_page_id: str,
+        operation: PatchOperation,
+        target_section: str | None,
+        bundles: list[_CandidateBundle],
+        *,
+        page_content: str,
+    ) -> str:
+        if operation == PatchOperation.create_stub_page:
+            return self._build_stub_page(target_page_id, bundles)
+
+        detail = self.repo.read_page(target_page_id)
+        if detail is None:
+            content = self._build_stub_page(target_page_id, bundles)
+        else:
+            content = detail.content
+
+        paragraphs = [self._candidate_paragraph(bundle) for bundle in bundles]
+        if operation in {PatchOperation.insert_new_fact, PatchOperation.append_sourced_paragraph}:
+            return _insert_into_section(content, target_section or "## Facts", "\n\n".join(paragraphs))
+        if operation == PatchOperation.update_existing_fact:
+            new_content = content
+            for bundle in bundles:
+                replacement = self._candidate_paragraph(bundle)
+                for contradiction in self.ledger.find_contradicting_claims(self._extracted_claim(bundle.claim)):
+                    old_object = optional_string(contradiction.get("content_json", {}).get("object"))
+                    if old_object and old_object in new_content:
+                        new_content = new_content.replace(old_object, replacement, 1)
+            return new_content
+        if operation == PatchOperation.mark_stale:
+            stale_marker = (
+                "<!-- stale: auto-consolidation detected a contradiction requiring review -->"
+            )
+            return _insert_into_section(content, target_section or "## Review Notes", stale_marker)
+        return content
+
+    def _build_stub_page(self, target_page_id: str, bundles: list[_CandidateBundle]) -> str:
+        first_capture = self._first_capture_detail(bundles)
+        frontmatter = {
+            "title": self._page_title(target_page_id, bundles),
+            "kind": self._page_kind(target_page_id),
+            "visibility": optional_string(first_capture.frontmatter.get("visibility")) if first_capture else "internal",
+            "status": "draft",
+            "summary": self._claim_summary(bundles[0]),
+            "sources": self._all_capture_ids(bundles),
+        }
+        if not frontmatter["visibility"]:
+            frontmatter["visibility"] = "internal"
+        body = [
+            f"# {frontmatter['title']}",
+            "",
+            "## Summary",
+            "",
+            self._claim_summary(bundles[0]),
+            "",
+            "## Facts",
+            "",
+            "\n\n".join(self._candidate_paragraph(bundle) for bundle in bundles),
+        ]
+        return serialize_markdown(frontmatter, "\n".join(body))
+
+    def _candidate_paragraph(self, bundle: _CandidateBundle) -> str:
+        claim = bundle.claim
+        sources = ", ".join(f"[[{capture_id}]]" for capture_id in self._candidate_capture_ids(bundle))
+        observed_at = optional_string(claim.get("observed_at"))
+        statement = f"{claim['subject']} {claim['predicate']} {claim['object']}."
+        if observed_at:
+            statement += f" Observed at {observed_at}."
+        return f"{statement} Source: {sources}."
+
+    def _page_kind(self, target_page_id: str) -> str:
+        existing = self.repo.read_page(target_page_id)
+        if existing is not None:
+            return optional_string(existing.frontmatter.get("kind")) or infer_kind(target_page_id)
+        return infer_kind(target_page_id)
+
+    def _page_title(self, target_page_id: str, bundles: list[_CandidateBundle]) -> str:
+        existing = self.repo.read_page(target_page_id)
+        if existing is not None:
+            return existing.title
+        claim_subject = optional_string(bundles[0].claim.get("subject"))
+        if claim_subject == target_page_id:
+            return target_page_id.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").title()
+        first_capture = self._first_capture_detail(bundles)
+        return optional_string(first_capture.title if first_capture else None) or target_page_id.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").title()
+
+    def _claim_summary(self, bundle: _CandidateBundle) -> str:
+        return optional_string(bundle.claim.get("object")) or "Auto-generated stub page."
+
+    def _stub_allowed(self, target_page_id: str, bundles: list[_CandidateBundle]) -> bool:
+        if self.repo.read_page(target_page_id) is not None:
+            return False
+        if self._page_kind(target_page_id) == "decision":
+            return False
+        return self._has_clear_stub_metadata(bundles)
+
+    def _has_clear_stub_metadata(self, bundles: list[_CandidateBundle]) -> bool:
+        capture = self._first_capture_detail(bundles)
+        if capture is None:
+            return False
+        return all(
+            [
+                optional_string(capture.frontmatter.get("suggested_target_page")),
+                optional_string(capture.frontmatter.get("summary")) or self._claim_summary(bundles[0]),
+                optional_string(capture.frontmatter.get("visibility")) or "internal",
+            ]
+        )
+
+    def _suggested_target_page(self, capture_ids: list[str]) -> str | None:
+        for capture_id in capture_ids:
+            capture = self.repo.read_page(capture_id)
+            if capture is None:
+                continue
+            suggested = optional_string(capture.frontmatter.get("suggested_target_page"))
+            if suggested:
+                target = normalize_page_id(suggested)
+                if not is_capture_page_id(target):
+                    return target
+        return None
+
+    def _first_capture_detail(self, bundles: list[_CandidateBundle]):
+        for capture_id in self._all_capture_ids(bundles):
+            capture = self.repo.read_page(capture_id)
+            if capture is not None:
+                return capture
+        return None
+
+    def _all_capture_ids(self, bundles: list[_CandidateBundle]) -> list[str]:
+        capture_ids: list[str] = []
+        for bundle in bundles:
+            for capture_id in self._candidate_capture_ids(bundle):
+                if capture_id not in capture_ids:
+                    capture_ids.append(capture_id)
+        return capture_ids
+
+    def _candidate_capture_ids(self, bundle: _CandidateBundle) -> list[str]:
+        source_capture_ids = [
+            normalize_page_id(page_id)
+            for page_id in bundle.row["source_page_ids"]
+            if is_capture_page_id(normalize_page_id(page_id))
+        ]
+        if source_capture_ids:
+            return list(dict.fromkeys(source_capture_ids))
+        return [
+            normalize_page_id(capture_id)
+            for capture_id in bundle.row["source_capture_ids"]
+            if is_capture_page_id(normalize_page_id(capture_id))
+        ]
+
+    def _bundles_for_candidate_ids(self, candidate_ids: list[str]) -> list[_CandidateBundle]:
+        if not candidate_ids:
+            return []
+        placeholders = ", ".join("?" for _ in candidate_ids)
+        rows = self.ledger.connection.execute(
+            f"SELECT * FROM extraction_candidates WHERE candidate_id IN ({placeholders}) ORDER BY created_at ASC, candidate_id",
+            candidate_ids,
+        ).fetchall()
+        return [
+            _CandidateBundle(row=decoded, claim=decoded["content_json"])
+            for row in rows
+            for decoded in [self._decode_candidate_row(dict(row))]
+        ]
+
+    def _decode_candidate_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        for key in ("content_json", "source_capture_ids", "source_page_ids"):
+            if isinstance(row.get(key), str):
+                row[key] = json.loads(row[key])
+        return row
+
+    def _current_content(self, page_id: str) -> str:
+        page = self.repo.read_page(page_id)
+        return page.content if page is not None else ""
+
+    def _extracted_claim(self, payload: dict[str, Any]) -> ExtractedClaim:
+        return ExtractedClaim.model_validate(payload)
+
+    def _activate_candidates(self, candidate_ids: list[str]) -> None:
+        for candidate_id in candidate_ids:
+            self.ledger.activate_candidate(candidate_id)
+
+    def _reindex_page(self, page_id: str) -> None:
+        """Update search index, vector store, and graph cache after a page change."""
+        page = self.repo.read_page(page_id)
+        if page is not None and self.search_index is not None:
+            self.search_index.upsert_page_from_detail(page)
+        if page is not None and self.vector_store is not None:
+            index_vectors_for_page(self.vector_store, page)
+        if self.graph_cache is not None:
+            self.graph_cache.invalidate()
+
+    def _accept_source_captures(self, candidate_ids: list[str]) -> None:
+        for bundle in self._bundles_for_candidate_ids(candidate_ids):
+            for capture_id in self._candidate_capture_ids(bundle):
+                capture = self.repo.read_page(capture_id)
+                if capture is None or capture.frontmatter.get("kind") != "capture":
+                    continue
+                if capture.frontmatter.get("status") == "accepted":
+                    continue
+                updated = update_frontmatter(capture.content, {"status": "accepted"})
+                self.repo.upsert_page(capture_id, updated)
+                self._reindex_page(capture_id)
+
+    def _record_audit(self, plan: PatchPlan, before_hash: str, after_hash: str, unified_diff: str, *, before_content: str | None = None) -> None:
+        if self.audit_log is None:
+            return
+        payload: dict[str, Any] = {
+            "plan_id": plan.plan_id,
+            "candidate_ids": plan.candidate_ids,
+            "before_hash": before_hash,
+            "after_hash": after_hash,
+            "auto_applied": plan.auto_appliable,
+        }
+        if before_content is not None:
+            payload["before_content"] = before_content
+        summary = json.dumps(payload, sort_keys=True)
+        self.audit_log.record(
+            new_audit_entry(
+                actor="patch_planner",
+                operation="consolidation.apply",
+                page_id=plan.target_page_id,
+                summary=summary,
+                diff_size=len(unified_diff),
+            )
+        )
+
+
+def _unified_diff(current_content: str, proposed_content: str, page_id: str) -> str:
+    return "\n".join(
+        difflib.unified_diff(
+            current_content.splitlines(),
+            proposed_content.splitlines(),
+            fromfile=f"{page_id}.before",
+            tofile=f"{page_id}.after",
+            lineterm="",
+        )
+    )
+
+
+def _insert_into_section(content: str, heading: str, block: str) -> str:
+    normalized_block = block.strip()
+    if not content:
+        return f"{heading}\n\n{normalized_block}\n"
+    lines = content.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() == heading:
+            insert_at = index + 1
+            while insert_at < len(lines) and lines[insert_at].strip() == "":
+                insert_at += 1
+            updated = lines[:insert_at] + [normalized_block, ""] + lines[insert_at:]
+            return "\n".join(updated).rstrip() + "\n"
+    if not content.endswith("\n"):
+        content += "\n"
+    return content.rstrip() + f"\n\n{heading}\n\n{normalized_block}\n"

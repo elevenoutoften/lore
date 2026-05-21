@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lore"
+version = "0.2.0"
+description = "Markdown-backed LLM wiki and project registry."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "bleach>=6,<7",
+  "fastapi>=0.111,<1.0",
+  "jinja2>=3.1,<4.0",
+  "markdown-it-py[linkify]>=4,<5",
+  "pydantic>=2.7,<3.0",
+  "uvicorn[standard]>=0.29,<1.0"
+]
+
+[project.optional-dependencies]
+test = [
+  "httpx>=0.27,<1.0",
+  "pytest>=8.0,<9.0"
+]
+
+[tool.setuptools.packages.find]
+include = ["lore_app*"]
+
+[tool.setuptools.package-data]
+lore_app = ["templates/*.html", "static/*.css"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "eval"]
+pythonpath = ["."]
+markers = [
+  "benchmark: performance benchmarks with generous regression thresholds"
+]

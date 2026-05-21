@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} - {{ app_name }}</title>
+  <meta name="description" content="Manage Lore API keys.">
+  <meta name="theme-color" content="#431741">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="{{ favicon_url }}">
+  <link rel="stylesheet" href="/static/lore.css?v=20260516-api-keys">
+  <style>
+    .key-page {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .key-header,
+    .key-panel,
+    .key-card,
+    .key-secret,
+    .key-state {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: 0 18px 60px rgba(9, 3, 7, 0.34);
+    }
+
+    .key-header,
+    .key-panel {
+      padding: 1rem;
+    }
+
+    .key-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .key-title {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-top: 0.18rem;
+    }
+
+    .key-count,
+    .key-role,
+    .key-prefix {
+      display: inline-flex;
+      align-items: center;
+      min-height: 1.7rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+      color: var(--muted);
+      font-size: 0.62rem;
+      padding: 0 0.5rem;
+      text-transform: uppercase;
+    }
+
+    .key-grid {
+      display: grid;
+      grid-template-columns: minmax(18rem, 0.75fr) minmax(0, 1.25fr);
+      gap: 1rem;
+      align-items: start;
+    }
+
+    .key-form,
+    .key-list,
+    .key-card {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .key-panel h3 {
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .key-form button,
+    .key-card button,
+    .key-secret button {
+      justify-self: start;
+    }
+
+    .key-list {
+      margin-top: 1rem;
+    }
+
+    .key-card {
+      padding: 0.85rem;
+      box-shadow: none;
+    }
+
+    .key-card__header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .key-card h3,
+    .key-card p,
+    .key-card small,
+    .key-secret code {
+      overflow-wrap: anywhere;
+    }
+
+    .key-card p,
+    .key-card small,
+    .key-state,
+    .key-secret p {
+      color: var(--muted);
+    }
+
+    .key-card small {
+      display: block;
+      font-size: 0.68rem;
+    }
+
+    .key-card.is-revoked {
+      opacity: 0.62;
+    }
+
+    .key-card.is-revoked .key-role {
+      border-color: rgba(248, 113, 113, 0.42);
+      background: rgba(248, 113, 113, 0.13);
+      color: #f87171;
+    }
+
+    .key-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+    }
+
+    .key-secret {
+      display: none;
+      gap: 0.75rem;
+      margin-top: 1rem;
+      padding: 0.85rem;
+      box-shadow: none;
+    }
+
+    .key-secret.is-visible {
+      display: grid;
+    }
+
+    .key-secret code {
+      display: block;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(9, 3, 7, 0.42);
+      color: var(--text);
+      padding: 0.7rem;
+      user-select: all;
+    }
+
+    .key-state {
+      padding: 0.85rem;
+    }
+
+    .key-error {
+      border-color: rgba(248, 113, 113, 0.42);
+      background: rgba(248, 113, 113, 0.12);
+      color: #fecaca;
+    }
+
+    @media (max-width: 820px) {
+      .key-header,
+      .key-grid,
+      .key-card__header {
+        display: grid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell key-page">
+    <header class="topbar">
+      <div>
+        <p class="wordmark">{{ brand_title }}</p>
+        <h1>{{ app_name }}</h1>
+      </div>
+      <nav class="topbar-links" aria-label="Lore endpoints">
+        <a href="/">Pages</a>
+        <a href="/api/pages">API</a>
+        <a href="/api/catalog">Catalog</a>
+        <a href="/captures">Captures</a>
+        <a href="/api-keys">Keys</a>
+        <a href="/mcp">MCP</a>
+      </nav>
+    </header>
+
+    <main class="key-page">
+      <section class="key-header" aria-labelledby="api-keys-title">
+        <div>
+          <p class="eyebrow">Agent Access</p>
+          <div class="key-title">
+            <h2 id="api-keys-title">API Keys</h2>
+            <span class="key-count" data-key-count>Loading</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="key-grid">
+        <article class="key-panel">
+          <h3>Create Key</h3>
+          <form class="key-form" data-key-form>
+            <label>
+              <span>Name</span>
+              <input name="name" maxlength="120" autocomplete="off" required placeholder="codex-lore">
+            </label>
+            <label>
+              <span>Description</span>
+              <input name="description" maxlength="500" autocomplete="off" placeholder="Agent or service using this key">
+            </label>
+            <label>
+              <span>Role</span>
+              <select name="role">
+                <option value="writer">Writer</option>
+                <option value="reader">Reader</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+            <button type="submit">Create</button>
+          </form>
+
+          <div class="key-secret" data-key-secret>
+            <p>Copy this token now. Lore stores only its hash, so it will not be shown again.</p>
+            <code data-key-secret-value></code>
+            <button type="button" data-copy-secret>Copy</button>
+          </div>
+        </article>
+
+        <article class="key-panel">
+          <h3>Existing Keys</h3>
+          <div class="key-list" data-key-list>
+            <p class="key-state">Loading keys...</p>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <template data-key-template>
+    <article class="key-card">
+      <div class="key-card__header">
+        <div>
+          <h3 data-key-name></h3>
+          <p data-key-description></p>
+        </div>
+        <span class="key-role" data-key-role></span>
+      </div>
+      <div class="key-meta">
+        <span class="key-prefix" data-key-prefix></span>
+        <span class="key-prefix" data-key-created></span>
+        <span class="key-prefix" data-key-revoked></span>
+      </div>
+      <button type="button" data-revoke-key>Revoke</button>
+    </article>
+  </template>
+
+  <script nonce="{{ csp_nonce }}">
+    const keyList = document.querySelector("[data-key-list]");
+    const keyCount = document.querySelector("[data-key-count]");
+    const keyForm = document.querySelector("[data-key-form]");
+    const keyTemplate = document.querySelector("[data-key-template]");
+    const secretPanel = document.querySelector("[data-key-secret]");
+    const secretValue = document.querySelector("[data-key-secret-value]");
+    const copyButton = document.querySelector("[data-copy-secret]");
+
+    async function requestJson(path, options = {}) {
+      const response = await fetch(path, {
+        ...options,
+        headers: {
+          "Accept": "application/json",
+          ...(options.body ? { "Content-Type": "application/json" } : {}),
+          ...(options.headers || {})
+        }
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || `HTTP ${response.status}`);
+      }
+      return response.status === 204 ? null : response.json();
+    }
+
+    function setState(message, isError = false) {
+      keyList.innerHTML = "";
+      const state = document.createElement("p");
+      state.className = `key-state${isError ? " key-error" : ""}`;
+      state.textContent = message;
+      keyList.append(state);
+    }
+
+    function formatDate(value) {
+      if (!value) {
+        return "";
+      }
+      return String(value).slice(0, 10);
+    }
+
+    function renderKeys(keys) {
+      keyList.innerHTML = "";
+      keyCount.textContent = `${keys.length} key${keys.length === 1 ? "" : "s"}`;
+      if (!keys.length) {
+        setState("No Lore API keys yet.");
+        return;
+      }
+      for (const key of keys) {
+        const node = keyTemplate.content.firstElementChild.cloneNode(true);
+        node.dataset.keyId = key.id;
+        node.classList.toggle("is-revoked", Boolean(key.revoked_at));
+        node.querySelector("[data-key-name]").textContent = key.name;
+        node.querySelector("[data-key-description]").textContent = key.description || "No description";
+        node.querySelector("[data-key-role]").textContent = key.revoked_at ? "Revoked" : key.role;
+        node.querySelector("[data-key-prefix]").textContent = `${key.key_prefix}...`;
+        node.querySelector("[data-key-created]").textContent = `Created ${formatDate(key.created_at)}`;
+        const revoked = node.querySelector("[data-key-revoked]");
+        revoked.textContent = key.revoked_at ? `Revoked ${formatDate(key.revoked_at)}` : "";
+        revoked.hidden = !key.revoked_at;
+        const revoke = node.querySelector("[data-revoke-key]");
+        revoke.hidden = Boolean(key.revoked_at);
+        revoke.addEventListener("click", () => revokeKey(key.id, revoke));
+        keyList.append(node);
+      }
+    }
+
+    async function loadKeys() {
+      try {
+        const keys = await requestJson("/api/api-keys");
+        renderKeys(keys);
+      } catch (error) {
+        keyCount.textContent = "Unavailable";
+        setState("Admin access is required to manage Lore API keys.", true);
+      }
+    }
+
+    async function revokeKey(keyId, button) {
+      button.disabled = true;
+      button.textContent = "Revoking...";
+      try {
+        await requestJson(`/api/api-keys/${encodeURIComponent(keyId)}/revoke`, { method: "POST" });
+        await loadKeys();
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = "Revoke";
+        setState("Could not revoke the key. Check admin access and try again.", true);
+      }
+    }
+
+    keyForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submit = keyForm.querySelector("button[type='submit']");
+      submit.disabled = true;
+      submit.textContent = "Creating...";
+      const formData = new FormData(keyForm);
+      const payload = {
+        name: String(formData.get("name") || "").trim(),
+        description: String(formData.get("description") || "").trim(),
+        role: String(formData.get("role") || "writer")
+      };
+      try {
+        const created = await requestJson("/api/api-keys", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        secretValue.textContent = created.api_key;
+        secretPanel.classList.add("is-visible");
+        keyForm.reset();
+        await loadKeys();
+      } catch (error) {
+        setState("Could not create the key. Check admin access and required fields.", true);
+      } finally {
+        submit.disabled = false;
+        submit.textContent = "Create";
+      }
+    });
+
+    copyButton.addEventListener("click", async () => {
+      const value = secretValue.textContent;
+      if (!value) {
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(value);
+        copyButton.textContent = "Copied";
+        setTimeout(() => {
+          copyButton.textContent = "Copy";
+        }, 1400);
+      } catch (error) {
+        secretValue.focus();
+      }
+    });
+
+    loadKeys();
+  </script>
+</body>
+</html>

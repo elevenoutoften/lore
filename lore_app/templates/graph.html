@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} - {{ app_name }}</title>
+  <meta name="theme-color" content="#431741">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="{{ favicon_url }}">
+  <link rel="stylesheet" href="/static/lore.css?v=20260502-graph">
+  <style>
+    .graph-shell {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 100vh;
+      padding: 1rem;
+    }
+
+    .graph-topbar {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+
+    .graph-topbar h1 {
+      color: var(--text);
+      font-size: 1.35rem;
+      line-height: 1.2;
+      margin: 0;
+    }
+
+    .graph-topbar p {
+      color: var(--muted);
+      margin-top: 0.25rem;
+    }
+
+    .graph-stage {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(9, 3, 7, 0.42);
+      min-height: 36rem;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #graphSvg {
+      display: block;
+      height: 100%;
+      min-height: 36rem;
+      width: 100%;
+    }
+
+    .graph-tooltip {
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius);
+      background: rgba(22, 7, 17, 0.96);
+      box-shadow: 0 18px 54px rgba(9, 3, 7, 0.45);
+      color: var(--text);
+      display: none;
+      left: 1rem;
+      max-width: min(22rem, calc(100vw - 2rem));
+      padding: 0.7rem;
+      pointer-events: none;
+      position: absolute;
+      top: 1rem;
+      z-index: 3;
+    }
+
+    .graph-tooltip strong {
+      display: block;
+      font-size: 0.86rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .graph-tooltip span,
+    .graph-tooltip p {
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+
+    .graph-tooltip p {
+      margin-top: 0.45rem;
+    }
+
+    .graph-empty {
+      color: var(--muted);
+      left: 1rem;
+      position: absolute;
+      top: 1rem;
+    }
+
+    @media (max-width: 760px) {
+      .graph-shell {
+        padding: 0.7rem;
+      }
+
+      .graph-stage,
+      #graphSvg {
+        min-height: 32rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="graph-shell">
+    <header class="graph-topbar">
+      <div>
+        <p class="wordmark">{{ brand_title }}</p>
+        <h1>Link Graph</h1>
+      </div>
+      <nav class="topbar-links" aria-label="Lore navigation">
+        <a href="/">Pages</a>
+        <a href="/api/graph/enriched">JSON</a>
+        <a href="/api/graph/stats">Stats</a>
+      </nav>
+    </header>
+
+    <main class="graph-stage">
+      <svg id="graphSvg" role="img" aria-label="Lore link graph"></svg>
+      <div id="graphTooltip" class="graph-tooltip"></div>
+      <p id="graphEmpty" class="graph-empty">Loading graph...</p>
+    </main>
+  </div>
+
+  <script nonce="{{ csp_nonce }}">
+    const svg = document.getElementById("graphSvg");
+    const tooltip = document.getElementById("graphTooltip");
+    const empty = document.getElementById("graphEmpty");
+    const kindColors = {
+      capture: "#ffd979",
+      concept: "#ffa8d7",
+      decision: "#7de8aa",
+      page: "#8fd3ff",
+      project: "#ff7db8",
+      runbook: "#c9a7ff",
+      service: "#7de8aa"
+    };
+
+    function svgEl(name, attrs = {}) {
+      const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+      for (const [key, value] of Object.entries(attrs)) {
+        element.setAttribute(key, value);
+      }
+      return element;
+    }
+
+    function size() {
+      const rect = svg.getBoundingClientRect();
+      return { width: Math.max(rect.width, 320), height: Math.max(rect.height, 320) };
+    }
+
+    function renderGraph(data) {
+      const nodes = data.nodes.map((node, index) => ({ ...node, index, x: 0, y: 0, vx: 0, vy: 0 }));
+      const byId = new Map(nodes.map((node) => [node.page_id, node]));
+      const links = data.links
+        .filter((edge) => edge.relationship_type === "wikilink" && edge.target)
+        .map((edge) => ({ ...edge, sourceNode: byId.get(edge.source), targetNode: byId.get(edge.target) }))
+        .filter((edge) => edge.sourceNode && (edge.targetNode || !edge.exists));
+
+      if (!nodes.length) {
+        empty.textContent = "No graph nodes found.";
+        return;
+      }
+      empty.style.display = "none";
+
+      const { width, height } = size();
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      svg.replaceChildren();
+
+      nodes.forEach((node, index) => {
+        const angle = (Math.PI * 2 * index) / Math.max(nodes.length, 1);
+        const radius = Math.min(width, height) * 0.32;
+        node.x = width / 2 + Math.cos(angle) * radius;
+        node.y = height / 2 + Math.sin(angle) * radius;
+      });
+
+      const lineLayer = svgEl("g");
+      const nodeLayer = svgEl("g");
+      svg.append(lineLayer, nodeLayer);
+
+      const lineEls = links.map((edge) => {
+        const line = svgEl("line", {
+          stroke: edge.exists ? "rgba(255, 230, 244, 0.28)" : "#ff6b8d",
+          "stroke-width": edge.exists ? "1.2" : "1.6",
+          "stroke-dasharray": edge.exists ? "" : "6 5"
+        });
+        lineLayer.append(line);
+        return line;
+      });
+
+      const nodeEls = nodes.map((node) => {
+        const group = svgEl("g", { tabindex: "0", role: "link", "aria-label": node.title });
+        const circle = svgEl("circle", {
+          r: String(8 + Math.min(8, node.inbound_count + node.outbound_count)),
+          fill: kindColors[node.kind] || kindColors.page,
+          stroke: "rgba(255, 245, 252, 0.72)",
+          "stroke-width": "1"
+        });
+        const label = svgEl("text", {
+          y: "24",
+          "text-anchor": "middle",
+          fill: "rgba(255, 245, 252, 0.86)",
+          "font-size": "10",
+          "font-family": "var(--font)"
+        });
+        label.textContent = node.title.length > 28 ? `${node.title.slice(0, 25)}...` : node.title;
+        group.append(circle, label);
+        group.addEventListener("click", () => {
+          window.location.href = `/${node.page_id}`;
+        });
+        group.addEventListener("mouseenter", (event) => showTooltip(event, node));
+        group.addEventListener("mousemove", (event) => moveTooltip(event));
+        group.addEventListener("mouseleave", hideTooltip);
+        group.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            window.location.href = `/${node.page_id}`;
+          }
+        });
+        nodeLayer.append(group);
+        return group;
+      });
+
+      function showTooltip(event, node) {
+        tooltip.innerHTML = `<strong>${escapeHtml(node.title)}</strong><span>${escapeHtml(node.kind)} / ${escapeHtml(node.visibility)} / ${node.inbound_count} in / ${node.outbound_count} out</span>${node.summary ? `<p>${escapeHtml(node.summary)}</p>` : ""}`;
+        tooltip.style.display = "block";
+        moveTooltip(event);
+      }
+
+      function moveTooltip(event) {
+        const stage = svg.parentElement.getBoundingClientRect();
+        tooltip.style.left = `${Math.min(event.clientX - stage.left + 14, stage.width - tooltip.offsetWidth - 12)}px`;
+        tooltip.style.top = `${Math.min(event.clientY - stage.top + 14, stage.height - tooltip.offsetHeight - 12)}px`;
+      }
+
+      function hideTooltip() {
+        tooltip.style.display = "none";
+      }
+
+      let alpha = 1;
+      const alphaDecay = 0.008;
+      const alphaMin = 0.001;
+
+      function tick() {
+        if (alpha < alphaMin) return;
+
+        for (const node of nodes) {
+          let fx = (width / 2 - node.x) * 0.012 * alpha;
+          let fy = (height / 2 - node.y) * 0.012 * alpha;
+          for (const other of nodes) {
+            if (other === node) continue;
+            const dx = node.x - other.x;
+            const dy = node.y - other.y;
+            const distSq = Math.max(dx * dx + dy * dy, 80);
+            const force = (180 / distSq) * alpha;
+            fx += dx * force;
+            fy += dy * force;
+          }
+          node.vx = (node.vx + fx) * 0.82;
+          node.vy = (node.vy + fy) * 0.82;
+        }
+
+        for (const edge of links) {
+          const source = edge.sourceNode;
+          const target = edge.targetNode || source;
+          const dx = target.x - source.x;
+          const dy = target.y - source.y;
+          const distance = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+          const desired = edge.exists ? 120 : 80;
+          const force = (distance - desired) * 0.005 * alpha;
+          const fx = dx * force;
+          const fy = dy * force;
+          source.vx += fx;
+          source.vy += fy;
+          target.vx -= fx;
+          target.vy -= fy;
+        }
+
+        nodes.forEach((node, index) => {
+          node.x = Math.max(42, Math.min(width - 42, node.x + node.vx));
+          node.y = Math.max(42, Math.min(height - 42, node.y + node.vy));
+          nodeEls[index].setAttribute("transform", `translate(${node.x}, ${node.y})`);
+        });
+
+        links.forEach((edge, index) => {
+          const target = edge.targetNode || edge.sourceNode;
+          lineEls[index].setAttribute("x1", edge.sourceNode.x);
+          lineEls[index].setAttribute("y1", edge.sourceNode.y);
+          lineEls[index].setAttribute("x2", target.x);
+          lineEls[index].setAttribute("y2", target.y);
+        });
+
+        alpha *= (1 - alphaDecay);
+        requestAnimationFrame(tick);
+      }
+
+      tick();
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      }[char]));
+    }
+
+    fetch("/api/graph/enriched")
+      .then((response) => response.ok ? response.json() : Promise.reject(response))
+      .then(renderGraph)
+      .catch(() => {
+        empty.textContent = "Graph data could not be loaded.";
+      });
+  </script>
+</body>
+</html>

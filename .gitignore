@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets and credentials
+.env
+.env.*
+*.pem
+*.key
+auth.json
+credentials.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data/runtime
+data/
+*.db
+*.sqlite3
+*.vec
+
+# Codex specs
+.codex-task*
+
+# uv
+uv.lock
+
+# Test artifacts
+.pytest_cache/
+.pytest-tmp/
+
+# Lore runtime
+tmp/
+.worktrees/

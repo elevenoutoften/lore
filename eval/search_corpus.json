@@ -1,0 +1,37 @@
+[
+  {
+    "query": "ExampleProject",
+    "expected_top": ["projects/example-project"],
+    "expected_in": ["services/workflow-engine"]
+  },
+  {
+    "query": "lore",
+    "expected_top": ["services/lore"],
+    "expected_in": ["projects/example-project"]
+  },
+  {
+    "query": "services/lore",
+    "expected_top": ["services/lore"],
+    "expected_in": ["projects/example-project"]
+  },
+  {
+    "query": "flow",
+    "expected_top": ["services/workflow-engine"],
+    "expected_in": ["projects/example-project"]
+  },
+  {
+    "query": "agent",
+    "expected_top": [],
+    "expected_in": ["projects/example-project", "services/workflow-engine"]
+  },
+  {
+    "query": "example-project",
+    "expected_top": ["projects/example-project"],
+    "expected_in": []
+  },
+  {
+    "query": "knowledge",
+    "expected_top": [],
+    "expected_in": ["services/lore"]
+  }
+]

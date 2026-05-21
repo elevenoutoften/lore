@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} - {{ app_name }}</title>
+  <meta name="description" content="Lore heartbeat review: stale pages, contradictions, low confidence, expired facts.">
+  <meta name="theme-color" content="#431741">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="{{ favicon_url }}">
+  <link rel="stylesheet" href="/static/lore.css?v=20260501-lore-reader">
+  <style>
+    .heartbeat-page {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .heartbeat-header,
+    .category-section,
+    .empty-state {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: 0 18px 60px rgba(9, 3, 7, 0.34);
+    }
+
+    .heartbeat-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 1rem;
+    }
+
+    .heartbeat-title,
+    .heartbeat-stats {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+    }
+
+    .heartbeat-title {
+      margin-top: 0.18rem;
+    }
+
+    .heartbeat-count,
+    .category-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 1.7rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 0 0.5rem;
+      font-size: 0.62rem;
+      text-transform: uppercase;
+    }
+
+    .heartbeat-count {
+      color: var(--muted);
+      background: var(--panel-2);
+    }
+
+    .heartbeat-timestamp {
+      color: var(--muted);
+      font-size: 0.68rem;
+    }
+
+    .category-groups {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .category-section {
+      overflow: hidden;
+      box-shadow: none;
+    }
+
+    .category-section summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      cursor: pointer;
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--line);
+      list-style: none;
+    }
+
+    .category-section summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .category-section__title {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .category-badge {
+      color: var(--text);
+    }
+
+    .category-badge--stale {
+      border-color: rgba(251, 191, 36, 0.5);
+      background: rgba(251, 191, 36, 0.14);
+      color: #fbbf24;
+    }
+
+    .category-badge--missing {
+      border-color: rgba(96, 165, 250, 0.5);
+      background: rgba(96, 165, 250, 0.14);
+      color: #60a5fa;
+    }
+
+    .category-badge--contradiction {
+      border-color: rgba(248, 113, 113, 0.5);
+      background: rgba(248, 113, 113, 0.16);
+      color: #f87171;
+    }
+
+    .category-badge--confidence {
+      border-color: rgba(251, 146, 60, 0.5);
+      background: rgba(251, 146, 60, 0.14);
+      color: #fb923c;
+    }
+
+    .category-badge--expired {
+      border-color: rgba(248, 113, 113, 0.5);
+      background: rgba(248, 113, 113, 0.16);
+      color: #f87171;
+    }
+
+    .category-badge--procedure {
+      border-color: rgba(167, 139, 250, 0.5);
+      background: rgba(167, 139, 250, 0.14);
+      color: #a78bfa;
+    }
+
+    .category-label {
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+
+    .item-list {
+      display: grid;
+      gap: 0.5rem;
+      padding: 0.75rem;
+    }
+
+    .item-card {
+      display: grid;
+      gap: 0.35rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+      padding: 0.75rem 1rem;
+    }
+
+    .item-card__title {
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+    }
+
+    .item-card__title a {
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .item-card__title a:hover {
+      color: var(--pink);
+    }
+
+    .item-card__id {
+      color: var(--muted);
+      font-size: 0.68rem;
+      overflow-wrap: anywhere;
+    }
+
+    .item-card__detail {
+      color: var(--muted);
+      font-size: 0.72rem;
+      overflow-wrap: anywhere;
+    }
+
+    .empty-state {
+      padding: 1rem;
+    }
+
+    .empty-state h2,
+    .empty-state p {
+      color: var(--muted);
+    }
+
+    @media (max-width: 680px) {
+      .heartbeat-header {
+        display: grid;
+      }
+
+      .heartbeat-stats {
+        justify-self: start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell heartbeat-page">
+    <header class="topbar">
+      <div>
+        <p class="wordmark">{{ brand_title }}</p>
+        <h1>{{ app_name }}</h1>
+      </div>
+      <nav class="topbar-links" aria-label="Lore endpoints">
+        <a href="/api/pages">API</a>
+        <a href="/api/catalog">Catalog</a>
+        <a href="/captures">Captures</a>
+        <a href="/api-keys">Keys</a>
+        <a href="/lint">Lint</a>
+        <a href="/heartbeat">Heartbeat</a>
+        <a href="/mcp">MCP</a>
+      </nav>
+    </header>
+
+    <main class="heartbeat-page">
+      <section class="heartbeat-header" aria-labelledby="heartbeat-title">
+        <div>
+          <p class="eyebrow">Lore Operations</p>
+          <div class="heartbeat-title">
+            <h2 id="heartbeat-title">Heartbeat Review</h2>
+            <span class="heartbeat-count">{{ result.total_issues }} issues</span>
+          </div>
+          <p class="heartbeat-timestamp">Generated {{ result.generated_at }}</p>
+        </div>
+      </section>
+
+      {% if result.total_issues == 0 %}
+      <section class="empty-state">
+        <h2>All clear. No freshness or quality issues found.</h2>
+      </section>
+      {% else %}
+      <section class="category-groups" aria-label="Heartbeat categories">
+        {% set categories = [
+          ("stale_pages", "Stale Pages", "stale", result.stale_pages),
+          ("missing_metadata", "Missing Metadata", "missing", result.missing_metadata),
+          ("contradictions", "Contradictions", "contradiction", result.contradictions),
+          ("low_confidence", "Low Confidence", "confidence", result.low_confidence),
+          ("expired_facts", "Expired Facts", "expired", result.expired_facts),
+          ("procedure_issues", "Procedure Issues", "procedure", result.procedure_issues),
+        ] %}
+        {% for key, label, badge_class, category in categories %}
+          {% if category.count > 0 %}
+          <details class="category-section" open>
+            <summary>
+              <span class="category-section__title">
+                <span class="category-badge category-badge--{{ badge_class }}">{{ category.count }}</span>
+                <span>{{ label }}</span>
+              </span>
+              <span class="category-label">{{ category.count }} item{{ 's' if category.count != 1 }}</span>
+            </summary>
+            <div class="item-list">
+              {% for item in category.items %}
+              <article class="item-card">
+                <div class="item-card__title">
+                  <a href="/pages/{{ item.page_id }}">{{ item.title or item.page_id }}</a>
+                </div>
+                <p class="item-card__id">{{ item.page_id }}</p>
+                {% if key == "stale_pages" %}
+                  {% if item.stale_after %}<p class="item-card__detail">Stale after {{ item.stale_after }}{% if item.days_stale %} ({{ item.days_stale }} days){% endif %}</p>{% endif %}
+                {% elif key == "contradictions" %}
+                  {% if item.matched_text %}<p class="item-card__detail">Line {{ item.line_number }}: {{ item.matched_text }}</p>{% endif %}
+                {% elif key == "low_confidence" %}
+                  <p class="item-card__detail">{{ item.confidence }}</p>
+                {% elif key == "expired_facts" %}
+                  {% if item.valid_until %}<p class="item-card__detail">Valid until {{ item.valid_until }}</p>{% endif %}
+                {% elif key == "procedure_issues" %}
+                  <p class="item-card__detail">{{ item.rule }}: {{ item.message }}</p>
+                {% endif %}
+              </article>
+              {% endfor %}
+            </div>
+          </details>
+          {% endif %}
+        {% endfor %}
+      </section>
+      {% endif %}
+    </main>
+  </div>
+</body>
+</html>
