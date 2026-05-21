@@ -71,6 +71,7 @@ def create_app(
     app = FastAPI(title=lore_config.app_name, description=lore_config.app_description, version=package_version())
     app.state.config = lore_config
     app.state.trusted_headers = lore_config.trusted_headers
+    app.state.trusted_proxy_auth = lore_config.trusted_proxy_auth
     app.state.repository = repo
     app.state.search_index = search_idx
     app.state.vector_store = vector_store
@@ -112,6 +113,7 @@ def create_app(
             mode=lore_config.auth_mode,
             secret=lore_config.auth_secret,
             api_key_store=api_key_store,
+            trusted_proxy_auth=lore_config.trusted_proxy_auth,
         )
 
     @app.middleware("http")

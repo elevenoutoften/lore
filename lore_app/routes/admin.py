@@ -5,7 +5,7 @@ from dataclasses import asdict
 from importlib.metadata import PackageNotFoundError, metadata, version
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from ..audit import AuditLog
 from ..config import LoreConfig
@@ -35,6 +35,16 @@ def package_version() -> str:
 @router.get("/healthz")
 def healthz(metrics: MetricsCollector = Depends(get_metrics)) -> dict[str, Any]:
     return {"ok": True, "metrics": metrics.get_metrics()}
+
+
+@router.get("/healthz/config")
+def healthz_config(request: Request) -> dict[str, Any]:
+    config: LoreConfig = request.app.state.config
+    return {
+        "auth_mode": config.auth_mode,
+        "trusted_headers": config.trusted_headers,
+        "trusted_proxy_auth": config.trusted_proxy_auth,
+    }
 
 
 @router.get("/api/version")

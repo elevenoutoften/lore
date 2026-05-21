@@ -24,7 +24,7 @@ fails to start with a clear configuration error.
 
 `LORE_AUTH_MODE=api_key` validates bearer tokens against Lore's own SQLite API
 key registry at `LORE_API_KEYS_DB`. All requests must present a valid API key.
-No trusted header bypasses exist in this mode.
+Trusted proxy browser sessions require explicit configuration.
 
 API key management endpoints:
 
@@ -53,6 +53,41 @@ When Lore runs behind a reverse proxy (Caddy, Nginx, Tailscale), set
 
 Without `LORE_TRUSTED_HEADERS=true`, these headers are ignored. This is the
 safe default for direct exposure or local development.
+
+## Trusted Proxy Auth
+
+When Lore runs behind GPUBox/Caddy with `forward_auth`, set
+`LORE_TRUSTED_PROXY_AUTH=true` to allow GPUBox-injected identity headers to
+bypass auth middleware for browser/UI sessions.
+
+This is separate from `LORE_TRUSTED_HEADERS`, which only affects rate limiting
+and audit trails.
+
+With `LORE_TRUSTED_PROXY_AUTH=true`, if a request arrives without a valid
+`Authorization: Bearer` token, or after token auth fails, the middleware checks
+for trusted proxy identity headers:
+
+- `X-Axis-Admin: 1` grants the `admin` role and can manage API keys.
+- `X-Lore-Agent` identifies an agent actor.
+- `X-Axis-User` identifies a human user actor.
+- `X-Lore-Actor` is a generic actor identifier with the lowest priority.
+
+Actor priority is `X-Lore-Agent` > `X-Axis-User` > `X-Lore-Actor`.
+
+Non-admin proxy sessions receive the `reader` role with the same write
+restrictions as reader API keys.
+
+Only enable `LORE_TRUSTED_PROXY_AUTH=true` when Lore runs behind a reverse proxy
+that authenticates users and strips or replaces these headers before forwarding
+requests.
+
+### Combining LORE_TRUSTED_HEADERS and LORE_TRUSTED_PROXY_AUTH
+
+A typical GPUBox deployment uses `LORE_AUTH_MODE=api_key`,
+`LORE_TRUSTED_HEADERS=true`, and `LORE_TRUSTED_PROXY_AUTH=true`.
+API and MCP clients continue to authenticate with `Authorization: Bearer`
+tokens, while browser users are authenticated by the GPUBox/Caddy auth gate and
+arrive at Lore with trusted proxy identity headers.
 
 ## Security Headers
 

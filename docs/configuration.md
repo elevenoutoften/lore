@@ -17,6 +17,8 @@ Lore reads configuration from environment variables through
 | `LORE_PORT` | `8000` | Port used by service launchers. |
 | `LORE_AUTH_MODE` | `none` | Auth mode: `none`, `bearer`, `basic`, or `api_key`. |
 | `LORE_AUTH_SECRET` | empty | Bearer token or `username:password` value for basic auth. |
+| `LORE_TRUSTED_HEADERS` | `false` | Trust reverse proxy headers for rate limiting and audit actor attribution. |
+| `LORE_TRUSTED_PROXY_AUTH` | `false` | Allow trusted proxy identity headers to bypass auth middleware for browser sessions behind GPUBox/Caddy. |
 | `LORE_BRAND_TITLE` | `LORE` | Header brand label. |
 | `LORE_BRAND_URL` | `/` | Header brand link. |
 | `LORE_FAVICON_URL` | `/static/lore.css` | Favicon URL used by templates. |
@@ -62,8 +64,17 @@ curl -H "Authorization: Bearer $LORE_API_KEY" http://localhost:8078/api/pages
 
 Create and rotate Lore keys through the `/api-keys` browser page or
 `/api/api-keys` using a trusted admin session (`X-Axis-Admin: 1` from the
-deployment auth gate) or an existing Lore admin key. Flow API keys are
-intentionally not accepted by Lore's `api_key` mode.
+deployment auth gate, with `LORE_TRUSTED_PROXY_AUTH=true` enabled) or an
+existing Lore admin key. Flow API keys are intentionally not accepted by Lore's
+`api_key` mode.
+
+### GPUBox/Caddy Deployment
+
+A typical GPUBox/Caddy deployment uses `LORE_AUTH_MODE=api_key`,
+`LORE_TRUSTED_HEADERS=true`, and `LORE_TRUSTED_PROXY_AUTH=true`.
+API and MCP clients authenticate with `Authorization: Bearer` tokens backed by
+Lore API keys. Browser users are authenticated by the GPUBox auth gate, then
+Caddy forwards trusted identity headers to Lore for UI sessions.
 
 ## Multi-Workspace Setup
 

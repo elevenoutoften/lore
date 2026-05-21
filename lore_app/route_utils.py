@@ -67,6 +67,7 @@ def workspace_lore_config(base: LoreConfig, workspace: WorkspaceConfig) -> LoreC
     config.write_rate_window_seconds = base.write_rate_window_seconds
     config.audit_retention_days = base.audit_retention_days
     config.trusted_headers = base.trusted_headers
+    config.trusted_proxy_auth = base.trusted_proxy_auth
     config.csp_policy = base.csp_policy
     config.workspaces = {}
     return config

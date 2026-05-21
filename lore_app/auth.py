@@ -20,6 +20,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         mode: str = "none",
         secret: str = "",
         api_key_store: LoreApiKeyStore | None = None,
+        trusted_proxy_auth: bool = False,
     ) -> None:
         if mode in ("bearer", "basic") and (not secret or not secret.strip()):
             raise ValueError(
@@ -30,6 +31,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self.mode = mode
         self.secret = secret
         self.api_key_store = api_key_store
+        self.trusted_proxy_auth = trusted_proxy_auth
         self.public_paths = {"/healthz", "/static"}
 
     async def dispatch(self, request: Request, call_next: Any) -> Response:
@@ -45,6 +47,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if auth.startswith("Bearer ") and self._check_token(auth[7:]):
                 request.state.lore_actor = "bearer"
                 return await call_next(request)
+            proxy_response = await self._trusted_proxy_response(request, call_next)
+            if proxy_response is not None:
+                return proxy_response
             return Response(status_code=401, content="Unauthorized", headers={"WWW-Authenticate": "Bearer"})
 
         if self.mode == "basic":
@@ -57,20 +62,25 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 if secrets.compare_digest(decoded, self.secret):
                     request.state.lore_actor = decoded.split(":", 1)[0] or "basic"
                     return await call_next(request)
+            proxy_response = await self._trusted_proxy_response(request, call_next)
+            if proxy_response is not None:
+                return proxy_response
             return Response(status_code=401, content="Unauthorized", headers={"WWW-Authenticate": "Basic"})
 
         if self.mode == "api_key":
             auth = request.headers.get("Authorization", "")
             if auth.startswith("Bearer "):
                 api_key = self.api_key_store.verify_token(auth[7:].strip()) if self.api_key_store else None
-                if api_key is None:
-                    return Response(status_code=401, content="Unauthorized", headers={"WWW-Authenticate": "Bearer"})
-                request.state.lore_actor = api_key.name
-                request.state.lore_role = api_key.role
-                if api_key.role == "reader" and self._is_write_request(request):
-                    return Response(status_code=403, content="Forbidden")
-                return await call_next(request)
+                if api_key is not None:
+                    request.state.lore_actor = api_key.name
+                    request.state.lore_role = api_key.role
+                    if api_key.role == "reader" and self._is_write_request(request):
+                        return Response(status_code=403, content="Forbidden")
+                    return await call_next(request)
 
+            proxy_response = await self._trusted_proxy_response(request, call_next)
+            if proxy_response is not None:
+                return proxy_response
             return Response(status_code=401, content="Unauthorized", headers={"WWW-Authenticate": "Bearer"})
 
         return await call_next(request)
@@ -86,3 +96,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return False
         path = request.url.path
         return path.startswith("/api/") or path.startswith("/mcp")
+
+    async def _trusted_proxy_response(self, request: Request, call_next: Any) -> Response | None:
+        if not self.trusted_proxy_auth:
+            return None
+        actor, role = self._resolve_trusted_proxy(request)
+        if actor is None:
+            return None
+        request.state.lore_actor = actor
+        request.state.lore_role = role
+        if role == "reader" and self._is_write_request(request):
+            return Response(status_code=403, content="Forbidden")
+        return await call_next(request)
+
+    def _resolve_trusted_proxy(self, request: Request) -> tuple[str | None, str]:
+        """Resolve actor and role from trusted proxy identity headers."""
+        admin_header = request.headers.get("X-Axis-Admin", "").strip()
+        agent_header = request.headers.get("X-Lore-Agent", "").strip()
+        user_header = request.headers.get("X-Axis-User", "").strip()
+        actor_header = request.headers.get("X-Lore-Actor", "").strip()
+
+        actor = agent_header or user_header or actor_header or None
+        if actor is None:
+            return None, ""
+
+        role = "admin" if admin_header == "1" else "reader"
+        return actor, role

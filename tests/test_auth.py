@@ -225,6 +225,81 @@ def test_api_key_auth_works_without_secret(content_dir, search_db, tmp_path):
     assert response.status_code == 401
 
 
+def test_trusted_proxy_auth_is_opt_in(content_dir, search_db, tmp_path):
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    config.trusted_proxy_auth = False
+    app = create_app(config)
+
+    with TestClient(app) as client:
+        response = client.get("/api/pages", headers={"X-Axis-User": "alice"})
+
+    assert response.status_code == 401
+
+
+def test_trusted_proxy_auth_allows_reader_after_api_key_auth_fails(content_dir, search_db, tmp_path):
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    config.trusted_proxy_auth = True
+    app = create_app(config)
+
+    with TestClient(app) as client:
+        headers = {
+            "Authorization": "Bearer flow_not_a_lore_key",
+            "X-Axis-User": "alice",
+        }
+        read = client.get("/api/pages", headers=headers)
+        write = client.put(
+            "/api/pages/services/proxy-reader-write",
+            json={"content": "# Proxy Reader Write"},
+            headers=headers,
+        )
+
+    assert read.status_code == 200
+    assert write.status_code == 403
+
+
+def test_trusted_proxy_admin_can_manage_api_keys(content_dir, search_db, tmp_path):
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    config.trusted_proxy_auth = True
+    app = create_app(config)
+
+    with TestClient(app) as client:
+        headers = {"X-Axis-User": "admin@example.com", "X-Axis-Admin": "1"}
+        listed = client.get("/api/api-keys", headers=headers)
+        created = client.post("/api/api-keys", json={"name": "proxy-created"}, headers=headers)
+
+    assert listed.status_code == 200
+    assert created.status_code == 201
+    assert created.json()["name"] == "proxy-created"
+
+
+def test_trusted_proxy_auth_falls_back_for_bearer_mode(content_dir, search_db, tmp_path):
+    config = make_config(content_dir, search_db, tmp_path, "bearer", "valid-secret")
+    config.trusted_proxy_auth = True
+    app = create_app(config)
+
+    with TestClient(app) as client:
+        response = client.get("/api/pages", headers={"X-Lore-Agent": "nyx"})
+
+    assert response.status_code == 200
+
+
+def test_healthz_config_is_public(content_dir, search_db, tmp_path):
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    config.trusted_headers = True
+    config.trusted_proxy_auth = True
+    app = create_app(config)
+
+    with TestClient(app) as client:
+        response = client.get("/healthz/config")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "auth_mode": "api_key",
+        "trusted_headers": True,
+        "trusted_proxy_auth": True,
+    }
+
+
 def test_revoked_lore_api_key_is_rejected(content_dir, search_db, tmp_path):
     config = make_config(content_dir, search_db, tmp_path, "api_key", "")
     store = LoreApiKeyStore(config.api_keys_db)
