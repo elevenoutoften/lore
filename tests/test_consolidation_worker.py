@@ -238,6 +238,21 @@ def test_run_auto_applies_safe_plans(tmp_path, monkeypatch):
     assert run_trace.outcome == f"batch_id={result.batch_id}"
 
 
+def test_auto_apply_creates_trace_with_plan_trace_completed(tmp_path, monkeypatch):
+    ctx = make_context(tmp_path, monkeypatch)
+    write_page(ctx.repo, "services/lore")
+    add_capture(ctx.repo, "inbox/2026-05-10/auto-trace", summary="Lore completes auto-apply traces.")
+
+    result = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=1)
+    [plan_row] = ctx.ledger.list_patch_plans(status="applied")
+    plan_trace = ctx.ledger.get_trace(plan_row["trace_id"])
+
+    assert result.auto_applied == 1
+    assert plan_trace is not None
+    assert plan_trace.status == "completed"
+    assert "Applied" in plan_trace.outcome
+
+
 def test_plan_batch_creates_trace_for_each_plan(tmp_path, monkeypatch):
     ctx = make_context(tmp_path, monkeypatch)
     write_page(ctx.repo, "services/lore-a")
@@ -318,6 +333,26 @@ def test_apply_and_reject_update_plan_trace_status(tmp_path, monkeypatch):
     assert reject_trace.outcome == "Rejected: manual review required"
 
 
+def test_rejection_creates_abandoned_trace(tmp_path, monkeypatch):
+    ctx = make_context(tmp_path, monkeypatch)
+    write_page(ctx.repo, "decisions/agent-routing", kind="decision")
+    add_capture(
+        ctx.repo,
+        "inbox/2026-05-10/reject-trace",
+        target="decisions/agent-routing",
+        summary="Decision consolidation needs review.",
+    )
+
+    result = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=5)
+    [plan_row] = ctx.ledger.list_patch_plans(status="pending")
+    ctx.planner.reject_plan(plan_row["plan_id"], reason="manual review required")
+    plan_trace = ctx.ledger.get_trace(plan_row["trace_id"])
+
+    assert result.auto_applied == 0
+    assert plan_trace is not None
+    assert plan_trace.status == "abandoned"
+
+
 def test_run_respects_max_auto_apply_limit(tmp_path, monkeypatch):
     ctx = make_context(tmp_path, monkeypatch)
     write_page(ctx.repo, "services/lore-a")
@@ -391,6 +426,27 @@ def test_run_collects_apply_errors_and_continues(tmp_path, monkeypatch):
     assert len(ctx.ledger.list_patch_plans(status="applied")) == 1
 
 
+def test_apply_failure_creates_trace(tmp_path, monkeypatch):
+    ctx = make_context(tmp_path, monkeypatch)
+    write_page(ctx.repo, "services/lore")
+    add_capture(ctx.repo, "inbox/2026-05-10/apply-failure", summary="Lore apply failure is traced.")
+
+    def failing_apply(plan_id: str, *, force: bool = False):
+        raise RuntimeError("apply exploded")
+
+    monkeypatch.setattr(ctx.planner, "apply_plan", failing_apply)
+    result = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=1)
+    traces = ctx.ledger.list_traces(actor="consolidation-worker")
+
+    assert result.auto_applied == 0
+    assert any("apply exploded" in error for error in result.errors)
+    failure_traces = [
+        trace for trace in traces if trace.status == "failed" and "Apply failed" in trace.reason_summary
+    ]
+    assert len(failure_traces) == 1
+    assert failure_traces[0].tool_refs[0].action == "apply"
+
+
 def test_rollback_restores_page_content_and_updates_status(tmp_path, monkeypatch):
     ctx = make_context(tmp_path, monkeypatch)
     original_content = """---
@@ -421,6 +477,25 @@ Original fact.
     assert rollback.page_id == "services/lore"
     assert rollback.before_hash != rollback.after_hash
     assert ctx.ledger.get_patch_plan(plan["plan_id"])["status"] == "rolled_back"
+
+
+def test_rollback_creates_trace(tmp_path, monkeypatch):
+    ctx = make_context(tmp_path, monkeypatch)
+    write_page(ctx.repo, "services/lore")
+    add_capture(ctx.repo, "inbox/2026-05-10/rollback-trace", summary="Lore rollback traces exist.")
+    ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=1)
+    [plan] = ctx.ledger.list_patch_plans(status="applied")
+
+    ctx.worker.rollback(plan["plan_id"])
+    plan_row = ctx.ledger.get_patch_plan(plan["plan_id"])
+    assert plan_row is not None
+    plan_trace = ctx.ledger.get_trace(plan_row["trace_id"])
+    worker_traces = ctx.ledger.list_traces(actor="consolidation-worker")
+
+    assert plan_trace is not None
+    assert plan_trace.status == "completed"
+    assert "rolled_back" in plan_trace.outcome
+    assert any("Rolled back plan" in trace.reason_summary for trace in worker_traces)
 
 
 def test_consolidation_status_endpoint_returns_metrics(tmp_path, monkeypatch):

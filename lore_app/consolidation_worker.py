@@ -13,7 +13,15 @@ from .extraction import extract_from_captures
 from .ledger import LedgerDB, utc_now
 from .patch_planner import PatchPlanner
 from .repository import LoreRepository, infer_kind, optional_string
-from .schemas import ConsolidationRunResult, ExtractionResult, PatchPlan, RollbackResult, ToolRef, TraceEntry
+from .schemas import (
+    ConsolidationRunResult,
+    ContextRef,
+    ExtractionResult,
+    PatchPlan,
+    RollbackResult,
+    ToolRef,
+    TraceEntry,
+)
 
 
 def _content_hash(content: str) -> str:
@@ -92,6 +100,21 @@ class ConsolidationWorker:
                 auto_applied += 1
             except Exception as exc:
                 errors.append(f"apply failed for plan {plan.plan_id}: {exc}")
+                self.ledger.store_trace(
+                    TraceEntry(
+                        trace_id="",
+                        actor="consolidation-worker",
+                        reason_summary=f"Apply failed for plan {plan.plan_id}: {exc}",
+                        context_refs=[
+                            ContextRef(type="plan", id=plan.plan_id),
+                            ContextRef(type="page", id=plan.target_page_id),
+                        ],
+                        tool_refs=[ToolRef(tool="consolidation-worker", action="apply")],
+                        status="failed",
+                        outcome=f"plan_id={plan.plan_id}, error={exc}",
+                        related_ids={"plan_id": plan.plan_id, "page_id": plan.target_page_id},
+                    )
+                )
 
         candidates_extracted = 0
         captures_processed = 0
@@ -176,6 +199,30 @@ class ConsolidationWorker:
         rolled_back_at = utc_now()
         after_content = self._current_content(page_id)
         self.ledger.update_plan_status(plan_id, "rolled_back", rejected_at=rolled_back_at)
+        if plan_row.get("trace_id"):
+            plan_trace = self.ledger.get_trace(plan_row["trace_id"])
+            if plan_trace:
+                self.ledger.store_trace(
+                    plan_trace.model_copy(
+                        update={
+                            "status": "completed",
+                            "outcome": f"rolled_back: plan {plan_id}",
+                            "updated_at": utc_now(),
+                        }
+                    )
+                )
+        self.ledger.store_trace(
+            TraceEntry(
+                trace_id="",
+                actor="consolidation-worker",
+                reason_summary=f"Rolled back plan {plan_id} on page {page_id}",
+                context_refs=[ContextRef(type="plan", id=plan_id), ContextRef(type="page", id=page_id)],
+                tool_refs=[ToolRef(tool="consolidation-worker", action="rollback")],
+                status="completed",
+                outcome=f"plan_id={plan_id}, page={page_id}",
+                related_ids={"plan_id": plan_id, "page_id": page_id},
+            )
+        )
         self._record_rollback_audit(plan_id, page_id, current_content, after_content)
 
         return RollbackResult(

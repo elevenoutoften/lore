@@ -250,7 +250,7 @@ class MemoryCaptureResponse(BaseModel):
 class ContextRef(BaseModel):
     """Reference to a context entity involved in a reasoning trace."""
 
-    type: Literal["page", "capture", "task", "candidate"]
+    type: Literal["page", "capture", "task", "candidate", "plan"]
     id: str
 
 
