@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    env:
+      LORE_CONTENT_DIR: /tmp/lore-ci-pages
+      LORE_SEARCH_DB: /tmp/lore-ci-db/search.db
+      LORE_VECTOR_DB: /tmp/lore-ci-db/vectors.db
+      LORE_LEDGER_DB: /tmp/lore-ci-db/ledger.db
+      LORE_API_KEYS_DB: /tmp/lore-ci-db/api-keys.db
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+
+      - name: Run tests
+        run: |
+          rm -rf /tmp/lore-ci-db /tmp/lore-ci-pages
+          mkdir -p /tmp/lore-ci-db /tmp/lore-ci-pages
+          python -m pytest tests/ eval --timeout=60

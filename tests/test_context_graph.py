@@ -98,8 +98,8 @@ def _seed_ledger(client, capture_id: str) -> dict[str, str]:
     )
     claims = ledger.get_candidates(candidate_type="claim", limit=200)
     entities = ledger.get_candidates(candidate_type="entity", limit=200)
-    claim_id = next(candidate["candidate_id"] for candidate in claims)
-    entity_id = next(candidate["candidate_id"] for candidate in entities)
+    claim_id = next(candidate["candidate_id"] for candidate in claims if candidate["batch_id"] == "batch-context-graph")
+    entity_id = next(candidate["candidate_id"] for candidate in entities if candidate["batch_id"] == "batch-context-graph")
 
     ledger.store_trace(
         TraceEntry(

@@ -17,6 +17,7 @@ def test_epistemic_enum_values():
         "retrieved",
         "inferred",
         "assumption",
+        "hearsay",
     ]
 
 

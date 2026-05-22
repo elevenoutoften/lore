@@ -40,21 +40,120 @@ networks.
 
 ## API
 
+Core and configuration:
+
 - `GET /healthz`
+- `GET /healthz/config`
+- `GET /api/version`
+- `GET /api/config`
+- `GET /api/audit`
+- `GET /api/semantics`
+- `GET /api/catalog`
+- `GET /api/frontmatter/spec`
+
+Pages, decisions, procedures, and code references:
+
+- `GET /api/pages`
+- `GET /api/pages/{page_id}`
+- `PUT /api/pages/{page_id}`
+- `DELETE /api/pages/{page_id}`
+- `GET /api/pages/{page_id}/rendered`
+- `GET /api/pages/{page_id}/history`
+- `GET /api/pages/{page_id}/links`
+- `POST /api/pages/{page_id}/stub`
+- `GET /api/decisions`
+- `GET /api/decisions/template`
+- `GET /api/procedures`
+- `GET /api/procedures/template`
+- `GET /api/procedures/candidates`
+- `POST /api/procedures/candidates`
+- `POST /api/procedures/export`
+- `GET /api/procedures/{page_id}/export`
+- `GET /api/procedures/{page_id}`
+- `POST /api/procedures/{page_id}/validate`
+- `GET /api/code-references/{code_path}`
+- `POST /api/code-ingest/{service_id}`
+- `GET /api/code-ingest/{service_id}/inventory`
+
+Search, graph, RAG, and lint:
+
+- `GET /api/search`
+- `POST /api/search/reindex`
+- `GET /api/search/fts`
+- `GET /api/search/bm25`
+- `GET /api/links`
+- `GET /api/graph/stats`
+- `GET /api/graph/enriched`
+- `GET /api/graph/sources`
+- `GET /api/graph/analytics`
+- `GET /api/context-graph`
+- `POST /api/context-graph/neighbors`
+- `POST /api/context-graph/paths`
+- `POST /api/context-graph/explain`
+- `POST /api/rag/retrieve`
+- `POST /api/rag/retrieve-expanded`
+- `POST /api/rag/evaluate`
+- `GET /api/lint`
+- `GET /api/lint/fixable`
+- `GET /api/lint/stale`
+- `GET /api/lint/contradictions`
+
+Captures, heartbeat, distillation, extraction, and memory:
+
+- `POST /api/capture`
+- `GET /api/captures`
+- `GET /api/captures/digest`
+- `POST /api/captures/{page_id}/status`
+- `POST /api/captures/{page_id}/promote`
+- `GET /api/promotions`
+- `GET /api/heartbeat`
+- `POST /api/heartbeat/captures`
+- `POST /api/distill/daily`
+- `GET /api/distill/daily/{target_date}`
+- `POST /api/distill/promote/{target_date}`
+- `GET /api/distill/pending`
+- `POST /api/extraction/run`
+- `GET /api/extraction/status`
+- `POST /api/extraction/reset`
+- `GET /api/extraction/batches`
+- `GET /api/extraction/candidates`
+- `POST /api/memory/capture`
+- `GET /api/memory/health`
+
+Ledger, consolidation, provenance, traces, policies, and precedents:
+
+- `POST /api/ledger/reinforce`
+- `POST /api/ledger/supersede`
+- `POST /api/ledger/activate/{candidate_id}`
+- `POST /api/ledger/reject/{candidate_id}`
+- `POST /api/ledger/archive/{candidate_id}`
+- `POST /api/ledger/decay`
+- `GET /api/ledger/claims`
+- `GET /api/consolidation/status`
+- `POST /api/consolidation/run`
+- `POST /api/consolidation/rollback/{plan_id}`
+- `POST /api/consolidation/plan`
+- `GET /api/consolidation/plans`
+- `GET /api/consolidation/plans/{plan_id}`
+- `POST /api/consolidation/apply/{plan_id}`
+- `POST /api/consolidation/reject/{plan_id}`
+- `GET /api/consolidation/blocked`
+- `GET /api/provenance/{entity_type}/{entity_id}`
+- `POST /api/traces`
+- `GET /api/traces`
+- `GET /api/traces/{trace_id}`
+- `PATCH /api/traces/{trace_id}`
+- `GET /api/policies`
+- `POST /api/policies`
+- `GET /api/policies/{policy_id}`
+- `DELETE /api/policies/{policy_id}`
+- `POST /api/precedents`
+
+API key management:
+
 - `GET /api/api-keys`
 - `POST /api/api-keys`
 - `POST /api/api-keys/{api_key_id}/revoke`
-- `POST /api/capture`
-- `GET /api/captures`
-- `GET /api/links`
-- `GET /api/lint`
-- `GET /api/pages`
-- `GET /api/pages/{page_id}`
-- `GET /api/pages/{page_id}/links`
-- `GET /api/pages/{page_id}/rendered`
-- `PUT /api/pages/{page_id}`
-- `DELETE /api/pages/{page_id}`
-- `GET /api/search?q=...`
 
 Page IDs are slash-separated Markdown paths without the `.md` suffix, for
 example `projects/example-project` or `services/lore`.
@@ -88,7 +187,7 @@ memory-management loop.
 
 Lore tracks both confidence and epistemic provenance. See
 [docs/governance.md](docs/governance.md) for the epistemic status labels
-(`operator_declared`, `retrieved`, `inferred`, `assumption`) and review
+(`operator_declared`, `retrieved`, `inferred`, `assumption`, `hearsay`) and review
 guidance.
 ## Wiki links
 
@@ -125,15 +224,61 @@ security hardening, and beta release.
 
 Tools:
 
-- `lore_capture`
-- `lore_list_captures`
 - `lore_list_pages`
 - `lore_read_page`
 - `lore_search`
+- `lore_list_lanes`
+- `lore_list_actors`
+- `lore_rag_context`
+- `lore_rag_context_expanded`
 - `lore_link_graph`
+- `lore_context_graph`
+- `lore_graph_analytics`
+- `lore_context_graph_neighbors`
+- `lore_context_graph_paths`
+- `lore_explain_context`
 - `lore_page_links`
 - `lore_lint`
+- `lore_stale_pages`
+- `lore_contradiction_review`
+- `lore_frontmatter_spec`
+- `lore_list_procedures`
+- `lore_create_procedure`
+- `lore_export_procedure`
+- `lore_capture`
+- `lore_list_captures`
+- `lore_capture_digest`
+- `lore_transition_capture`
+- `lore_promote_capture`
+- `lore_promotion_audit`
+- `lore_create_stub`
+- `lore_update_metadata`
+- `lore_ingest_service`
+- `lore_create_decision`
+- `lore_create_trace`
+- `lore_get_trace`
+- `lore_get_provenance`
+- `lore_list_traces`
+- `lore_list_policies`
+- `lore_find_precedents`
+- `lore_get_policy`
 - `lore_upsert_page`
+- `lore_distill_daily`
+- `lore_get_daily`
+- `lore_promote_daily`
+- `lore_heartbeat_review`
+- `lore_heartbeat_summary`
+- `lore_heartbeat_audit`
+- `lore_find_repeated_captures`
+- `lore_propose_procedure_candidate`
+- `lore_consolidation_status`
+- `lore_consolidation_run`
+- `lore_consolidation_rollback`
+- `lore_list_patch_plans`
+- `lore_preview_patch`
+- `lore_apply_patch`
+- `lore_reject_patch`
+- `lore_review_batch`
 
 ## Demo Vault
 

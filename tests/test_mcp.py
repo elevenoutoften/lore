@@ -27,6 +27,7 @@ def test_mcp_initialize_and_tool_list(client):
         "lore_rag_context_expanded",
         "lore_link_graph",
         "lore_context_graph",
+        "lore_graph_analytics",
         "lore_context_graph_neighbors",
         "lore_context_graph_paths",
         "lore_explain_context",
@@ -514,7 +515,10 @@ def test_mcp_list_traces(client):
 
     assert listed.status_code == 200
     content = listed.json()["result"]["structuredContent"]
-    assert content["total"] == 1
-    assert len(content["traces"]) == 1
-    assert content["traces"][0]["actor"] == "mcp-list-nyx"
-    assert content["traces"][0]["related_ids"]["task_id"] == "flow_000581"
+    matching_traces = [
+        trace
+        for trace in content["traces"]
+        if trace["actor"] == "mcp-list-nyx" and trace["related_ids"].get("task_id") == "flow_000581"
+    ]
+    assert content["total"] >= 1
+    assert len(matching_traces) == 1
