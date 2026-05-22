@@ -15,7 +15,18 @@ from .ledger import LedgerDB, utc_now
 from .link_graph import LinkGraphCache
 from .repository import InvalidPageId, LoreRepository, infer_kind, normalize_page_id, optional_string
 from .route_utils import index_vectors_for_page
-from .schemas import ExtractedClaim, PatchApplyResult, PatchOperation, PatchPlan, PatchPreview, RiskLevel
+from .schemas import (
+    Alternative,
+    ContextRef,
+    ExtractedClaim,
+    PatchApplyResult,
+    PatchOperation,
+    PatchPlan,
+    PatchPreview,
+    RiskLevel,
+    ToolRef,
+    TraceEntry,
+)
 from .search_index import LoreSearchIndex
 from .rag.vector_store import VectorStore
 
@@ -100,6 +111,7 @@ class PatchPlanner:
         self._activate_candidates(plan.candidate_ids)
         self._reindex_page(plan.target_page_id)
         self._record_audit(plan, before_hash, after_hash, preview.unified_diff, before_content=preview.current_content)
+        self._complete_plan_trace(plan, f"Applied {plan.operation} to {plan.target_page_id}")
 
         return PatchApplyResult(
             plan_id=plan.plan_id,
@@ -122,6 +134,7 @@ class PatchPlanner:
         )
         for candidate_id in plan.candidate_ids:
             self.ledger.reject_candidate(candidate_id, reason=reason or "Patch plan rejected")
+        self._abandon_plan_trace(plan, f"Rejected: {reason or 'no reason given'}")
 
     def _collect_candidates(
         self,
@@ -162,11 +175,36 @@ class PatchPlanner:
         risk_level = self._assess_risk(target_page_id, operation, contradictions)
         auto_appliable = self._is_auto_appliable(target_page_id, operation, bundles, contradictions)
         target_section = self._target_section(target_page_id, operation)
+        candidate_ids = [bundle.row["candidate_id"] for bundle in bundles]
+        trace = self.ledger.store_trace(
+            TraceEntry(
+                trace_id="",
+                actor="patch-planner",
+                reason_summary=(
+                    f"Generated {operation.value} plan for {target_page_id}: "
+                    f"{risk_level.value} risk, auto_appliable={auto_appliable}"
+                ),
+                context_refs=[
+                    ContextRef(type="candidate", id=str(candidate_id))
+                    for candidate_id in candidate_ids
+                ],
+                tool_refs=[ToolRef(tool="patch-planner", action="build_plan")],
+                constraints=self._trace_constraints(target_page_id, contradictions),
+                policy_refs=self._trace_policy_refs(target_page_id, operation, auto_appliable),
+                alternatives=self._trace_alternatives(auto_appliable),
+                outcome="plan_generated",
+                related_ids={
+                    "page_id": target_page_id,
+                    "candidate_ids": ",".join(str(candidate_id) for candidate_id in candidate_ids),
+                },
+            )
+        )
 
         preview = self._preview_for(target_page_id, operation, target_section, bundles, page_content=page.content if page else "")
         plan = PatchPlan(
             plan_id=str(uuid.uuid4()),
-            candidate_ids=[bundle.row["candidate_id"] for bundle in bundles],
+            trace_id=trace.trace_id,
+            candidate_ids=candidate_ids,
             target_page_id=target_page_id,
             target_section=target_section,
             operation=operation,
@@ -177,6 +215,69 @@ class PatchPlanner:
             created_at=now,
         )
         return plan
+
+    def _complete_plan_trace(self, plan: PatchPlan, outcome: str) -> None:
+        if not plan.trace_id:
+            return
+        trace = self.ledger.get_trace(plan.trace_id)
+        if trace is None:
+            return
+        self.ledger.store_trace(
+            trace.model_copy(update={"status": "completed", "outcome": outcome, "updated_at": utc_now()})
+        )
+
+    def _abandon_plan_trace(self, plan: PatchPlan, outcome: str) -> None:
+        if not plan.trace_id:
+            return
+        trace = self.ledger.get_trace(plan.trace_id)
+        if trace is None:
+            return
+        self.ledger.store_trace(
+            trace.model_copy(update={"status": "abandoned", "outcome": outcome, "updated_at": utc_now()})
+        )
+
+    def _trace_constraints(
+        self,
+        target_page_id: str,
+        contradictions: list[dict[str, Any]],
+    ) -> list[str]:
+        constraints: list[str] = []
+        if contradictions:
+            constraints.append(f"Detected {len(contradictions)} contradicting candidate(s).")
+        kind = self._page_kind(target_page_id)
+        if kind in {"decision", "runbook"}:
+            constraints.append(f"Protected {kind} pages require review before auto-apply.")
+        return constraints
+
+    def _trace_policy_refs(
+        self,
+        target_page_id: str,
+        operation: PatchOperation,
+        auto_appliable: bool,
+    ) -> list[str]:
+        policy_refs = ["patch-planner:auto-apply"]
+        if not auto_appliable:
+            policy_refs.append("patch-planner:review-required")
+        if self._page_kind(target_page_id) in {"decision", "runbook"}:
+            policy_refs.append("patch-planner:protected-surface")
+        if operation in {PatchOperation.update_existing_fact, PatchOperation.mark_stale}:
+            policy_refs.append("patch-planner:contradiction-review")
+        return policy_refs
+
+    def _trace_alternatives(self, auto_appliable: bool) -> list[Alternative]:
+        if auto_appliable:
+            return [
+                Alternative(
+                    description="Mark as review-only",
+                    rejected_reason="Plan is auto-appliable",
+                )
+            ]
+        return [
+            Alternative(
+                description="Auto-apply the plan",
+                rejected_reason="Plan requires review",
+            )
+        ]
 
     def _load_plan(self, plan_id: str) -> PatchPlan:
         row = self.ledger.get_patch_plan(plan_id)

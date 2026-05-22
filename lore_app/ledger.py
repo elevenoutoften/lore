@@ -65,6 +65,7 @@ class LedgerDB:
         ],
         "patch_plans": [
             ("batch_id", "TEXT DEFAULT NULL"),
+            ("trace_id", "TEXT DEFAULT NULL"),
             ("candidate_ids", "TEXT NOT NULL DEFAULT '[]'"),
             ("target_page_id", "TEXT NOT NULL DEFAULT ''"),
             ("target_section", "TEXT DEFAULT NULL"),
@@ -160,6 +161,7 @@ class LedgerDB:
             CREATE TABLE IF NOT EXISTS patch_plans (
                 plan_id TEXT PRIMARY KEY,
                 batch_id TEXT,
+                trace_id TEXT DEFAULT NULL,
                 candidate_ids TEXT NOT NULL DEFAULT '[]',
                 target_page_id TEXT NOT NULL,
                 target_section TEXT,
@@ -822,14 +824,15 @@ class LedgerDB:
         self.connection.execute(
             """
             INSERT OR REPLACE INTO patch_plans (
-                plan_id, batch_id, candidate_ids, target_page_id, target_section,
+                plan_id, batch_id, trace_id, candidate_ids, target_page_id, target_section,
                 operation, content_diff, risk_level, auto_appliable, status,
                 created_at, applied_at, rejected_at, rejection_reason
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 plan.plan_id,
                 batch_id,
+                plan.trace_id,
                 json.dumps(plan.candidate_ids),
                 plan.target_page_id,
                 plan.target_section,

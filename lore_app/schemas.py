@@ -672,6 +672,7 @@ class RiskLevel(str, Enum):
 
 class PatchPlan(BaseModel):
     plan_id: str
+    trace_id: str | None = None
     candidate_ids: list[str] = Field(default_factory=list)
     target_page_id: str
     target_section: str | None = None

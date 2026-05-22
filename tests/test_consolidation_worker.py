@@ -12,6 +12,7 @@ from lore_app.ledger import LedgerDB
 from lore_app.main import create_app
 from lore_app.patch_planner import PatchPlanner
 from lore_app.repository import LoreRepository
+from lore_app.schemas import ExtractedClaim, ExtractionResult
 
 
 @dataclass
@@ -101,6 +102,44 @@ suggested_target_page: {target}
     )
 
 
+def store_claims(
+    ledger: LedgerDB,
+    batch_id: str,
+    capture_ids: list[str],
+    claims: list[ExtractedClaim],
+) -> None:
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id=batch_id,
+            processed_at="2026-05-10T00:00:00+00:00",
+            source_capture_ids=capture_ids,
+            claims=claims,
+            entities=[],
+            edges=[],
+            invalidations=[],
+        )
+    )
+
+
+def make_claim(
+    subject: str,
+    obj: str,
+    *,
+    source_page_ids: list[str] | None = None,
+    confidence: str = "high",
+) -> ExtractedClaim:
+    return ExtractedClaim(
+        subject=subject,
+        predicate="states",
+        object=obj,
+        confidence=confidence,
+        actor="nyx",
+        lane="project",
+        observed_at="2026-05-10T00:00:00+00:00",
+        source_page_ids=source_page_ids or [],
+    )
+
+
 def test_run_dry_run_extracts_and_plans_without_applying(tmp_path, monkeypatch):
     ctx = make_context(tmp_path, monkeypatch)
     write_page(ctx.repo, "services/lore")
@@ -131,6 +170,91 @@ def test_run_auto_applies_safe_plans(tmp_path, monkeypatch):
     assert page is not None
     assert "Lore auto-applies low risk facts." in page.content
     assert ctx.ledger.list_patch_plans(status="applied")
+
+    [run_trace] = ctx.ledger.list_traces(actor="consolidation-worker")
+    assert run_trace.status == "completed"
+    assert run_trace.tool_refs[0].tool == "consolidation-worker"
+    assert run_trace.outcome == f"batch_id={result.batch_id}"
+
+
+def test_plan_batch_creates_trace_for_each_plan(tmp_path, monkeypatch):
+    ctx = make_context(tmp_path, monkeypatch)
+    write_page(ctx.repo, "services/lore-a")
+    write_page(ctx.repo, "services/lore-b")
+    add_capture(ctx.repo, "inbox/2026-05-10/trace-a", target="services/lore-a", summary="Lore A has traces.")
+    add_capture(ctx.repo, "inbox/2026-05-10/trace-b", target="services/lore-b", summary="Lore B has traces.")
+    store_claims(
+        ctx.ledger,
+        "batch-traces",
+        ["inbox/2026-05-10/trace-a", "inbox/2026-05-10/trace-b"],
+        [
+            make_claim("services/lore-a", "Lore A has traces", source_page_ids=["services/lore-a"]),
+            make_claim("services/lore-b", "Lore B has traces", source_page_ids=["services/lore-b"]),
+        ],
+    )
+
+    plans = ctx.planner.plan_batch(batch_id="batch-traces")
+    traces = ctx.ledger.list_traces(actor="patch-planner")
+    traces_by_id = {trace.trace_id: trace for trace in traces}
+
+    assert len(plans) == 2
+    assert all(plan.trace_id for plan in plans)
+    assert {plan.trace_id for plan in plans} <= set(traces_by_id)
+    for plan in plans:
+        trace = traces_by_id[plan.trace_id]
+        assert trace.status == "active"
+        assert trace.outcome == "plan_generated"
+        assert trace.related_ids["page_id"] == plan.target_page_id
+        assert trace.related_ids["candidate_ids"] == ",".join(plan.candidate_ids)
+        assert [ref.id for ref in trace.context_refs] == plan.candidate_ids
+        assert f"{plan.risk_level.value} risk" in trace.reason_summary
+        assert f"auto_appliable={plan.auto_appliable}" in trace.reason_summary
+
+
+def test_apply_and_reject_update_plan_trace_status(tmp_path, monkeypatch):
+    ctx = make_context(tmp_path, monkeypatch)
+    write_page(ctx.repo, "services/lore")
+    write_page(ctx.repo, "decisions/agent-routing", kind="decision")
+    add_capture(ctx.repo, "inbox/2026-05-10/trace-apply", target="services/lore", summary="Lore applies traces.")
+    add_capture(
+        ctx.repo,
+        "inbox/2026-05-10/trace-reject",
+        target="decisions/agent-routing",
+        summary="Decision traces need review.",
+    )
+    store_claims(
+        ctx.ledger,
+        "batch-trace-apply",
+        ["inbox/2026-05-10/trace-apply"],
+        [make_claim("services/lore", "Lore applies traces", source_page_ids=["services/lore"])],
+    )
+    store_claims(
+        ctx.ledger,
+        "batch-trace-reject",
+        ["inbox/2026-05-10/trace-reject"],
+        [
+            make_claim(
+                "decisions/agent-routing",
+                "Decision traces need review",
+                source_page_ids=["decisions/agent-routing"],
+            )
+        ],
+    )
+
+    [apply_plan] = ctx.planner.plan_batch(batch_id="batch-trace-apply")
+    ctx.planner.apply_plan(apply_plan.plan_id)
+    apply_trace = ctx.ledger.get_trace(apply_plan.trace_id)
+
+    [reject_plan] = ctx.planner.plan_batch(batch_id="batch-trace-reject")
+    ctx.planner.reject_plan(reject_plan.plan_id, reason="manual review required")
+    reject_trace = ctx.ledger.get_trace(reject_plan.trace_id)
+
+    assert apply_trace is not None
+    assert apply_trace.status == "completed"
+    assert apply_trace.outcome == f"Applied {apply_plan.operation} to {apply_plan.target_page_id}"
+    assert reject_trace is not None
+    assert reject_trace.status == "abandoned"
+    assert reject_trace.outcome == "Rejected: manual review required"
 
 
 def test_run_respects_max_auto_apply_limit(tmp_path, monkeypatch):

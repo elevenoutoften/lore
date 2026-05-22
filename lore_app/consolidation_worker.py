@@ -11,7 +11,7 @@ from .extraction import extract_from_captures
 from .ledger import LedgerDB, utc_now
 from .patch_planner import PatchPlanner
 from .repository import LoreRepository, infer_kind, optional_string
-from .schemas import ConsolidationRunResult, PatchPlan, RollbackResult
+from .schemas import ConsolidationRunResult, PatchPlan, RollbackResult, ToolRef, TraceEntry
 
 
 def _content_hash(content: str) -> str:
@@ -110,6 +110,22 @@ class ConsolidationWorker:
             dry_run=dry_run,
         )
         self.ledger.store_consolidation_run(result, status="completed" if not errors else "completed_with_errors")
+        self.ledger.store_trace(
+            TraceEntry(
+                trace_id="",
+                actor="consolidation-worker",
+                reason_summary=(
+                    f"Consolidation run: {result.captures_processed} captures, "
+                    f"{result.plans_generated} plans, {result.auto_applied} auto-applied, "
+                    f"{result.review_required} review-required"
+                ),
+                context_refs=[],
+                tool_refs=[ToolRef(tool="consolidation-worker", action="run")],
+                status="completed",
+                outcome=f"batch_id={result.batch_id}",
+                related_ids={"task_id": f"consolidation-{result.batch_id}"},
+            )
+        )
         return result
 
     def rollback(self, plan_id: str) -> RollbackResult:
