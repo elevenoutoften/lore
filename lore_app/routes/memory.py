@@ -5,13 +5,25 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 
 from ..capture import capture_memory
-from ..deps import get_audit_log, get_graph_cache, get_metrics, get_repo, get_search_index, get_vector_store
+from ..deps import (
+    get_audit_log,
+    get_graph_cache,
+    get_ledger_db,
+    get_lint_config,
+    get_metrics,
+    get_repo,
+    get_search_index,
+    get_vector_store,
+)
+from ..heartbeat import heartbeat_review
+from ..ledger import LedgerDB
 from ..link_graph import LinkGraphCache
+from ..lint_config import LintConfig
 from ..observability import MetricsCollector
 from ..rag.vector_store import VectorStore
 from ..repository import InvalidPageId, LoreRepository
 from ..route_utils import index_vectors_for_page, record_audit, validate_content
-from ..schemas import CaptureRequest, MemoryCaptureRequest, MemoryCaptureResponse
+from ..schemas import CaptureRequest, MemoryCaptureRequest, MemoryCaptureResponse, MemoryHealthResponse
 from ..search_index import LoreSearchIndex
 
 router = APIRouter()
@@ -85,4 +97,39 @@ def api_memory_capture(
     return MemoryCaptureResponse(
         capture_id=page.id,
         timestamp=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+@router.get("/api/memory/health", response_model=MemoryHealthResponse)
+def api_memory_health(
+    repo: LoreRepository = Depends(get_repo),
+    ledger: LedgerDB = Depends(get_ledger_db),
+    lint_config: LintConfig = Depends(get_lint_config),
+    graph_cache: LinkGraphCache = Depends(get_graph_cache),
+):
+    consolidation = ledger.get_consolidation_status()
+    heartbeat = heartbeat_review(repo, config=lint_config, graph=graph_cache.get(repo))
+    plans_by_status = consolidation.get("plans_by_status") or {}
+    last_run = consolidation.get("last_run") or {}
+    stuck_runs = consolidation.get("stuck_runs") or []
+
+    pending_captures = sum(1 for page in repo.list_pages(kind="capture") if page.status == "draft")
+    review_required = int(plans_by_status.get("pending", 0)) + int(plans_by_status.get("review", 0))
+    failed_runs = len(stuck_runs)
+    if str(last_run.get("status") or "") in {"completed_with_errors", "failed"}:
+        failed_runs += 1
+
+    return MemoryHealthResponse(
+        pending_captures=pending_captures,
+        review_required=review_required,
+        rejected_plans=int(plans_by_status.get("rejected", 0)),
+        failed_runs=failed_runs,
+        last_consolidation=last_run.get("completed_at") or last_run.get("started_at"),
+        stale_pages=heartbeat.stale_pages.count,
+        contradictions=heartbeat.contradictions.count,
+        low_confidence=heartbeat.low_confidence.count,
+        expired_facts=heartbeat.expired_facts.count,
+        missing_metadata=heartbeat.missing_metadata.count,
+        procedure_issues=heartbeat.procedure_issues.count,
+        total_issues=heartbeat.total_issues,
     )

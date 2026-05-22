@@ -17,6 +17,7 @@
 
     .heartbeat-header,
     .category-section,
+    .consolidation-section,
     .empty-state {
       border: 1px solid var(--line);
       border-radius: var(--radius);
@@ -74,6 +75,38 @@
     .category-section {
       overflow: hidden;
       box-shadow: none;
+    }
+
+    .consolidation-section {
+      padding: 1rem;
+      box-shadow: none;
+    }
+
+    .consolidation-grid {
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      margin-top: 0.9rem;
+    }
+
+    .consolidation-card {
+      display: grid;
+      gap: 0.35rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+      padding: 0.85rem 1rem;
+    }
+
+    .consolidation-card__label {
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+    }
+
+    .consolidation-card__value {
+      color: var(--text);
+      font-size: 1rem;
     }
 
     .category-section summary {
@@ -285,7 +318,67 @@
         {% endfor %}
       </section>
       {% endif %}
+
+      <section class="consolidation-section" aria-labelledby="consolidation-title">
+        <div class="heartbeat-title">
+          <h2 id="consolidation-title">Consolidation</h2>
+          <span class="heartbeat-count" id="memory-health-total">{{ result.total_issues }} review issues</span>
+        </div>
+        <div class="consolidation-grid">
+          <article class="consolidation-card">
+            <span class="consolidation-card__label">Last consolidation run</span>
+            <strong class="consolidation-card__value" id="memory-health-last-consolidation">Loading...</strong>
+          </article>
+          <article class="consolidation-card">
+            <span class="consolidation-card__label">Pending captures</span>
+            <strong class="consolidation-card__value" id="memory-health-pending-captures">Loading...</strong>
+          </article>
+          <article class="consolidation-card">
+            <span class="consolidation-card__label">Review-required plans</span>
+            <strong class="consolidation-card__value" id="memory-health-review-required">Loading...</strong>
+          </article>
+          <article class="consolidation-card">
+            <span class="consolidation-card__label">Stuck/failed runs</span>
+            <strong class="consolidation-card__value" id="memory-health-failed-runs">Loading...</strong>
+          </article>
+          <article class="consolidation-card">
+            <span class="consolidation-card__label">Rejected plans</span>
+            <strong class="consolidation-card__value" id="memory-health-rejected-plans">Loading...</strong>
+          </article>
+        </div>
+      </section>
     </main>
   </div>
+  <script nonce="{{ csp_nonce }}">
+    const renderValue = (id, value) => {
+      const node = document.getElementById(id);
+      if (node) {
+        node.textContent = value;
+      }
+    };
+
+    fetch("/api/memory/health", { headers: { Accept: "application/json" } })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((payload) => {
+        renderValue("memory-health-total", `${payload.total_issues} review issues`);
+        renderValue("memory-health-last-consolidation", payload.last_consolidation || "Never");
+        renderValue("memory-health-pending-captures", String(payload.pending_captures ?? 0));
+        renderValue("memory-health-review-required", String(payload.review_required ?? 0));
+        renderValue("memory-health-failed-runs", String(payload.failed_runs ?? 0));
+        renderValue("memory-health-rejected-plans", String(payload.rejected_plans ?? 0));
+      })
+      .catch(() => {
+        renderValue("memory-health-last-consolidation", "Unavailable");
+        renderValue("memory-health-pending-captures", "Unavailable");
+        renderValue("memory-health-review-required", "Unavailable");
+        renderValue("memory-health-failed-runs", "Unavailable");
+        renderValue("memory-health-rejected-plans", "Unavailable");
+      });
+  </script>
 </body>
 </html>

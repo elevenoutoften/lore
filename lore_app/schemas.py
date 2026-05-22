@@ -407,6 +407,23 @@ class HeartbeatResponse(BaseModel):
     procedure_issues: HeartbeatCategory
 
 
+class MemoryHealthResponse(BaseModel):
+    """Memory health surface: consolidation freshness and review signals."""
+
+    pending_captures: int = 0
+    review_required: int = 0
+    rejected_plans: int = 0
+    failed_runs: int = 0
+    last_consolidation: str | None = None
+    stale_pages: int = 0
+    contradictions: int = 0
+    low_confidence: int = 0
+    expired_facts: int = 0
+    missing_metadata: int = 0
+    procedure_issues: int = 0
+    total_issues: int = 0
+
+
 class RepeatedCaptureGroup(BaseModel):
     """A group of captures with similar content suggesting a repeated procedure."""
 
