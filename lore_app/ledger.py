@@ -22,6 +22,7 @@ from .schemas import (
     PolicyRule,
     TraceEntry,
 )
+from .provenance import merge_trace_provenance
 
 CONFIDENCE_ORDER = {"unknown": 0, "low": 1, "medium": 2, "high": 3}
 SEED_POLICIES = [
@@ -156,6 +157,7 @@ class LedgerDB:
             ("constraints", "TEXT NOT NULL DEFAULT '[]'"),
             ("policy_refs", "TEXT NOT NULL DEFAULT '[]'"),
             ("alternatives", "TEXT NOT NULL DEFAULT '[]'"),
+            ("provenance", "TEXT NOT NULL DEFAULT '{}'"),
             ("outcome", "TEXT NOT NULL DEFAULT ''"),
             ("related_ids", "TEXT NOT NULL DEFAULT '{}'"),
             ("created_at", "TEXT NOT NULL DEFAULT ''"),
@@ -270,6 +272,7 @@ class LedgerDB:
                 constraints TEXT NOT NULL DEFAULT '[]',
                 policy_refs TEXT NOT NULL DEFAULT '[]',
                 alternatives TEXT NOT NULL DEFAULT '[]',
+                provenance TEXT NOT NULL DEFAULT '{}',
                 outcome TEXT NOT NULL DEFAULT '',
                 related_ids TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL DEFAULT '',
@@ -1153,6 +1156,7 @@ class LedgerDB:
         stored = trace.model_copy(
             update={
                 "trace_id": trace_id,
+                "provenance": merge_trace_provenance(trace),
                 "created_at": created_at,
                 "updated_at": updated_at,
             }
@@ -1163,8 +1167,8 @@ class LedgerDB:
             INSERT OR REPLACE INTO reasoning_traces (
                 trace_id, parent_trace_id, actor, reason_summary, status,
                 context_refs, tool_refs, constraints, policy_refs, alternatives,
-                outcome, related_ids, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                provenance, outcome, related_ids, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload["trace_id"],
@@ -1177,6 +1181,7 @@ class LedgerDB:
                 json.dumps(payload["constraints"]),
                 json.dumps(payload["policy_refs"]),
                 json.dumps(payload["alternatives"]),
+                json.dumps(payload["provenance"] or {}),
                 payload["outcome"],
                 json.dumps(payload["related_ids"]),
                 payload["created_at"],
@@ -1400,6 +1405,7 @@ def _decode_trace_row(row: sqlite3.Row) -> TraceEntry:
         ("constraints", []),
         ("policy_refs", []),
         ("alternatives", []),
+        ("provenance", {}),
         ("related_ids", {}),
     ):
         try:

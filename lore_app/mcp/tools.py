@@ -11,6 +11,7 @@ from ..procedure_candidate import find_repeated_captures, propose_procedure_cand
 from ..code_ingest.ingest_service import ingest_service_code
 from ..frontmatter import frontmatter_scalar, update_frontmatter
 from ..frontmatter_spec import get_frontmatter_spec
+from ..provenance import get_capture_provenance, get_page_provenance
 from ..link_graph import build_link_graph, page_links
 from ..lint import lint_contradiction_review, lint_lore, lint_stale_queue
 from ..lint_config import LintConfig
@@ -289,6 +290,7 @@ TOOLS: list[dict[str, Any]] = [
                     "items": {"type": "string"},
                     "description": "HTTP/HTTPS URLs supporting the observation.",
                 },
+                "provenance": {"type": "object", "description": "Unified provenance references."},
                 "evidence": {
                     "type": "string",
                     "description": "Supporting evidence text behind the observation.",
@@ -524,6 +526,7 @@ TOOLS: list[dict[str, Any]] = [
                         "decision_id": {"type": "string"},
                     },
                 },
+                "provenance": {"type": "object", "description": "Unified provenance references."},
             },
             "required": ["actor", "reason_summary"],
         },
@@ -537,6 +540,18 @@ TOOLS: list[dict[str, Any]] = [
                 "trace_id": {"type": "string", "description": "The trace ID to retrieve."},
             },
             "required": ["trace_id"],
+        },
+    },
+    {
+        "name": "lore_get_provenance",
+        "description": "Return provenance references for a capture, trace, or page.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "entity_type": {"type": "string", "enum": ["capture", "trace", "page"]},
+                "entity_id": {"type": "string"},
+            },
+            "required": ["entity_type", "entity_id"],
         },
     },
     {
@@ -1152,6 +1167,30 @@ This page was auto-created as a stub. Replace with actual content.
         if trace is None:
             return tool_result({"trace_id": trace_id}, f"Trace not found: {trace_id}", is_error=True)
         return tool_result(trace.model_dump(mode="json"), f"Retrieved reasoning trace: {trace.trace_id}")
+
+    if name == "lore_get_provenance":
+        entity_type = require_string(arguments.get("entity_type"), "entity_type")
+        entity_id = require_string(arguments.get("entity_id"), "entity_id")
+        if entity_type not in {"capture", "trace", "page"}:
+            raise JsonRpcError(-32602, "entity_type must be one of: capture, trace, page")
+        if entity_type == "capture":
+            provenance = get_capture_provenance(repo, entity_id)
+            if provenance is None:
+                return tool_result({"entity_type": entity_type, "entity_id": entity_id}, f"Capture not found: {entity_id}", is_error=True)
+        elif entity_type == "trace":
+            ledger = require_service(ledger_db, "ledger database")
+            trace = ledger.get_trace(entity_id)
+            if trace is None:
+                return tool_result({"entity_type": entity_type, "entity_id": entity_id}, f"Trace not found: {entity_id}", is_error=True)
+            provenance = trace.provenance
+        else:
+            provenance = get_page_provenance(repo, entity_id)
+        payload = {
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "provenance": (provenance.model_dump(mode="json") if provenance is not None else {}),
+        }
+        return tool_result(payload, f"Retrieved provenance for {entity_type}: {entity_id}")
 
     if name == "lore_list_traces":
         ledger = require_service(ledger_db, "ledger database")

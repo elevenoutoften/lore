@@ -194,6 +194,29 @@ class ContradictionReviewResponse(BaseModel):
     contradictions: list[ContradictionMatch] = Field(default_factory=list)
 
 
+class ProvenanceRef(BaseModel):
+    """A unified provenance reference linking a capture/trace/output to its influences."""
+
+    page_ids: list[str] = Field(default_factory=list, description="Lore page IDs that informed this output.")
+    capture_ids: list[str] = Field(default_factory=list, description="Capture page IDs that contributed.")
+    trace_ids: list[str] = Field(default_factory=list, description="Reasoning trace IDs.")
+    policy_ids: list[str] = Field(default_factory=list, description="Policy IDs that were evaluated.")
+    candidate_ids: list[str] = Field(default_factory=list, description="Extraction candidate IDs.")
+    task_ids: list[str] = Field(default_factory=list, description="Flow or external task IDs.")
+    source_paths: list[str] = Field(default_factory=list, description="Repo or file paths.")
+    source_urls: list[str] = Field(default_factory=list, description="HTTP/HTTPS URLs.")
+    source_task: str | None = Field(default=None, description="Legacy source task identifier.")
+    actor: str | None = Field(default=None, description="Agent that produced this output.")
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list, description="Tool calls made during production.")
+    constraints: list[str] = Field(default_factory=list, description="Constraints that applied.")
+
+
+class ProvenanceResponse(BaseModel):
+    entity_type: str
+    entity_id: str
+    provenance: ProvenanceRef
+
+
 class CaptureRequest(BaseModel):
     observation: str = Field(min_length=1)
     title: str | None = None
@@ -222,6 +245,7 @@ class CaptureRequest(BaseModel):
     )
     constraints: list[str] = Field(default_factory=list, description="Constraints that applied during capture.")
     policies_applied: list[str] = Field(default_factory=list, description="Policy IDs that were enforced.")
+    provenance: ProvenanceRef | None = Field(default=None, description="Unified provenance references.")
 
 
 class MemoryCaptureRequest(BaseModel):
@@ -282,6 +306,7 @@ class TraceCreateRequest(BaseModel):
     constraints: list[str] = Field(default_factory=list)
     policy_refs: list[str] = Field(default_factory=list)
     alternatives: list[Alternative] = Field(default_factory=list)
+    provenance: ProvenanceRef | None = Field(default=None, description="Unified provenance references.")
     outcome: str = ""
     related_ids: dict[str, str] = Field(default_factory=dict)
 
@@ -296,6 +321,7 @@ class TraceUpdateRequest(BaseModel):
     constraints: list[str] | None = None
     policy_refs: list[str] | None = None
     alternatives: list[Alternative] | None = None
+    provenance: ProvenanceRef | None = None
     outcome: str | None = None
     related_ids: dict[str, str] | None = None
 
@@ -313,6 +339,7 @@ class TraceEntry(BaseModel):
     constraints: list[str] = Field(default_factory=list)
     policy_refs: list[str] = Field(default_factory=list)
     alternatives: list[Alternative] = Field(default_factory=list)
+    provenance: ProvenanceRef | None = Field(default=None, description="Unified provenance references.")
     outcome: str = ""
     related_ids: dict[str, str] = Field(default_factory=dict)
     created_at: str = ""

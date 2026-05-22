@@ -15,6 +15,7 @@ from .metadata import router as metadata_router
 from .pages import router as pages_router
 from .policies import router as policies_router
 from .procedures import router as procedures_router
+from .provenance import router as provenance_router
 from .rag import router as rag_router
 from .ledger import ledger_router
 from .search import router as search_router
@@ -37,6 +38,7 @@ __all__ = [
     "pages_router",
     "policies_router",
     "procedures_router",
+    "provenance_router",
     "rag_router",
     "search_router",
     "trace_router",

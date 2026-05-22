@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 from .frontmatter import frontmatter_scalar
+from .provenance import merge_capture_provenance
 from .repository import InvalidPageId, LoreRepository, infer_kind, normalize_page_id, optional_string, string_list
 from .schemas import (
     CaptureDigestGroup,
@@ -60,6 +61,7 @@ def capture_memory(repo: LoreRepository, payload: CaptureRequest) -> PageDetail:
     suggested_target_page = normalize_optional_page_id(payload.suggested_target_page)
     page_id = unique_page_id(repo, base_page_id)
     effective_source_task = optional_string(payload.source_task) or optional_string(payload.task_id)
+    provenance = merge_capture_provenance(payload, related_pages=related_pages)
     content = build_capture_markdown(
         title=title,
         observation=payload.observation,
@@ -83,6 +85,7 @@ def capture_memory(repo: LoreRepository, payload: CaptureRequest) -> PageDetail:
         tool_calls=payload.tool_calls or None,
         constraints=string_list(payload.constraints) or None,
         policies_applied=string_list(payload.policies_applied) or None,
+        provenance=provenance.model_dump(mode="json"),
     )
     return repo.upsert_page(page_id, content)
 
@@ -317,6 +320,7 @@ def build_capture_markdown(
     tool_calls: list[dict[str, Any]] | None = None,
     constraints: list[str] | None = None,
     policies_applied: list[str] | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> str:
     effective_source_task = source_task or task_id
     frontmatter = [
@@ -372,6 +376,8 @@ def build_capture_markdown(
     if policies_applied:
         frontmatter.append("policies_applied:")
         frontmatter.extend(f"  - {frontmatter_scalar(policy)}" for policy in policies_applied)
+    if provenance is not None:
+        frontmatter.append(f"provenance: {json.dumps(provenance, separators=(',', ':'))}")
     frontmatter.append("---")
 
     body = [
