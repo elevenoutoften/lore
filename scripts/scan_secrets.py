@@ -6,6 +6,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -24,6 +25,8 @@ SECRET_ASSIGNMENT_RE = re.compile(
 PEM_KEY_RE = re.compile(
     r"-----BEGIN\s+(?:RSA\s+PRIVATE\s+KEY|EC\s+PRIVATE\s+KEY|OPENSSH\s+PRIVATE\s+KEY|PRIVATE\s+KEY)-----"
 )
+IPV4_RE = re.compile(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b")
+URL_RE = re.compile(r"\b(https?://[^\s<>'\"]+)", re.IGNORECASE)
 
 CODE_PATTERNS = (
     re.compile(r"^\s*(?:from|import)\b"),
@@ -41,6 +44,7 @@ GIT_GREP_PATTERN_CATEGORIES = {
         r"copyright|[0-9]{3}[-. ][0-9]{3}[-. ][0-9]{4}|"
         r"GPUBox|ExampleProject|Example Project|gpubox"
     ),
+    "endpoints": r"[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|https?://",
     "code": r"^[[:space:]]*(from|import)[[:space:]]|@[A-Za-z0-9_]{3,}",
 }
 
@@ -69,6 +73,9 @@ BINARY_SUFFIXES = {
 FORBIDDEN_FILE_RE = re.compile(r"(^|/)(?:\.env|auth\.json|credentials\.json|[^/]+\.(?:pem|key))$", re.IGNORECASE)
 SAFE_EMAIL_DOMAINS = {"example.com", "example.org", "example.net", "localhost"}
 SAFE_EMAIL_ADDRESSES = {"git@github.com"}
+SAFE_IPS = {"127.0.0.1", "0.0.0.0"}
+SAFE_URL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "example.com", "example.org", "example.net"}
+SAFE_URL_SUFFIXES = (".test", ".example", ".example.com", ".example.org", ".invalid")
 PLACEHOLDER_VALUES = {
     "",
     "changeme",
@@ -223,6 +230,42 @@ def looks_like_type_annotation(line: str) -> bool:
     return any(pattern.search(line) for pattern in CODE_PATTERNS)
 
 
+def is_safe_ip(ip: str) -> bool:
+    if ip in SAFE_IPS:
+        return True
+    try:
+        parts = [int(part) for part in ip.split(".")]
+    except ValueError:
+        return False
+    if len(parts) != 4 or any(part < 0 or part > 255 for part in parts):
+        return True
+
+    o1, o2 = parts[0], parts[1]
+    if o1 == 10:
+        return True
+    if o1 == 172 and 16 <= o2 <= 31:
+        return True
+    if o1 == 192 and o2 == 168:
+        return True
+    if o1 == 127:
+        return True
+    if o1 == 169 and o2 == 254:
+        return True
+    return False
+
+
+def is_safe_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    hostname = (parsed.hostname or "").lower()
+    return (
+        hostname in SAFE_URL_HOSTS
+        or any(hostname.endswith(suffix) for suffix in SAFE_URL_SUFFIXES)
+    )
+
+
 def add_finding(
     findings: list[Finding],
     *,
@@ -337,6 +380,30 @@ def scan_content(path: str, content: str, baseline: list[BaselineRule] | None = 
                     line_number=line_number,
                     pattern="internal code name",
                     match=match.group(0),
+                    line=line,
+                )
+
+        for match in IPV4_RE.finditer(line):
+            ip = match.group(1)
+            if not is_safe_ip(ip):
+                add_finding(
+                    findings,
+                    path=path,
+                    line_number=line_number,
+                    pattern="public IP address",
+                    match=ip,
+                    line=line,
+                )
+
+        for match in URL_RE.finditer(line):
+            url = match.group(1).rstrip("`).,;]}")
+            if not is_safe_url(url):
+                add_finding(
+                    findings,
+                    path=path,
+                    line_number=line_number,
+                    pattern="real endpoint URL",
+                    match=url,
                     line=line,
                 )
 

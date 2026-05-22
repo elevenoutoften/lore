@@ -53,3 +53,46 @@ def test_scan_secrets_detects_env_file():
     assert FORBIDDEN_FILE_RE.search(".env")
     assert FORBIDDEN_FILE_RE.search("config/.env")
     assert should_skip_path(".env") is False
+
+
+def test_scan_secrets_detects_public_ip():
+    """Scanner catches public IP addresses."""
+    findings = scan_content("x.txt", "server http://203.0.113.10/api and 8.8.8.8")
+    ips = [f for f in findings if f.pattern == "public IP address"]
+    assert len(ips) >= 1
+    assert any(f.match == "203.0.113.10" for f in ips)
+    assert any(f.match == "8.8.8.8" for f in ips)
+
+
+def test_scan_secrets_allows_private_ip():
+    """Scanner allows private/local IPs."""
+    findings = scan_content("x.txt", "connect to 10.0.0.1 or 192.168.1.1 or 127.0.0.1")
+    ips = [f for f in findings if f.pattern == "public IP address"]
+    assert len(ips) == 0
+
+
+def test_scan_secrets_allows_0000_ip():
+    """0.0.0.0 is a safe IP."""
+    findings = scan_content("x.txt", "bind to 0.0.0.0")
+    ips = [f for f in findings if f.pattern == "public IP address"]
+    assert len(ips) == 0
+
+
+def test_scan_secrets_detects_real_endpoint_url():
+    """Scanner catches real endpoint URLs."""
+    findings = scan_content("x.txt", "fetch('https://api.real-service.io/v1/endpoint')")
+    assert any(f.pattern == "real endpoint URL" for f in findings)
+
+
+def test_scan_secrets_allows_example_urls():
+    """Scanner allows example/test URLs."""
+    findings = scan_content("x.txt", "see http://example.com/docs and http://localhost:8000")
+    urls = [f for f in findings if f.pattern == "real endpoint URL"]
+    assert len(urls) == 0
+
+
+def test_scan_secrets_allows_test_domain_urls():
+    """Scanner allows .test and .example TLDs."""
+    findings = scan_content("x.txt", "https://myapp.test and https://docs.example")
+    urls = [f for f in findings if f.pattern == "real endpoint URL"]
+    assert len(urls) == 0
