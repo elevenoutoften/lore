@@ -116,6 +116,12 @@ verified against the release candidate build, not only local development code.
   pytest tests/ eval
   ```
 
+- [ ] Capture-to-durable memory regression passes:
+
+  ```bash
+  rm -rf /tmp/lore-test-db /tmp/lore-test-pages && LORE_CONTENT_DIR=/tmp/lore-test-pages LORE_SEARCH_DB=/tmp/lore-test-db/search.db LORE_LEDGER_DB=/tmp/lore-test-db/ledger.db LORE_VECTOR_DB=/tmp/lore-test-db/vectors.db LORE_API_KEYS_DB=/tmp/lore-test-db/api_keys.db uv run --extra test python -m pytest tests/test_capture_to_durable.py -v --timeout=120
+  ```
+
 - [ ] Test output has no warnings, deprecations, resource leaks, or skipped tests
   that are unexpected for the release.
 - [ ] Performance benchmarks are within release thresholds for page CRUD, search,
