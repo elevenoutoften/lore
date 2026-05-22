@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from lore_app.capture import capture_memory
 from lore_app.schemas import CaptureRequest, ContextRef, ProvenanceRef, TraceEntry
 
@@ -129,6 +131,137 @@ def test_no_results_graceful(client):
 
     assert response.status_code == 200, response.text
     assert response.json() == {"matches": [], "total": 0}
+
+
+def test_trace_situation_type_filter_excludes_non_matching(client, monkeypatch):
+    monkeypatch.setattr(
+        client.app.state.ledger_db,
+        "list_traces",
+        lambda limit=500: [
+            SimpleNamespace(
+                trace_id="trace-routing-match",
+                actor="nyx",
+                reason_summary="Resolved routing review after validating the deployment path.",
+                status="completed",
+                policy_refs=[],
+                outcome="completed",
+                related_ids={},
+                provenance=SimpleNamespace(task_ids=[], page_ids=[], capture_ids=[], lanes=[]),
+            ),
+            SimpleNamespace(
+                trace_id="trace-routing-miss",
+                actor="nyx",
+                reason_summary="Closed an incident retro with no review required.",
+                status="completed",
+                policy_refs=[],
+                outcome="completed",
+                related_ids={},
+                provenance=SimpleNamespace(task_ids=[], page_ids=[], capture_ids=[], lanes=[]),
+            ),
+        ],
+    )
+
+    response = client.post("/api/precedents", json={"situation_type": "routing review", "limit": 10})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [match["id"] for match in body["matches"]] == ["trace:trace-routing-match"]
+    assert body["total"] == 1
+
+
+def test_trace_situation_type_with_actor_and_lane_filters(client, monkeypatch):
+    monkeypatch.setattr(
+        client.app.state.ledger_db,
+        "list_traces",
+        lambda limit=500: [
+            SimpleNamespace(
+                trace_id="trace-routing-ops-nyx",
+                actor="nyx",
+                reason_summary="Completed routing review for the ops rollout.",
+                status="completed",
+                policy_refs=[],
+                outcome="completed",
+                related_ids={},
+                provenance=SimpleNamespace(task_ids=[], page_ids=[], capture_ids=[], lanes=["ops"]),
+            ),
+            SimpleNamespace(
+                trace_id="trace-routing-ops-other",
+                actor="mira",
+                reason_summary="Completed routing review for the ops rollout.",
+                status="completed",
+                policy_refs=[],
+                outcome="completed",
+                related_ids={},
+                provenance=SimpleNamespace(task_ids=[], page_ids=[], capture_ids=[], lanes=["ops"]),
+            ),
+            SimpleNamespace(
+                trace_id="trace-routing-project-nyx",
+                actor="nyx",
+                reason_summary="Completed routing review for the project rollout.",
+                status="completed",
+                policy_refs=[],
+                outcome="completed",
+                related_ids={},
+                provenance=SimpleNamespace(task_ids=[], page_ids=[], capture_ids=[], lanes=["project"]),
+            ),
+        ],
+    )
+
+    response = client.post(
+        "/api/precedents",
+        json={"situation_type": "routing review", "actor": "nyx", "lane": "ops", "limit": 10},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [match["id"] for match in body["matches"]] == ["trace:trace-routing-ops-nyx"]
+    assert body["total"] == 1
+
+
+def test_total_reports_full_match_count_before_limit(client, monkeypatch):
+    monkeypatch.setattr(
+        client.app.state.ledger_db,
+        "list_traces",
+        lambda limit=500: [
+            SimpleNamespace(
+                trace_id="trace-routing-1",
+                actor="nyx",
+                reason_summary="Routing review for deployment one.",
+                status="completed",
+                policy_refs=[],
+                outcome="completed",
+                related_ids={},
+                provenance=SimpleNamespace(task_ids=[], page_ids=[], capture_ids=[], lanes=[]),
+            ),
+            SimpleNamespace(
+                trace_id="trace-routing-2",
+                actor="nyx",
+                reason_summary="Routing review for deployment two.",
+                status="completed",
+                policy_refs=[],
+                outcome="completed",
+                related_ids={},
+                provenance=SimpleNamespace(task_ids=[], page_ids=[], capture_ids=[], lanes=[]),
+            ),
+            SimpleNamespace(
+                trace_id="trace-routing-3",
+                actor="nyx",
+                reason_summary="Routing review for deployment three.",
+                status="completed",
+                policy_refs=[],
+                outcome="completed",
+                related_ids={},
+                provenance=SimpleNamespace(task_ids=[], page_ids=[], capture_ids=[], lanes=[]),
+            ),
+        ],
+    )
+
+    response = client.post("/api/precedents", json={"keyword": "routing", "limit": 2})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body["matches"]) == 2
+    assert body["total"] == 3
 
 
 def test_mcp_find_precedents(client):

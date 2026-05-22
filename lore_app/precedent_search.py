@@ -37,8 +37,9 @@ def search_precedents(
         _enrich_graph_paths(repo, ledger, graph_target, results)
 
     results.sort(key=lambda result: (-result.relevance, result.type, result.id))
+    total_count = len(results)
     limited = results[: request.limit]
-    return PrecedentSearchResponse(matches=limited, total=len(limited))
+    return PrecedentSearchResponse(matches=limited, total=total_count)
 
 
 def _search_traces(
@@ -67,6 +68,8 @@ def _search_traces(
             continue
         if request.lane and request.lane not in _trace_lanes(trace):
             continue
+        if situation and situation not in _needle(trace.reason_summary):
+            continue
 
         score = 0.2
         if request.actor and trace.actor == request.actor:
@@ -75,8 +78,6 @@ def _search_traces(
             score += 0.35
         if request.policy and request.policy in trace.policy_refs:
             score += 0.3
-        if situation and situation in _needle(trace.reason_summary):
-            score += 0.15
         if entity and entity in _trace_haystack(trace):
             score += 0.2
         if request.task_ref:
