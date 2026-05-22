@@ -1052,6 +1052,7 @@ class ConsolidationRunResult(BaseModel):
     review_required: int
     errors: list[str] = Field(default_factory=list)
     dry_run: bool
+    blocked_claims: list[dict[str, str]] = Field(default_factory=list, description="Claims blocked from auto-apply with reason.")
 
 
 class RollbackResult(BaseModel):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from lore_app.lint import lint_lore
+from lore_app.lint import lint_epistemic_claims, lint_lore
 from lore_app.lint_config import LintConfig
 from lore_app.repository import LoreRepository
 
@@ -376,3 +376,126 @@ sources:
     )
     assert issue["detail"] == "Second frontmatter step"
     assert issue["suggestion"] == "Add the missing numbered step to the procedure body."
+
+
+def test_epistemic_label_missing_on_decision(client):
+    markdown = """---
+title: Epistemic Decision
+kind: decision
+visibility: internal
+summary: Decision without epistemic label.
+sources:
+  - tests/test_lint.py
+---
+# Epistemic Decision
+"""
+    created = client.put("/api/pages/decisions/epistemic-decision", json={"content": markdown})
+    assert created.status_code == 200
+
+    payload = client.get("/api/lint").json()
+    assert has_issue(payload, rule="epistemic-label", page_id="decisions/epistemic-decision")
+
+
+def test_epistemic_weak_assumption_on_service(client):
+    markdown = """---
+title: Assumed Service
+kind: service
+visibility: internal
+summary: Service with assumption status.
+epistemic_status: assumption
+sources:
+  - tests/test_lint.py
+---
+# Assumed Service
+"""
+    created = client.put("/api/pages/services/assumed-service", json={"content": markdown})
+    assert created.status_code == 200
+
+    payload = client.get("/api/lint").json()
+    assert has_issue(payload, rule="epistemic-weak", page_id="services/assumed-service")
+
+
+def test_epistemic_unsourced_assumption(client):
+    markdown = """---
+title: Unsourced Assumption
+kind: service
+visibility: internal
+summary: Assumption without sources.
+epistemic_status: assumption
+---
+# Unsourced Assumption
+"""
+    created = client.put("/api/pages/services/unsourced-assumption", json={"content": markdown})
+    assert created.status_code == 200
+
+    payload = client.get("/api/lint").json()
+    assert has_issue(payload, rule="epistemic-unsourced", page_id="services/unsourced-assumption")
+
+
+def test_epistemic_suppression(content_dir, tmp_path):
+    markdown = """---
+title: Suppressed Decision
+kind: decision
+visibility: internal
+summary: Decision with suppressed epistemic label.
+sources:
+  - tests/test_lint.py
+---
+# Suppressed Decision
+"""
+    from pathlib import Path
+
+    repo = LoreRepository(content_dir)
+    repo.upsert_page(
+        "decisions/suppressed-decision",
+        markdown,
+    )
+
+    config_path = tmp_path / ".lore-lint.json"
+    config_path.write_text(
+        json.dumps(
+            {"suppressions": {"decisions/suppressed-decision": {"epistemic-label": "verified later"}}}
+        ),
+        encoding="utf-8",
+    )
+    config = LintConfig(config_path)
+    result = lint_lore(repo, config=config)
+
+    assert not any(
+        issue.rule == "epistemic-label" and not issue.suppressed
+        for issue in result.issues
+    )
+
+
+def test_epistemic_claim_assumption_warning(tmp_path):
+    from lore_app.ledger import LedgerDB
+    from lore_app.schemas import ExtractedClaim, ExtractionResult
+
+    db = LedgerDB(tmp_path / "ledger.db")
+    db.initialize()
+
+    db.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-epistemic-claim",
+            processed_at="2026-05-10T00:00:00+00:00",
+            source_capture_ids=["inbox/test"],
+            claims=[
+                ExtractedClaim(
+                    subject="services/lore",
+                    predicate="states",
+                    object="Lore has weak claims.",
+                    confidence="medium",
+                    epistemic_status="assumption",
+                    source_page_ids=["services/lore"],
+                )
+            ],
+            entities=[],
+            edges=[],
+            invalidations=[],
+        )
+    )
+
+    issues = lint_epistemic_claims(db)
+    assert len(issues) >= 1
+    assert issues[0].rule == "epistemic-claim"
+    assert "assumption" in issues[0].message.lower()

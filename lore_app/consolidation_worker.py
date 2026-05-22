@@ -87,10 +87,21 @@ class ConsolidationWorker:
                 errors.append(f"planning failed: {exc}")
 
         auto_applied = 0
+        blocked_claims: list[dict[str, str]] = []
         for plan in plans:
+            skip_apply = not plan.auto_appliable or self._page_kind(plan.target_page_id) in {"decision", "runbook"}
+            if skip_apply:
+                for decision in plan.policies_applied:
+                    if not decision.passed and decision.policy_id.startswith("epistemic:"):
+                        for candidate_id in plan.candidate_ids:
+                            blocked_claims.append({
+                                "claim_id": candidate_id,
+                                "reason": decision.reason,
+                                "epistemic_status": decision.policy_id.split(":", 1)[1].split("-")[0] if ":" in decision.policy_id else "unknown",
+                            })
             if dry_run or auto_applied >= max_auto_apply:
                 continue
-            if not plan.auto_appliable or self._page_kind(plan.target_page_id) in {"decision", "runbook"}:
+            if skip_apply:
                 continue
             try:
                 before_content = self._current_content(plan.target_page_id)
@@ -136,6 +147,7 @@ class ConsolidationWorker:
             review_required=max(0, len(plans) - auto_applied),
             errors=errors,
             dry_run=dry_run,
+            blocked_claims=blocked_claims,
         )
         if not dry_run:
             self.ledger.store_consolidation_run(result, status="completed" if not errors else "completed_with_errors")

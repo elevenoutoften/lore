@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import date, datetime, timezone
 from typing import Any
 
+from .ledger import LedgerDB
 from .link_graph import build_link_graph
 from .lint_config import LintConfig
 from .repository import LoreRepository, optional_string
@@ -51,6 +52,7 @@ def lint_lore(
         issues.extend(lint_confidence(page))
         issues.extend(lint_contradictions(page))
         issues.extend(lint_procedure(page))
+        issues.extend(lint_epistemic_labels(page, config))
 
     issues.extend(lint_duplicate_titles(pages))
     issues.extend(lint_orphans(pages, graph.links))
@@ -85,6 +87,10 @@ def suggest_fix(issue: LintIssue, page: PageDetail | None = None) -> tuple[str |
         "procedure_missing_steps": ("Add a non-empty `steps:` list to the procedure frontmatter.", True),
         "procedure_missing_trigger": ("Add a `trigger:` field describing when to use this procedure.", True),
         "procedure_step_not_in_body": ("Add the missing numbered step to the procedure body.", False),
+        "epistemic-label": ("Add `epistemic_status: operator_declared, retrieved, inferred, or assumption.`", True),
+        "epistemic-weak": ("Verify and upgrade to operator_declared or retrieved, or add supporting evidence.", False),
+        "epistemic-unsourced": ("Add sources, evidence, or downgrade to capture/inbox.", True),
+        "epistemic-claim": ("Review and upgrade epistemic status or add supporting trace.", False),
     }
     return suggestions.get(issue.rule, (None, False))
 
@@ -534,3 +540,83 @@ def issue_sort_key(issue: LintIssue) -> tuple[int, str, str, str, str]:
         issue.target or "",
         issue.message,
     )
+
+
+def lint_epistemic_labels(page: PageDetail, lint_config: LintConfig | None = None) -> list[LintIssue]:
+    issues: list[LintIssue] = []
+    config = lint_config or LintConfig()
+
+    if not config.is_rule_enabled("epistemic-label"):
+        return issues
+
+    fm = page.frontmatter
+    epistemic = fm.get("epistemic_status")
+    kind = fm.get("kind", "page")
+
+    if kind in ("decision", "capture") and not epistemic:
+        issues.append(
+            LintIssue(
+                rule="epistemic-label",
+                severity=config.get_severity("epistemic-label", "warning"),
+                message=f"Page kind '{kind}' should have an epistemic_status label.",
+                page_id=page.id,
+                suggestion="Add epistemic_status: operator_declared, retrieved, inferred, or assumption.",
+            )
+        )
+
+    if epistemic == "assumption" and kind in ("project", "service", "decision"):
+        issues.append(
+            LintIssue(
+                rule="epistemic-weak",
+                severity=config.get_severity("epistemic-weak", "warning"),
+                message=f"Durable page (kind='{kind}') has assumption epistemic status — should be reviewed.",
+                page_id=page.id,
+                suggestion="Verify and upgrade to operator_declared or retrieved, or add supporting evidence.",
+            )
+        )
+
+    if epistemic == "assumption":
+        sources = fm.get("sources", [])
+        evidence = fm.get("evidence")
+        if not sources and not evidence and kind != "capture":
+            issues.append(
+                LintIssue(
+                    rule="epistemic-unsourced",
+                    severity=config.get_severity("epistemic-unsourced", "error"),
+                    message="Assumption-labeled page has no sources or evidence.",
+                    page_id=page.id,
+                    suggestion="Add sources, evidence, or downgrade to capture/inbox.",
+                )
+            )
+
+    issues = [issue for issue in issues if not config.is_suppressed(page.id, issue.rule)]
+
+    return issues
+
+
+def lint_epistemic_claims(ledger: LedgerDB, lint_config: LintConfig | None = None) -> list[LintIssue]:
+    issues: list[LintIssue] = []
+    config = lint_config or LintConfig()
+
+    if not config.is_rule_enabled("epistemic-claim"):
+        return issues
+
+    try:
+        candidates = ledger.get_candidates(candidate_type="claim", limit=500)
+    except Exception:
+        return issues
+
+    for candidate in candidates:
+        epistemic = candidate.get("epistemic_status")
+        if epistemic == "assumption":
+            issues.append(
+                LintIssue(
+                    rule="epistemic-claim",
+                    severity=config.get_severity("epistemic-claim", "warning"),
+                    message=f"Claim {candidate.get('candidate_id', '?')} has assumption epistemic status.",
+                    page_id=candidate.get("source_page_ids", ["?"])[0] if candidate.get("source_page_ids") else "?",
+                    suggestion="Review and upgrade epistemic status or add supporting trace.",
+                )
+            )
+
+    return issues

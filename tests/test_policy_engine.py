@@ -370,3 +370,69 @@ def store_claim(ledger: LedgerDB, batch_id: str, page_id: str, obj: str) -> None
             invalidations=[],
         )
     )
+
+
+def test_assumption_blocked_by_epistemic_gate(ledger):
+    engine = PolicyEngine(ledger)
+    decisions = engine.evaluate(
+        page_id="services/test",
+        page_kind="service",
+        operation=PatchOperation.insert_new_fact,
+        has_contradictions=False,
+        high_confidence=True,
+        epistemic_status="assumption",
+    )
+    assert any(
+        d.policy_id == "epistemic:assumption-block" and not d.passed
+        for d in decisions
+    )
+
+
+def test_retrieved_accepted_by_epistemic_gate(ledger):
+    engine = PolicyEngine(ledger)
+    decisions = engine.evaluate(
+        page_id="services/test",
+        page_kind="service",
+        operation=PatchOperation.insert_new_fact,
+        has_contradictions=False,
+        high_confidence=True,
+        epistemic_status="retrieved",
+    )
+    assert not any(
+        d.policy_id.startswith("epistemic:") and not d.passed
+        for d in decisions
+    )
+
+
+def test_inferred_without_trace_blocked(ledger):
+    engine = PolicyEngine(ledger)
+    decisions = engine.evaluate(
+        page_id="services/test",
+        page_kind="service",
+        operation=PatchOperation.insert_new_fact,
+        has_contradictions=False,
+        high_confidence=True,
+        epistemic_status="inferred",
+        trace_id=None,
+    )
+    assert any(
+        d.policy_id == "epistemic:inferred-review" and not d.passed
+        for d in decisions
+    )
+
+
+def test_inferred_with_trace_accepted(ledger):
+    engine = PolicyEngine(ledger)
+    decisions = engine.evaluate(
+        page_id="services/test",
+        page_kind="service",
+        operation=PatchOperation.insert_new_fact,
+        has_contradictions=False,
+        high_confidence=True,
+        epistemic_status="inferred",
+        trace_id="trace-001",
+    )
+    assert not any(
+        d.policy_id.startswith("epistemic:") and not d.passed
+        for d in decisions
+    )

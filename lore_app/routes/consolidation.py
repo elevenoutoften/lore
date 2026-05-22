@@ -96,3 +96,31 @@ def reject_patch_plan(
 ) -> dict:
     planner.reject_plan(plan_id, reason=payload.reason)
     return {"plan_id": plan_id, "status": "rejected", "reason": payload.reason}
+
+
+@consolidation_router.get("/blocked")
+def get_blocked_claims(ledger: LedgerDB = Depends(get_ledger_db)):
+    blocked: list[dict] = []
+    try:
+        candidates = ledger.get_candidates(candidate_type="claim", limit=500)
+    except Exception:
+        return {"blocked": [], "total": 0}
+
+    for candidate in candidates:
+        if candidate.get("status") != "candidate":
+            continue
+        epistemic = candidate.get("epistemic_status")
+        if epistemic == "assumption":
+            blocked.append({
+                "claim_id": candidate.get("candidate_id"),
+                "reason": "Assumption-labeled claims require human review before auto-apply.",
+                "epistemic_status": epistemic,
+            })
+        elif epistemic == "inferred" and not candidate.get("trace_id"):
+            blocked.append({
+                "claim_id": candidate.get("candidate_id"),
+                "reason": "Inferred claims without a supporting trace require review.",
+                "epistemic_status": epistemic,
+            })
+
+    return {"blocked": blocked, "total": len(blocked)}

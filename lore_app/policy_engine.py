@@ -19,6 +19,8 @@ class PolicyEngine:
         high_confidence: bool,
         *,
         policy_ids: list[str] | None = None,
+        epistemic_status: str | None = None,
+        trace_id: str | None = None,
     ) -> list[PolicyDecision]:
         if policy_ids:
             policies = [policy for policy_id in policy_ids if (policy := self.ledger.get_policy(policy_id)) is not None]
@@ -61,6 +63,26 @@ class PolicyEngine:
                     reason=reason,
                 )
             )
+
+        if epistemic_status == "assumption":
+            decisions.append(
+                PolicyDecision(
+                    policy_id="epistemic:assumption-block",
+                    gate="epistemic-gate",
+                    passed=False,
+                    reason="Assumption-labeled claims require human review before auto-apply.",
+                )
+            )
+        elif epistemic_status == "inferred" and not trace_id:
+            decisions.append(
+                PolicyDecision(
+                    policy_id="epistemic:inferred-review",
+                    gate="epistemic-gate",
+                    passed=False,
+                    reason="Inferred claims without a supporting trace require review.",
+                )
+            )
+
         return decisions
 
     def _applies(self, policy: PolicyRule, page_kind: str, operation: PatchOperation) -> bool:

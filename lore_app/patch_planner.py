@@ -179,12 +179,16 @@ class PatchPlanner:
         operation = self._choose_operation(target_page_id, page is not None, bundles, contradictions)
         risk_level = self._assess_risk(target_page_id, operation, contradictions)
         high_confidence = all(optional_string(bundle.row.get("confidence")) == "high" for bundle in bundles)
+        epistemic_status = _weakest_epistemic_status(bundles)
+        bundle_trace_id = _any_trace_id(bundles)
         auto_appliable = self._is_auto_appliable(target_page_id, operation, bundles, contradictions)
         policy_decisions = self._evaluate_policies(
             target_page_id,
             operation,
             bool(contradictions),
             high_confidence,
+            epistemic_status=epistemic_status,
+            trace_id=bundle_trace_id,
         )
         if any(not decision.passed for decision in policy_decisions):
             auto_appliable = False
@@ -278,6 +282,9 @@ class PatchPlanner:
         operation: PatchOperation,
         has_contradictions: bool,
         high_confidence: bool,
+        *,
+        epistemic_status: str | None = None,
+        trace_id: str | None = None,
     ) -> list[PolicyDecision]:
         if self.policy_engine is None:
             return []
@@ -287,6 +294,8 @@ class PatchPlanner:
             operation=operation,
             has_contradictions=has_contradictions,
             high_confidence=high_confidence,
+            epistemic_status=epistemic_status,
+            trace_id=trace_id,
         )
 
     def _trace_policy_refs(
@@ -709,6 +718,30 @@ def _unified_diff(current_content: str, proposed_content: str, page_id: str) -> 
             lineterm="",
         )
     )
+
+
+_EPISTEMIC_ORDER = {"operator_declared": 0, "retrieved": 1, "inferred": 2, "assumption": 3}
+
+
+def _weakest_epistemic_status(bundles: list[_CandidateBundle]) -> str | None:
+    worst_rank = -1
+    worst_status = None
+    for bundle in bundles:
+        status = bundle.claim.get("epistemic_status") or bundle.row.get("epistemic_status")
+        if status and isinstance(status, str):
+            rank = _EPISTEMIC_ORDER.get(status, -1)
+            if rank > worst_rank:
+                worst_rank = rank
+                worst_status = status
+    return worst_status
+
+
+def _any_trace_id(bundles: list[_CandidateBundle]) -> str | None:
+    for bundle in bundles:
+        trace_id = bundle.claim.get("trace_id") or bundle.row.get("trace_id")
+        if trace_id:
+            return str(trace_id)
+    return None
 
 
 def _insert_into_section(content: str, heading: str, block: str) -> str:
