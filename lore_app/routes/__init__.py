@@ -15,6 +15,7 @@ from .memory import router as memory_router
 from .metadata import router as metadata_router
 from .pages import router as pages_router
 from .policies import router as policies_router
+from .precedents import router as precedents_router
 from .procedures import router as procedures_router
 from .provenance import router as provenance_router
 from .rag import router as rag_router
@@ -39,6 +40,7 @@ __all__ = [
     "metadata_router",
     "pages_router",
     "policies_router",
+    "precedents_router",
     "procedures_router",
     "provenance_router",
     "rag_router",

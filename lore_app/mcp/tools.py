@@ -13,6 +13,7 @@ from ..code_ingest.ingest_service import ingest_service_code
 from ..frontmatter import frontmatter_scalar, update_frontmatter
 from ..frontmatter_spec import get_frontmatter_spec
 from ..provenance import get_capture_provenance, get_page_provenance
+from ..precedent_search import search_precedents
 from ..link_graph import build_link_graph, page_links
 from ..lint import lint_contradiction_review, lint_lore, lint_stale_queue
 from ..lint_config import LintConfig
@@ -27,6 +28,7 @@ from ..schemas import (
     ContextGraphPathQuery,
     DailyDistillRequest,
     MetadataUpdate,
+    PrecedentSearchRequest,
     TraceCreateRequest,
     TraceEntry,
     TraceListResponse,
@@ -664,6 +666,28 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "gate": {"type": "string", "description": "Optional gate filter, such as auto-apply or protected-surface."},
                 "enabled_only": {"type": "boolean", "default": True, "description": "Only return enabled policies."},
+            },
+        },
+    },
+    {
+        "name": "lore_find_precedents",
+        "title": "Find Lore Precedents",
+        "description": "Search for prior traces, decisions, policies, and pages that match entity, situation, actor, policy, keyword, or task criteria.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "entity": {"type": "string", "description": "Entity name filter."},
+                "situation_type": {"type": "string", "description": "Situation type filter."},
+                "lane": {
+                    "type": "string",
+                    "enum": ["project", "procedural", "ops", "companion", "draft"],
+                    "description": "Retrieval lane filter.",
+                },
+                "actor": {"type": "string", "description": "Agent name filter."},
+                "policy": {"type": "string", "description": "Policy ID filter."},
+                "keyword": {"type": "string", "description": "Keyword filter."},
+                "task_ref": {"type": "string", "description": "Task ID reference."},
+                "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100},
             },
         },
     },
@@ -1387,6 +1411,25 @@ This page was auto-created as a stub. Replace with actual content.
         )
         payload = {"count": len(policies), "policies": [policy.model_dump(mode="json") for policy in policies]}
         return tool_result(payload, f"Found {len(policies)} policy rule(s).")
+
+    if name == "lore_find_precedents":
+        ledger = require_service(ledger_db, "ledger database")
+        limit = max(1, min(int(arguments.get("limit", 20)), 100))
+        result = search_precedents(
+            repo,
+            ledger,
+            PrecedentSearchRequest(
+                entity=optional_string(arguments.get("entity")),
+                situation_type=optional_string(arguments.get("situation_type")),
+                lane=optional_string(arguments.get("lane")),
+                actor=optional_string(arguments.get("actor")),
+                policy=optional_string(arguments.get("policy")),
+                keyword=optional_string(arguments.get("keyword")),
+                task_ref=optional_string(arguments.get("task_ref")),
+                limit=limit,
+            ),
+        )
+        return tool_result(result.model_dump(mode="json"), f"Found {result.total} precedent(s)")
 
     if name == "lore_get_policy":
         ledger = require_service(ledger_db, "ledger database")

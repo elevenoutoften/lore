@@ -53,6 +53,7 @@ def test_mcp_initialize_and_tool_list(client):
         "lore_get_provenance",
         "lore_list_traces",
         "lore_list_policies",
+        "lore_find_precedents",
         "lore_get_policy",
         "lore_upsert_page",
         "lore_distill_daily",

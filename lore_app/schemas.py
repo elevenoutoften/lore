@@ -219,6 +219,43 @@ class ContextGraphNeighborResponse(BaseModel):
     total: int
 
 
+class PrecedentSearchRequest(BaseModel):
+    """Search for precedents across traces, decisions, policies, captures, and pages."""
+
+    entity: str | None = Field(default=None, description="Entity name (e.g. 'Lore', 'routing').")
+    situation_type: str | None = Field(
+        default=None,
+        description="Situation type filter (e.g. 'consolidation', 'review', 'rollback').",
+    )
+    lane: str | None = Field(default=None, description="Retrieval lane filter (project, procedural, ops, companion, draft).")
+    actor: str | None = Field(default=None, description="Agent name filter.")
+    policy: str | None = Field(default=None, description="Policy ID filter (e.g. 'auto-apply:v1').")
+    keyword: str | None = Field(default=None, description="Keyword filter for reason summaries and page titles.")
+    task_ref: str | None = Field(default=None, description="Task ID reference (e.g. 'flow_000123').")
+    limit: int = Field(default=20, ge=1, le=100, description="Max results to return.")
+
+
+class PrecedentResult(BaseModel):
+    """A single precedent match."""
+
+    type: str = Field(description="Result type: trace, decision, page, policy, or capture.")
+    id: str = Field(description="Entity ID.")
+    title: str = Field(default="", description="Human-readable title.")
+    summary: str = Field(default="", description="Outcome or reason summary.")
+    outcome: str = Field(default="", description="Result outcome or status.")
+    actor: str = Field(default="", description="Agent that produced this.")
+    related_policies: list[str] = Field(default_factory=list, description="Policy IDs referenced.")
+    graph_paths: list[dict[str, str]] = Field(default_factory=list, description="Context graph paths from this entity to related context.")
+    relevance: float = Field(default=0.0, description="Relevance score.")
+
+
+class PrecedentSearchResponse(BaseModel):
+    """Response for precedent search."""
+
+    matches: list[PrecedentResult] = Field(default_factory=list)
+    total: int
+
+
 class ContextGraphPathQuery(BaseModel):
     """Query for bounded paths between two nodes."""
 

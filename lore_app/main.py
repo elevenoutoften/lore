@@ -23,7 +23,7 @@ from .policy_engine import PolicyEngine
 from .rag.vector_store import VectorStore
 from .repository import LoreRepository
 from .route_utils import actor_from_request, client_rate_limit_key, is_rate_limited_write, retrieve_context, workspace_lore_config
-from .routes import admin_router, api_keys_router, captures_router, consolidation_router, context_graph_router, distillation_router, extraction_router, graph_router, heartbeat_router, ledger_router, lint_router, mcp_router, memory_router, metadata_router, pages_router, policies_router, procedures_router, provenance_router, rag_router, search_router, trace_router
+from .routes import admin_router, api_keys_router, captures_router, consolidation_router, context_graph_router, distillation_router, extraction_router, graph_router, heartbeat_router, ledger_router, lint_router, mcp_router, memory_router, metadata_router, pages_router, policies_router, precedents_router, procedures_router, provenance_router, rag_router, search_router, trace_router
 from .routes.admin import package_name, package_version
 from .search_index import LoreSearchIndex
 from .security import RateLimiter
@@ -193,6 +193,7 @@ def create_app(
     app.include_router(context_graph_router)
     app.include_router(mcp_router)
     app.include_router(policies_router)
+    app.include_router(precedents_router)
     app.include_router(procedures_router)
     app.include_router(provenance_router)
     app.include_router(pages_router)
