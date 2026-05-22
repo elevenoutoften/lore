@@ -16,13 +16,35 @@ from ..schemas import RagEvaluateRequest, RagEvaluateResult, RagExpandRequest, R
 router = APIRouter()
 
 
-@router.post("/api/rag/retrieve")
-def api_rag_retrieve(payload: RagRetrieveRequest, retrieve_context: Callable[[str, int], dict[str, Any]] = Depends(get_retrieve_context)):
+@router.post("/api/rag/retrieve", response_model=RagExpandedResponse)
+def api_rag_retrieve(
+    payload: RagRetrieveRequest,
+    request: Request,
+    repo: LoreRepository = Depends(get_repo),
+    ledger: LedgerDB = Depends(get_ledger_db),
+):
+    from ..context_graph import build_context_graph
+    from ..rag.hybrid_retrieval import hybrid_retrieve_expanded
+
     query = payload.query.strip()
     if not query:
         raise HTTPException(status_code=422, detail="Missing query.")
-    limit = max(1, min(int(payload.limit or 10), 50))
-    return retrieve_context(query, limit)
+
+    ctx_graph = build_context_graph(repo, ledger)
+    result = hybrid_retrieve_expanded(
+        query,
+        request.app.state.search_index,
+        request.app.state.vector_store,
+        ctx_graph,
+        ledger,
+        limit=payload.limit,
+        expand_hops=payload.expand_hops,
+        expand_edge_types=payload.expand_edge_types or None,
+        include_claims=payload.include_claims,
+        include_traces=payload.include_traces,
+        include_decisions=payload.include_decisions,
+    )
+    return enrich_expanded_results(repo, result)
 
 
 @router.post("/api/rag/retrieve-expanded", response_model=RagExpandedResponse)

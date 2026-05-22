@@ -989,11 +989,34 @@ def call_tool(
 
     if name == "lore_rag_context":
         query = require_string(arguments.get("query"), "query")
-        limit = max(1, min(int(arguments.get("limit") or 5), 20))
+        limit = max(1, min(int(arguments.get("limit") or 5), 50))
+        expand_hops = max(0, min(int(arguments.get("expand_hops", 2)), 4))
+        expand_edge_types = arguments.get("expand_edge_types") or None
+        if expand_edge_types is not None and not isinstance(expand_edge_types, list):
+            raise JsonRpcError(-32602, "expand_edge_types must be an array.")
+        include_claims = bool(arguments.get("include_claims", True))
+        include_traces = bool(arguments.get("include_traces", False))
+        include_decisions = bool(arguments.get("include_decisions", True))
         if vector_store is None:
             return tool_result({"query": query, "results": []}, "RAG vector store is not configured.", is_error=True)
-        graph = graph_cache.get(repo) if graph_cache is not None else None
-        payload = enrich_rag_results(repo, hybrid_retrieve(query, search_index, vector_store, graph, limit=limit))
+        ledger = require_service(ledger_db, "ledger database")
+        graph = build_context_graph(repo, ledger)
+        payload = enrich_expanded_results(
+            repo,
+            hybrid_retrieve_expanded(
+                query,
+                search_index,
+                vector_store,
+                graph,
+                ledger,
+                limit=limit,
+                expand_hops=expand_hops,
+                expand_edge_types=[str(edge_type) for edge_type in expand_edge_types] if expand_edge_types else None,
+                include_claims=include_claims,
+                include_traces=include_traces,
+                include_decisions=include_decisions,
+            ),
+        )
         return tool_result(payload, summarize_rag_context(payload))
 
     if name == "lore_rag_context_expanded":
@@ -1709,6 +1732,21 @@ def enrich_rag_results(repo: LoreRepository, payload: dict[str, Any]) -> dict[st
             result["visibility"] = page.visibility
             if not result.get("citations"):
                 result["citations"] = [page.body[:200]]
+        results.append(result)
+    enriched["results"] = results
+    enriched["total"] = len(results)
+    return enriched
+
+
+def enrich_expanded_results(repo: LoreRepository, payload: dict[str, Any]) -> dict[str, Any]:
+    """Enrich expanded RAG results with titles from the repo, preserving expansion fields."""
+    enriched = dict(payload)
+    results = []
+    for item in payload.get("results", []):
+        result = dict(item)
+        page = repo.read_page(str(result.get("page_id") or ""))
+        if page is not None:
+            result["title"] = page.title
         results.append(result)
     enriched["results"] = results
     enriched["total"] = len(results)

@@ -226,6 +226,7 @@ def hybrid_retrieve_expanded(
                 "contradicting_claims": [],
                 "related_decisions": [],
                 "related_traces": [],
+                "matched_entities": [],
                 "relevant_because": "",
             }
 
@@ -243,6 +244,9 @@ def hybrid_retrieve_expanded(
 
     if ledger is not None:
         _enrich_with_ledger_context(ledger, all_results, include_claims, include_traces, include_decisions)
+
+    # Populate matched_entities from graph expansion paths
+    _populate_matched_entities(all_results, node_index, reachable)
 
     for page_id, result in all_results.items():
         result["relevant_because"] = _relevant_because(page_id, result, hit_page_ids)
@@ -272,6 +276,7 @@ def _expanded_base_row(result: dict[str, Any], hit_page_ids: set[str]) -> dict[s
         "contradicting_claims": [],
         "related_decisions": [],
         "related_traces": [],
+        "matched_entities": [],
         "relevant_because": "direct text match" if page_id in hit_page_ids else "",
     }
 
@@ -375,3 +380,32 @@ def _string_list(value: Any) -> list[str]:
 def _append_unique(values: list[str], value: str) -> None:
     if value and value not in values:
         values.append(value)
+
+
+def _populate_matched_entities(
+    all_results: dict[str, dict[str, Any]],
+    node_index: dict[str, Any],
+    reachable: dict[str, list[dict[str, Any]]],
+) -> None:
+    """Populate matched_entities from graph expansion paths and entity nodes."""
+    entity_types = {"entity", "claim", "capture", "trace", "decision", "policy"}
+    for page_id, result in all_results.items():
+        entities: list[str] = []
+        # Collect entity IDs from reachable paths
+        for path_info in reachable.get(page_id, []):
+            for step in path_info.get("path", []):
+                target_type = step.get("target_type", "")
+                target_id = step.get("target_id", "")
+                if target_type in entity_types and target_id:
+                    _append_unique(entities, target_id)
+        # Also check the node index for entity nodes reachable from this page
+        for node_id in reachable:
+            if node_id == page_id:
+                continue
+            node = node_index.get(node_id)
+            if node is None:
+                continue
+            node_type = getattr(getattr(node, "type", None), "value", None) or ""
+            if node_type in entity_types:
+                _append_unique(entities, node_id)
+        result["matched_entities"] = entities

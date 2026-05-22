@@ -623,6 +623,11 @@ class SearchResponse(BaseModel):
 class RagRetrieveRequest(BaseModel):
     query: str
     limit: int = 10
+    expand_hops: int = Field(default=2, ge=0, le=4, description="Max graph expansion hops from initial hits.")
+    expand_edge_types: list[str] = Field(default_factory=list, description="Edge types to follow during expansion. Empty = all.")
+    include_claims: bool = Field(default=True, description="Include supporting/contradicting claims in results.")
+    include_traces: bool = Field(default=False, description="Include reasoning trace references in results.")
+    include_decisions: bool = Field(default=True, description="Include decision page references in results.")
 
 
 class RagExpandRequest(BaseModel):
@@ -660,6 +665,7 @@ class RagExpandedResult(BaseModel):
     related_decisions: list[str] = Field(default_factory=list, description="Decision page IDs related to this result.")
     related_traces: list[str] = Field(default_factory=list, description="Trace IDs that reference this page.")
     epistemic_status: str | None = None
+    matched_entities: list[str] = Field(default_factory=list, description="Entity IDs/names reached during graph expansion.")
     relevant_because: str = Field(default="", description="Human-readable summary of why this result is relevant.")
 
 

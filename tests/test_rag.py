@@ -209,3 +209,49 @@ def test_mcp_rag_context_expanded(client):
     payload = resp.json()["result"]
     assert payload["isError"] is False
     assert any(result["page_id"] == "decisions/routing-policy" for result in payload["structuredContent"]["results"])
+
+
+def test_rag_retrieve_returns_expanded_fields(client):
+    """The primary /api/rag/retrieve endpoint should return expanded response shape."""
+    seed_expanded_rag_fixture(client)
+
+    payload = client.post(
+        "/api/rag/retrieve",
+        json={"query": "alpha routing evidence", "limit": 5, "expand_hops": 2},
+    ).json()
+
+    # Response should be RagExpandedResponse shape
+    assert "expansion_stats" in payload
+    assert payload["expansion_stats"]["hops"] == 2
+
+    # Results should have expanded fields
+    assert payload["results"]
+    for result in payload["results"]:
+        assert "relevance_paths" in result
+        assert "supporting_claims" in result
+        assert "contradicting_claims" in result
+        assert "related_decisions" in result
+        assert "related_traces" in result
+        assert "matched_entities" in result
+        assert "relevant_because" in result
+
+    # Decision page should be reachable through graph expansion
+    decision = next((r for r in payload["results"] if r["page_id"] == "decisions/routing-policy"), None)
+    assert decision is not None
+    assert decision["relevance_paths"] or decision["relevant_because"]
+
+
+def test_rag_retrieve_graceful_without_graph(client):
+    """Degraded mode: no graph edges, still returns valid results with empty expansion fields."""
+    client.post("/api/search/reindex")
+
+    payload = client.post(
+        "/api/rag/retrieve",
+        json={"query": "gateway service gateway", "limit": 3, "expand_hops": 2},
+    ).json()
+
+    assert payload["results"]
+    for result in payload["results"]:
+        assert "relevance_paths" in result
+        assert "matched_entities" in result
+        assert isinstance(result["matched_entities"], list)
