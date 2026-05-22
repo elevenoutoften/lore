@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from pydantic import ValidationError
 
 import lore_app.ledger as ledger_module
 from lore_app.ledger import LedgerDB
@@ -38,6 +39,73 @@ def ledger(tmp_path) -> LedgerDB:
 
 def decision_by_id(decisions, policy_id: str):
     return next(decision for decision in decisions if decision.policy_id == policy_id)
+
+
+def make_policy(**overrides) -> PolicyRule:
+    defaults = {
+        "policy_id": "valid-name:v1",
+        "name": "Valid policy",
+        "description": "Policy used for validation tests.",
+        "gate": "auto-apply",
+        "condition_kind": [],
+        "condition_operation": [PatchOperation.insert_new_fact.value],
+        "effect_pass": "allow",
+        "effect_fail": "review",
+        "fail_reason_template": "Policy failed for {page_id}",
+        "version": 1,
+        "enabled": True,
+    }
+    defaults.update(overrides)
+    return PolicyRule(**defaults)
+
+
+def test_default_policies_reproduce_patch_planner_behavior(ledger):
+    policies = ledger.list_policies(enabled_only=True)
+    assert len(policies) == 4
+    assert {policy.policy_id for policy in policies} == {
+        "auto-apply:v1",
+        "protected-surface:v1",
+        "contradiction-review:v1",
+        "risk-high:v1",
+    }
+
+    safe_insert = PolicyEngine(ledger).evaluate(
+        page_id="services/lore",
+        page_kind="service",
+        operation=PatchOperation.insert_new_fact,
+        has_contradictions=False,
+        high_confidence=True,
+    )
+    assert decision_by_id(safe_insert, "auto-apply:v1").passed is True
+    assert decision_by_id(safe_insert, "protected-surface:v1").passed is True
+
+    decision_insert = PolicyEngine(ledger).evaluate(
+        page_id="decisions/routing",
+        page_kind="decision",
+        operation=PatchOperation.insert_new_fact,
+        has_contradictions=False,
+        high_confidence=True,
+    )
+    assert decision_by_id(decision_insert, "auto-apply:v1").passed is False
+    assert decision_by_id(decision_insert, "protected-surface:v1").passed is False
+
+    risky_update = PolicyEngine(ledger).evaluate(
+        page_id="services/lore",
+        page_kind="service",
+        operation=PatchOperation.update_existing_fact,
+        has_contradictions=False,
+        high_confidence=True,
+    )
+    assert decision_by_id(risky_update, "risk-high:v1").passed is False
+
+    contradictory_mark_stale = PolicyEngine(ledger).evaluate(
+        page_id="services/lore",
+        page_kind="service",
+        operation=PatchOperation.mark_stale,
+        has_contradictions=True,
+        high_confidence=True,
+    )
+    assert decision_by_id(contradictory_mark_stale, "contradiction-review:v1").passed is False
 
 
 def test_auto_apply_policy_passes_for_high_confidence_no_contradictions(ledger):
@@ -169,6 +237,52 @@ def test_invalid_policy_id_returns_empty(ledger):
     )
 
     assert decisions == []
+
+
+def test_reject_invalid_policy_id_format():
+    with pytest.raises(ValidationError):
+        make_policy(policy_id="bad id:v1")
+    with pytest.raises(ValidationError):
+        make_policy(policy_id="UPPER:v1")
+    with pytest.raises(ValidationError):
+        make_policy(policy_id="no-version")
+
+    policy = make_policy(policy_id="valid-name:v1")
+    assert policy.policy_id == "valid-name:v1"
+
+
+def test_reject_invalid_effect_values():
+    with pytest.raises(ValidationError):
+        make_policy(effect_pass="invalid")
+    with pytest.raises(ValidationError):
+        make_policy(effect_fail="invalid")
+
+
+def test_reject_invalid_condition_operation():
+    with pytest.raises(ValidationError):
+        make_policy(condition_operation=["nonexistent_op"])
+
+
+def test_store_and_retrieve_policy_preserves_all_fields(ledger):
+    policy = PolicyRule(
+        policy_id="custom-gate:v1",
+        name="Custom review gate",
+        description="Preserve every stored field.",
+        gate="review-required",
+        condition_kind=["procedure"],
+        condition_operation=[PatchOperation.create_stub_page.value],
+        effect_pass="allow",
+        effect_fail="escalate",
+        fail_reason_template="Procedure page {page_id} requires escalation.",
+        version=3,
+        enabled=True,
+    )
+
+    ledger.store_policy(policy)
+    stored = ledger.get_policy("custom-gate:v1")
+
+    assert stored is not None
+    assert stored.model_dump() == policy.model_dump()
 
 
 def test_patch_planner_uses_policy_engine(tmp_path, ledger):

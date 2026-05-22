@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from enum import Enum
+import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PageSummary(BaseModel):
@@ -690,6 +691,36 @@ class PolicyRule(BaseModel):
     fail_reason_template: str = Field(default="", description="Template for the failure reason. {kind}, {operation}, {page_id} available.")
     version: int = Field(default=1, ge=1, description="Policy version for tracking changes.")
     enabled: bool = Field(default=True, description="Whether this policy is active.")
+
+    @field_validator("policy_id")
+    @classmethod
+    def validate_policy_id(cls, v: str) -> str:
+        if not re.match(r"^[a-z][a-z0-9-]*:v\d+$", v):
+            raise ValueError(f"policy_id must match 'name:vN' format (lowercase, colon, version number): {v!r}")
+        return v
+
+    @field_validator("effect_pass")
+    @classmethod
+    def validate_effect_pass(cls, v: str) -> str:
+        if v not in {"allow", "auto-apply"}:
+            raise ValueError(f"effect_pass must be 'allow' or 'auto-apply', got {v!r}")
+        return v
+
+    @field_validator("effect_fail")
+    @classmethod
+    def validate_effect_fail(cls, v: str) -> str:
+        if v not in {"block", "review", "escalate"}:
+            raise ValueError(f"effect_fail must be 'block', 'review', or 'escalate', got {v!r}")
+        return v
+
+    @field_validator("condition_operation")
+    @classmethod
+    def validate_condition_operations(cls, v: list[str]) -> list[str]:
+        valid = {operation.value for operation in PatchOperation}
+        invalid = [op for op in v if op not in valid]
+        if invalid:
+            raise ValueError(f"Invalid condition_operation value(s): {invalid}. Valid: {valid}")
+        return v
 
 
 class PolicyDecision(BaseModel):
