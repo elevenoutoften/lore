@@ -573,6 +573,52 @@ class RagRetrieveRequest(BaseModel):
     limit: int = 10
 
 
+class RagExpandRequest(BaseModel):
+    """Request for multi-hop retrieval with graph expansion."""
+
+    query: str = Field(min_length=1)
+    limit: int = Field(default=10, ge=1, le=50)
+    expand_hops: int = Field(default=2, ge=0, le=4, description="Max graph expansion hops from initial hits.")
+    expand_edge_types: list[str] = Field(default_factory=list, description="Edge types to follow during expansion. Empty = all.")
+    include_claims: bool = Field(default=True, description="Include supporting/contradicting claims in results.")
+    include_traces: bool = Field(default=False, description="Include reasoning trace references in results.")
+    include_decisions: bool = Field(default=True, description="Include decision page references in results.")
+
+
+class RagRelevancePath(BaseModel):
+    """A relevance path from a search hit through the context graph."""
+
+    source_type: str = Field(description="Node type of the search hit.")
+    source_id: str = Field(description="Page ID of the search hit.")
+    path: list[dict[str, str]] = Field(default_factory=list, description="List of {edge_type, target_type, target_id} hops.")
+    explanation: str = Field(description="Human-readable relevance explanation.")
+
+
+class RagExpandedResult(BaseModel):
+    """An enriched RAG result with graph expansion context."""
+
+    page_id: str
+    title: str | None = None
+    score: float
+    sources: list[str] = Field(default_factory=list)
+    citations: list[str] = Field(default_factory=list)
+    relevance_paths: list[RagRelevancePath] = Field(default_factory=list, description="Paths from direct hits to this page through the context graph.")
+    supporting_claims: list[str] = Field(default_factory=list, description="Claim IDs that support this page.")
+    contradicting_claims: list[str] = Field(default_factory=list, description="Claim IDs that contradict this page.")
+    related_decisions: list[str] = Field(default_factory=list, description="Decision page IDs related to this result.")
+    related_traces: list[str] = Field(default_factory=list, description="Trace IDs that reference this page.")
+    relevant_because: str = Field(default="", description="Human-readable summary of why this result is relevant.")
+
+
+class RagExpandedResponse(BaseModel):
+    """Response for multi-hop retrieval with graph expansion."""
+
+    query: str
+    total: int
+    results: list[RagExpandedResult] = Field(default_factory=list)
+    expansion_stats: dict[str, int] = Field(default_factory=dict, description="Stats about graph expansion (hops, nodes_visited, paths_found).")
+
+
 class RagEvaluateRequest(BaseModel):
     query: str | None = None
     expected: list[str] = Field(default_factory=list)

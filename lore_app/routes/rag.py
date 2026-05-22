@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from ..deps import get_retrieve_context, get_templates
+from ..deps import get_ledger_db, get_repo, get_retrieve_context, get_templates
+from ..ledger import LedgerDB
 from ..rag.eval_retrieval import evaluate_retrieval
-from ..route_utils import template_context
-from ..schemas import RagEvaluateRequest, RagEvaluateResult, RagRetrieveRequest
+from ..repository import LoreRepository
+from ..route_utils import enrich_expanded_results, template_context
+from ..schemas import RagEvaluateRequest, RagEvaluateResult, RagExpandRequest, RagExpandedResponse, RagRetrieveRequest
 
 router = APIRouter()
 
@@ -21,6 +23,36 @@ def api_rag_retrieve(payload: RagRetrieveRequest, retrieve_context: Callable[[st
         raise HTTPException(status_code=422, detail="Missing query.")
     limit = max(1, min(int(payload.limit or 10), 50))
     return retrieve_context(query, limit)
+
+
+@router.post("/api/rag/retrieve-expanded", response_model=RagExpandedResponse)
+def api_rag_retrieve_expanded(
+    payload: RagExpandRequest,
+    request: Request,
+    repo: LoreRepository = Depends(get_repo),
+    ledger: LedgerDB = Depends(get_ledger_db),
+):
+    from ..context_graph import build_context_graph
+    from ..rag.hybrid_retrieval import hybrid_retrieve_expanded
+
+    query = payload.query.strip()
+    if not query:
+        raise HTTPException(status_code=422, detail="Missing query.")
+
+    result = hybrid_retrieve_expanded(
+        query,
+        request.app.state.search_index,
+        request.app.state.vector_store,
+        build_context_graph(repo, ledger),
+        ledger,
+        limit=payload.limit,
+        expand_hops=payload.expand_hops,
+        expand_edge_types=payload.expand_edge_types or None,
+        include_claims=payload.include_claims,
+        include_traces=payload.include_traces,
+        include_decisions=payload.include_decisions,
+    )
+    return enrich_expanded_results(repo, result)
 
 
 @router.post("/api/rag/evaluate", response_model=RagEvaluateResult)

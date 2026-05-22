@@ -225,6 +225,20 @@ def enrich_rag_results(repo: LoreRepository, result: dict[str, Any]) -> dict[str
     return enriched
 
 
+def enrich_expanded_results(repo: LoreRepository, result: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(result)
+    rows = []
+    for item in result.get("results", []):
+        row = dict(item)
+        page = repo.read_page(str(row.get("page_id") or ""))
+        if page is not None:
+            row["title"] = page.title
+        rows.append(row)
+    enriched["results"] = rows
+    enriched["total"] = len(rows)
+    return enriched
+
+
 def record_audit(
     request: Request,
     audit_log: AuditLog,

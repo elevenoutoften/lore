@@ -92,6 +92,7 @@ curl -sS -X DELETE "$LORE_URL/api/pages/services/demo"
 | `GET` | `/api/search/fts` | Full-text search index. |
 | `GET` | `/api/search/bm25` | BM25 search index. |
 | `POST` | `/api/rag/retrieve` | Hybrid retrieval over search, vectors, and graph. |
+| `POST` | `/api/rag/retrieve-expanded` | Hybrid retrieval with bounded context graph expansion, path explanations, and related claim/decision/trace IDs. |
 | `POST` | `/api/rag/evaluate` | Evaluate retrieval queries. |
 
 ```bash
@@ -312,6 +313,15 @@ RAG retrieve:
 ```json
 { "query": "deployment runbook", "limit": 10 }
 ```
+
+RAG expanded retrieve:
+
+```json
+{ "query": "routing policy", "limit": 10, "expand_hops": 2, "include_claims": true }
+```
+
+Graph and semantic retrieval help discover relevant context, but canonical
+Markdown pages remain the source of truth.
 
 RAG evaluate:
 

@@ -24,6 +24,7 @@ def test_mcp_initialize_and_tool_list(client):
         "lore_list_lanes",
         "lore_list_actors",
         "lore_rag_context",
+        "lore_rag_context_expanded",
         "lore_link_graph",
         "lore_context_graph",
         "lore_context_graph_neighbors",

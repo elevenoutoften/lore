@@ -1,8 +1,19 @@
 from __future__ import annotations
 
+from lore_app.context_graph import build_context_graph
+from lore_app.rag.hybrid_retrieval import hybrid_retrieve, hybrid_retrieve_expanded
 from lore_app.rag.chunker import chunk_page
 from lore_app.rag.eval_retrieval import evaluate_retrieval
 from lore_app.rag.vector_store import VectorStore
+from lore_app.schemas import ExtractedClaim, ExtractionResult
+
+
+def rpc(client, method, params=None, request_id=1):
+    return client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}},
+        headers={"Mcp-Method": method},
+    )
 
 
 def test_chunk_page_splits_by_heading_with_overlap():
@@ -59,3 +70,142 @@ def test_evaluate_retrieval_empty_input():
     result = evaluate_retrieval([], lambda query, limit: {"results": []})
 
     assert result == {"mean_precision": 0.0, "mean_recall": 0.0, "mean_f1": 0.0, "per_query": []}
+
+
+def seed_expanded_rag_fixture(client) -> None:
+    client.put(
+        "/api/pages/projects/routing-alpha",
+        json={
+            "content": """---
+title: Routing Alpha
+kind: project
+visibility: internal
+status: active
+---
+
+# Routing Alpha
+
+Alpha routing evidence points at [[decisions/routing-policy]].
+""",
+        },
+    )
+    client.put(
+        "/api/pages/decisions/routing-policy",
+        json={
+            "content": """---
+title: Routing Policy
+kind: decision
+visibility: internal
+status: accepted
+---
+
+# Routing Policy
+
+Canonical traffic policy for service dispatch.
+""",
+        },
+    )
+    client.app.state.ledger_db.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-expanded-rag",
+            processed_at="2026-05-22T00:00:00+00:00",
+            source_capture_ids=["inbox/routing-alpha"],
+            claims=[
+                ExtractedClaim(
+                    subject="decisions/routing-policy",
+                    predicate="supports",
+                    object="service dispatch policy",
+                    confidence="high",
+                    source_page_ids=["decisions/routing-policy"],
+                )
+            ],
+        )
+    )
+    client.post("/api/search/reindex")
+
+
+def test_retrieve_expanded_returns_results_with_relevance_paths(client):
+    seed_expanded_rag_fixture(client)
+
+    payload = client.post(
+        "/api/rag/retrieve-expanded",
+        json={"query": "alpha routing evidence", "limit": 5, "expand_hops": 2},
+    ).json()
+
+    decision = next(result for result in payload["results"] if result["page_id"] == "decisions/routing-policy")
+    assert decision["relevance_paths"]
+    assert decision["relevance_paths"][0]["source_id"] == "projects/routing-alpha"
+    assert decision["relevance_paths"][0]["path"][0]["edge_type"] == "mentions"
+
+
+def test_retrieve_expanded_includes_supporting_claims(client):
+    seed_expanded_rag_fixture(client)
+
+    payload = client.post(
+        "/api/rag/retrieve-expanded",
+        json={"query": "alpha routing evidence", "limit": 5, "expand_hops": 2, "include_claims": True},
+    ).json()
+
+    decision = next(result for result in payload["results"] if result["page_id"] == "decisions/routing-policy")
+    assert decision["supporting_claims"]
+
+
+def test_retrieve_expanded_no_expansion_when_hops_zero(client):
+    seed_expanded_rag_fixture(client)
+    repo = client.app.state.repository
+    search_index = client.app.state.search_index
+    vector_store = client.app.state.vector_store
+    graph = build_context_graph(repo, client.app.state.ledger_db)
+
+    expanded = hybrid_retrieve_expanded("alpha routing evidence", search_index, vector_store, graph, limit=5, expand_hops=0)
+    base = hybrid_retrieve("alpha routing evidence", search_index, vector_store, None, limit=10)
+
+    assert [result["page_id"] for result in expanded["results"]] == [result["page_id"] for result in base["results"][:5]]
+    assert all(not result["relevance_paths"] for result in expanded["results"])
+
+
+def test_retrieve_expanded_relevant_because_summary(client):
+    seed_expanded_rag_fixture(client)
+
+    payload = client.post(
+        "/api/rag/retrieve-expanded",
+        json={"query": "alpha routing evidence", "limit": 5, "expand_hops": 2, "include_claims": True},
+    ).json()
+
+    decision = next(result for result in payload["results"] if result["page_id"] == "decisions/routing-policy")
+    assert "reachable via" in decision["relevant_because"]
+    assert "supporting claim" in decision["relevant_because"]
+
+
+def test_retrieve_expanded_without_context_graph(client):
+    client.post("/api/search/reindex")
+
+    payload = hybrid_retrieve_expanded(
+        "gateway service gateway",
+        client.app.state.search_index,
+        client.app.state.vector_store,
+        None,
+        limit=3,
+    )
+
+    assert payload["results"]
+    assert payload["expansion_stats"] == {"hops": 0, "nodes_visited": 0, "paths_found": 0}
+    assert all(not result["relevance_paths"] for result in payload["results"])
+
+
+def test_mcp_rag_context_expanded(client):
+    seed_expanded_rag_fixture(client)
+
+    resp = rpc(
+        client,
+        "tools/call",
+        {
+            "name": "lore_rag_context_expanded",
+            "arguments": {"query": "alpha routing evidence", "limit": 5, "expand_hops": 2},
+        },
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()["result"]
+    assert payload["isError"] is False
+    assert any(result["page_id"] == "decisions/routing-policy" for result in payload["structuredContent"]["results"])

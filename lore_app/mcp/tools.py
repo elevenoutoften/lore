@@ -18,7 +18,7 @@ from ..lint import lint_contradiction_review, lint_lore, lint_stale_queue
 from ..lint_config import LintConfig
 from ..heartbeat import heartbeat_review
 from ..rag.chunker import chunk_page
-from ..rag.hybrid_retrieval import hybrid_retrieve
+from ..rag.hybrid_retrieval import hybrid_retrieve, hybrid_retrieve_expanded
 from ..repository import InvalidPageId, LoreRepository
 from ..schemas import (
     CaptureRequest,
@@ -125,6 +125,28 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "query": {"type": "string", "description": "Natural language query."},
                 "limit": {"type": "integer", "description": "Max results (default 5).", "default": 5},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "lore_rag_context_expanded",
+        "title": "Lore RAG Context Expanded",
+        "description": "Retrieve Lore context with multi-hop graph expansion, returning relevance paths, supporting/contradicting claims, related decisions, and relevant-because summaries.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Natural language query."},
+                "limit": {"type": "integer", "default": 5, "minimum": 1, "maximum": 50},
+                "expand_hops": {"type": "integer", "default": 2, "minimum": 0, "maximum": 4},
+                "expand_edge_types": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Edge types to follow during expansion. Empty = all.",
+                },
+                "include_claims": {"type": "boolean", "default": True},
+                "include_traces": {"type": "boolean", "default": False},
+                "include_decisions": {"type": "boolean", "default": True},
             },
             "required": ["query"],
         },
@@ -938,6 +960,38 @@ def call_tool(
             return tool_result({"query": query, "results": []}, "RAG vector store is not configured.", is_error=True)
         graph = graph_cache.get(repo) if graph_cache is not None else None
         payload = enrich_rag_results(repo, hybrid_retrieve(query, search_index, vector_store, graph, limit=limit))
+        return tool_result(payload, summarize_rag_context(payload))
+
+    if name == "lore_rag_context_expanded":
+        query = require_string(arguments.get("query"), "query")
+        limit = max(1, min(int(arguments.get("limit") or 5), 50))
+        expand_hops = max(0, min(int(arguments.get("expand_hops", 2)), 4))
+        expand_edge_types = arguments.get("expand_edge_types") or None
+        if expand_edge_types is not None and not isinstance(expand_edge_types, list):
+            raise JsonRpcError(-32602, "expand_edge_types must be an array.")
+        include_claims = bool(arguments.get("include_claims", True))
+        include_traces = bool(arguments.get("include_traces", False))
+        include_decisions = bool(arguments.get("include_decisions", True))
+        if vector_store is None:
+            return tool_result({"query": query, "results": []}, "RAG vector store is not configured.", is_error=True)
+        ledger = require_service(ledger_db, "ledger database")
+        graph = build_context_graph(repo, ledger)
+        payload = enrich_rag_results(
+            repo,
+            hybrid_retrieve_expanded(
+                query,
+                search_index,
+                vector_store,
+                graph,
+                ledger,
+                limit=limit,
+                expand_hops=expand_hops,
+                expand_edge_types=[str(edge_type) for edge_type in expand_edge_types] if expand_edge_types else None,
+                include_claims=include_claims,
+                include_traces=include_traces,
+                include_decisions=include_decisions,
+            ),
+        )
         return tool_result(payload, summarize_rag_context(payload))
 
     if name == "lore_link_graph":
