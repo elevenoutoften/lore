@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 import hashlib
 import json
 import re
@@ -7,7 +8,23 @@ from typing import Any
 
 from .ledger import LedgerDB
 from .repository import LoreRepository, dict_list, optional_string, string_list
-from .schemas import ContextEdgeType, ContextGraph, ContextGraphEdge, ContextGraphNode, ContextNodeType, ProvenanceRef
+from .schemas import (
+    ContextEdgeType,
+    ContextExplainQuery,
+    ContextExplainResponse,
+    ContextGraph,
+    ContextGraphEdge,
+    ContextGraphNeighbor,
+    ContextGraphNeighborQuery,
+    ContextGraphNeighborResponse,
+    ContextGraphNode,
+    ContextGraphPath,
+    ContextGraphPathQuery,
+    ContextGraphPathResponse,
+    ContextGraphPathStep,
+    ContextNodeType,
+    ProvenanceRef,
+)
 
 WIKILINK_PATTERN = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 
@@ -132,6 +149,136 @@ def build_context_graph(repo: LoreRepository, ledger: LedgerDB | None = None) ->
     stats["edges"] = len(edges)
 
     return ContextGraph(nodes=nodes, edges=edges, stats=stats)
+
+
+def query_neighbors(graph: ContextGraph, query: ContextGraphNeighborQuery) -> ContextGraphNeighborResponse:
+    """Find neighbors of a node in the context graph."""
+
+    node_index = {node.id: node for node in graph.nodes}
+    neighbors: list[ContextGraphNeighbor] = []
+
+    for edge in graph.edges:
+        if query.edge_types and edge.type.value not in query.edge_types:
+            continue
+
+        neighbor_id: str | None = None
+        if query.direction in ("outgoing", "both") and edge.source == query.node_id:
+            neighbor_id = edge.target
+        elif query.direction in ("incoming", "both") and edge.target == query.node_id:
+            neighbor_id = edge.source
+
+        if neighbor_id is None:
+            continue
+
+        neighbor_node = node_index.get(neighbor_id)
+        if neighbor_node is None:
+            continue
+        if query.node_types and neighbor_node.type.value not in query.node_types:
+            continue
+        neighbors.append(ContextGraphNeighbor(node=neighbor_node, edge=edge))
+
+    total = len(neighbors)
+    return ContextGraphNeighborResponse(node_id=query.node_id, neighbors=neighbors[: query.limit], total=total)
+
+
+def query_paths(graph: ContextGraph, query: ContextGraphPathQuery) -> ContextGraphPathResponse:
+    """Find bounded paths between two nodes using BFS over outgoing edges."""
+
+    node_index = {node.id: node for node in graph.nodes}
+    adjacency: dict[str, list[tuple[ContextGraphEdge, ContextGraphNode]]] = {}
+    for edge in graph.edges:
+        if query.edge_types and edge.type.value not in query.edge_types:
+            continue
+        target_node = node_index.get(edge.target)
+        if target_node is not None:
+            adjacency.setdefault(edge.source, []).append((edge, target_node))
+
+    paths: list[ContextGraphPath] = []
+    visited_paths: set[tuple[str, ...]] = set()
+    queue: deque[tuple[str, list[ContextGraphPathStep], set[str]]] = deque([(query.source_id, [], {query.source_id})])
+
+    while queue and len(paths) < query.limit:
+        current, steps, seen = queue.popleft()
+
+        if current == query.target_id and steps:
+            path_key = tuple(f"{step.edge.source}->{step.edge.target}:{step.edge.type.value}" for step in steps)
+            if path_key not in visited_paths:
+                visited_paths.add(path_key)
+                paths.append(
+                    ContextGraphPath(
+                        source_id=query.source_id,
+                        target_id=query.target_id,
+                        steps=steps,
+                        length=len(steps),
+                    )
+                )
+            continue
+
+        if len(steps) >= query.max_depth:
+            continue
+
+        for edge, node in adjacency.get(current, []):
+            if node.id in seen:
+                continue
+            queue.append((node.id, steps + [ContextGraphPathStep(edge=edge, node=node)], seen | {node.id}))
+
+    return ContextGraphPathResponse(source_id=query.source_id, target_id=query.target_id, paths=paths)
+
+
+def explain_context(graph: ContextGraph, query: ContextExplainQuery) -> ContextExplainResponse:
+    """Explain the context around a node by expanding its neighborhood."""
+
+    node_index = {node.id: node for node in graph.nodes}
+    node = node_index.get(query.node_id)
+    if node is None:
+        return ContextExplainResponse(
+            node=ContextGraphNode(id=query.node_id, type=ContextNodeType.entity, label=query.node_id),
+            neighborhood=[],
+            explanation=f"Node {query.node_id} not found in context graph.",
+        )
+
+    visited: set[str] = {query.node_id}
+    frontier = [query.node_id]
+    all_neighbors: list[ContextGraphNeighbor] = []
+
+    for _ in range(query.depth):
+        next_frontier: list[str] = []
+        for frontier_id in frontier:
+            for edge in graph.edges:
+                if query.edge_types and edge.type.value not in query.edge_types:
+                    continue
+
+                neighbor_id: str | None = None
+                if edge.source == frontier_id and edge.target not in visited:
+                    neighbor_id = edge.target
+                elif edge.target == frontier_id and edge.source not in visited:
+                    neighbor_id = edge.source
+
+                if neighbor_id is None:
+                    continue
+
+                neighbor_node = node_index.get(neighbor_id)
+                if neighbor_node is None:
+                    continue
+                all_neighbors.append(ContextGraphNeighbor(node=neighbor_node, edge=edge))
+                visited.add(neighbor_id)
+                next_frontier.append(neighbor_id)
+        frontier = next_frontier
+
+    edge_summary: dict[str, int] = {}
+    for neighbor in all_neighbors:
+        edge_summary[neighbor.edge.type.value] = edge_summary.get(neighbor.edge.type.value, 0) + 1
+
+    lines = [f"Context for {node.type.value} '{node.label}' ({node.id}):"]
+    for edge_type, count in sorted(edge_summary.items()):
+        lines.append(f"  {edge_type}: {count} connection(s)")
+    lines.append(f"Total neighbors: {len(all_neighbors)}")
+
+    return ContextExplainResponse(
+        node=node,
+        neighborhood=all_neighbors,
+        explanation="\n".join(lines),
+    )
 
 
 def _add_ledger_nodes(

@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from ..capture import build_capture_digest, build_promotion_audit, capture_memory, list_captures, promote_capture, slugify, transition_capture_status, unique_page_id
-from ..context_graph import build_context_graph
+from ..context_graph import build_context_graph, explain_context, query_neighbors, query_paths
 from ..distillation import distill_daily, get_daily_captures, get_pending_days, promote_daily_note
 from ..procedure_candidate import find_repeated_captures, propose_procedure_candidate
 from ..code_ingest.ingest_service import ingest_service_code
@@ -20,7 +20,17 @@ from ..heartbeat import heartbeat_review
 from ..rag.chunker import chunk_page
 from ..rag.hybrid_retrieval import hybrid_retrieve
 from ..repository import InvalidPageId, LoreRepository
-from ..schemas import CaptureRequest, DailyDistillRequest, MetadataUpdate, TraceCreateRequest, TraceEntry, TraceListResponse
+from ..schemas import (
+    CaptureRequest,
+    ContextExplainQuery,
+    ContextGraphNeighborQuery,
+    ContextGraphPathQuery,
+    DailyDistillRequest,
+    MetadataUpdate,
+    TraceCreateRequest,
+    TraceEntry,
+    TraceListResponse,
+)
 from .decisions import build_decision_markdown, build_procedure_markdown, export_procedure_skill
 from .dispatch import JsonRpcError
 
@@ -135,6 +145,52 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {},
+        },
+    },
+    {
+        "name": "lore_context_graph_neighbors",
+        "title": "Lore Context Graph Neighbors",
+        "description": "Find neighbors of a node in the Lore context graph, optionally filtered by direction, edge type, and node type.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "string", "description": "Node ID to find neighbors for."},
+                "direction": {"type": "string", "enum": ["outgoing", "incoming", "both"], "default": "both"},
+                "edge_types": {"type": "array", "items": {"type": "string"}, "description": "Filter to these edge types."},
+                "node_types": {"type": "array", "items": {"type": "string"}, "description": "Filter neighbors to these node types."},
+                "limit": {"type": "integer", "default": 50, "minimum": 1, "maximum": 500},
+            },
+            "required": ["node_id"],
+        },
+    },
+    {
+        "name": "lore_context_graph_paths",
+        "title": "Lore Context Graph Paths",
+        "description": "Find bounded paths between two nodes in the Lore context graph.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source_id": {"type": "string", "description": "Start node ID."},
+                "target_id": {"type": "string", "description": "Target node ID."},
+                "max_depth": {"type": "integer", "default": 3, "minimum": 1, "maximum": 6},
+                "edge_types": {"type": "array", "items": {"type": "string"}, "description": "Filter edges to these types."},
+                "limit": {"type": "integer", "default": 10, "minimum": 1, "maximum": 50},
+            },
+            "required": ["source_id", "target_id"],
+        },
+    },
+    {
+        "name": "lore_explain_context",
+        "title": "Explain Lore Context",
+        "description": "Explain the context around a node by expanding its neighborhood in the context graph.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "string", "description": "Node to explain."},
+                "depth": {"type": "integer", "default": 2, "minimum": 1, "maximum": 3},
+                "edge_types": {"type": "array", "items": {"type": "string"}, "description": "Filter edges to these types."},
+            },
+            "required": ["node_id"],
         },
     },
     {
@@ -894,6 +950,52 @@ def call_tool(
         graph = build_context_graph(repo, ledger)
         payload = graph.model_dump(mode="json")
         return tool_result(payload, f"Context graph: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
+
+    if name == "lore_context_graph_neighbors":
+        node_id = require_string(arguments.get("node_id"), "node_id")
+        direction = arguments.get("direction", "both")
+        edge_types = arguments.get("edge_types", [])
+        node_types = arguments.get("node_types", [])
+        limit = max(1, min(int(arguments.get("limit", 50)), 500))
+        ledger = require_service(ledger_db, "ledger database")
+        graph = build_context_graph(repo, ledger)
+        query = ContextGraphNeighborQuery(
+            node_id=node_id,
+            direction=direction,
+            edge_types=edge_types,
+            node_types=node_types,
+            limit=limit,
+        )
+        result = query_neighbors(graph, query)
+        return tool_result(result.model_dump(mode="json"), f"Found {result.total} neighbors for {node_id}")
+
+    if name == "lore_context_graph_paths":
+        source_id = require_string(arguments.get("source_id"), "source_id")
+        target_id = require_string(arguments.get("target_id"), "target_id")
+        max_depth = max(1, min(int(arguments.get("max_depth", 3)), 6))
+        edge_types = arguments.get("edge_types", [])
+        limit = max(1, min(int(arguments.get("limit", 10)), 50))
+        ledger = require_service(ledger_db, "ledger database")
+        graph = build_context_graph(repo, ledger)
+        query = ContextGraphPathQuery(
+            source_id=source_id,
+            target_id=target_id,
+            max_depth=max_depth,
+            edge_types=edge_types,
+            limit=limit,
+        )
+        result = query_paths(graph, query)
+        return tool_result(result.model_dump(mode="json"), f"Found {len(result.paths)} paths from {source_id} to {target_id}")
+
+    if name == "lore_explain_context":
+        node_id = require_string(arguments.get("node_id"), "node_id")
+        depth = max(1, min(int(arguments.get("depth", 2)), 3))
+        edge_types = arguments.get("edge_types", [])
+        ledger = require_service(ledger_db, "ledger database")
+        graph = build_context_graph(repo, ledger)
+        query = ContextExplainQuery(node_id=node_id, depth=depth, edge_types=edge_types)
+        result = explain_context(graph, query)
+        return tool_result(result.model_dump(mode="json"), result.explanation)
 
     if name == "lore_page_links":
         page_id = require_string(arguments.get("page_id"), "page_id")

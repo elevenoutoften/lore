@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from lore_app.context_graph import build_context_graph
+from lore_app.context_graph import build_context_graph, explain_context, query_neighbors, query_paths
+from lore_app.schemas import ContextExplainQuery, ContextGraphNeighborQuery, ContextGraphPathQuery
 from lore_app.schemas import (
     ContextRef,
     ExtractedClaim,
@@ -95,9 +96,10 @@ def _seed_ledger(client, capture_id: str) -> dict[str, str]:
             processed_at="2026-05-01T00:00:00+00:00",
         )
     )
-    candidates = ledger.get_candidates(limit=20)
-    claim_id = next(candidate["candidate_id"] for candidate in candidates if candidate["candidate_type"] == "claim")
-    entity_id = next(candidate["candidate_id"] for candidate in candidates if candidate["candidate_type"] == "entity")
+    claims = ledger.get_candidates(candidate_type="claim", limit=200)
+    entities = ledger.get_candidates(candidate_type="entity", limit=200)
+    claim_id = next(candidate["candidate_id"] for candidate in claims)
+    entity_id = next(candidate["candidate_id"] for candidate in entities)
 
     ledger.store_trace(
         TraceEntry(
@@ -136,6 +138,14 @@ def _context_graph_fixture(client):
     capture_id = _create_capture(client)
     candidate_ids = _seed_ledger(client, capture_id)
     return repo, client.app.state.ledger_db, capture_id, candidate_ids
+
+
+def _rpc(client, name: str, arguments: dict):
+    return client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": arguments}},
+        headers={"Mcp-Method": "tools/call"},
+    )
 
 
 def test_context_graph_includes_page_nodes(client):
@@ -230,3 +240,136 @@ def test_context_graph_without_ledger(client):
     assert _node(graph, "decisions/context-graph-decision").type == "page"
     assert _node(graph, "plan:plan-context-graph") is None
     assert not [node for node in graph.nodes if node.id.startswith("candidate:")]
+
+
+def test_neighbors_returns_connected_nodes(client):
+    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    graph = build_context_graph(repo, ledger)
+
+    result = query_neighbors(graph, ContextGraphNeighborQuery(node_id="services/context-graph-service", direction="both"))
+
+    neighbor_ids = {neighbor.node.id for neighbor in result.neighbors}
+    assert "actor:nyx" in neighbor_ids
+    assert "source:README.md" in neighbor_ids
+    assert "task:flow_000586" in neighbor_ids
+
+
+def test_neighbors_direction_filter(client):
+    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    graph = build_context_graph(repo, ledger)
+
+    result = query_neighbors(graph, ContextGraphNeighborQuery(node_id="actor:nyx", direction="outgoing"))
+
+    assert result.neighbors
+    assert all(neighbor.edge.source == "actor:nyx" for neighbor in result.neighbors)
+
+
+def test_neighbors_edge_type_filter(client):
+    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    graph = build_context_graph(repo, ledger)
+
+    result = query_neighbors(
+        graph,
+        ContextGraphNeighborQuery(node_id="services/context-graph-service", direction="both", edge_types=["authored"]),
+    )
+
+    assert result.neighbors
+    assert all(neighbor.edge.type == "authored" for neighbor in result.neighbors)
+
+
+def test_neighbors_node_type_filter(client):
+    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    graph = build_context_graph(repo, ledger)
+
+    result = query_neighbors(
+        graph,
+        ContextGraphNeighborQuery(node_id="actor:nyx", direction="outgoing", node_types=["page"]),
+    )
+
+    assert result.neighbors
+    assert all(neighbor.node.type == "page" for neighbor in result.neighbors)
+
+
+def test_paths_between_connected_nodes(client):
+    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    graph = build_context_graph(repo, ledger)
+
+    result = query_paths(
+        graph,
+        ContextGraphPathQuery(source_id="actor:nyx", target_id="services/context-graph-service"),
+    )
+
+    assert result.paths
+    assert any(path.length == 1 for path in result.paths)
+
+
+def test_paths_multi_hop(client):
+    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    graph = build_context_graph(repo, ledger)
+
+    result = query_paths(
+        graph,
+        ContextGraphPathQuery(source_id="actor:nyx", target_id="policy:auto-apply:v1", max_depth=3),
+    )
+
+    assert result.paths
+
+
+def test_paths_missing_target(client):
+    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    graph = build_context_graph(repo, ledger)
+
+    result = query_paths(
+        graph,
+        ContextGraphPathQuery(source_id="actor:nyx", target_id="nonexistent:node"),
+    )
+
+    assert result.paths == []
+
+
+def test_explain_context_returns_neighborhood(client):
+    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    graph = build_context_graph(repo, ledger)
+
+    result = explain_context(graph, ContextExplainQuery(node_id="services/context-graph-service", depth=1))
+
+    assert "Context for page 'Context Graph Service'" in result.explanation
+    assert "Total neighbors:" in result.explanation
+    assert result.neighborhood
+
+
+def test_explain_context_missing_node(client):
+    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    graph = build_context_graph(repo, ledger)
+
+    result = explain_context(graph, ContextExplainQuery(node_id="nonexistent:node"))
+
+    assert "not found" in result.explanation
+
+
+def test_mcp_context_graph_neighbors(client):
+    _context_graph_fixture(client)
+
+    response = _rpc(
+        client,
+        "lore_context_graph_neighbors",
+        {"node_id": "services/context-graph-service", "direction": "both"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["result"]["structuredContent"]
+    assert payload["neighbors"]
+
+
+def test_mcp_explain_context(client):
+    _context_graph_fixture(client)
+
+    response = _rpc(
+        client,
+        "lore_explain_context",
+        {"node_id": "services/context-graph-service", "depth": 1},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["result"]["structuredContent"]
+    assert payload["explanation"]

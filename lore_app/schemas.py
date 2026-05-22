@@ -194,6 +194,81 @@ class ContextGraph(BaseModel):
     stats: dict[str, int] = Field(default_factory=dict)
 
 
+class ContextGraphNeighborQuery(BaseModel):
+    """Query for neighbors of a specific node."""
+
+    node_id: str = Field(..., description="Node ID to find neighbors for.")
+    direction: Literal["outgoing", "incoming", "both"] = Field(default="both", description="Edge direction to follow.")
+    edge_types: list[str] = Field(default_factory=list, description="Filter to these edge types. Empty = all.")
+    node_types: list[str] = Field(default_factory=list, description="Filter neighbor nodes to these types. Empty = all.")
+    limit: int = Field(default=50, ge=1, le=500, description="Max neighbors to return.")
+
+
+class ContextGraphNeighbor(BaseModel):
+    """A neighbor node with the connecting edge."""
+
+    node: ContextGraphNode
+    edge: ContextGraphEdge
+
+
+class ContextGraphNeighborResponse(BaseModel):
+    """Response for a neighbor query."""
+
+    node_id: str
+    neighbors: list[ContextGraphNeighbor]
+    total: int
+
+
+class ContextGraphPathQuery(BaseModel):
+    """Query for bounded paths between two nodes."""
+
+    source_id: str = Field(..., description="Start node ID.")
+    target_id: str = Field(..., description="Target node ID.")
+    max_depth: int = Field(default=3, ge=1, le=6, description="Maximum path length.")
+    edge_types: list[str] = Field(default_factory=list, description="Filter edges to these types. Empty = all.")
+    limit: int = Field(default=10, ge=1, le=50, description="Max paths to return.")
+
+
+class ContextGraphPathStep(BaseModel):
+    """One step in a graph path."""
+
+    edge: ContextGraphEdge
+    node: ContextGraphNode
+
+
+class ContextGraphPath(BaseModel):
+    """A path through the context graph."""
+
+    source_id: str
+    target_id: str
+    steps: list[ContextGraphPathStep]
+    length: int
+
+
+class ContextGraphPathResponse(BaseModel):
+    """Response for a path query."""
+
+    source_id: str
+    target_id: str
+    paths: list[ContextGraphPath]
+
+
+class ContextExplainQuery(BaseModel):
+    """Query for explaining the context around a node."""
+
+    node_id: str = Field(..., description="Node to explain.")
+    depth: int = Field(default=2, ge=1, le=3, description="Neighborhood depth.")
+    edge_types: list[str] = Field(default_factory=list, description="Filter edges to these types. Empty = all.")
+
+
+class ContextExplainResponse(BaseModel):
+    """Explanation of context around a node."""
+
+    node: ContextGraphNode
+    neighborhood: list[ContextGraphNeighbor]
+    explanation: str
+
+
 class StubRequest(BaseModel):
     title: str | None = None
     kind: str = "page"
