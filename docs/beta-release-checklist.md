@@ -101,7 +101,7 @@ verified against the release candidate build, not only local development code.
 - [ ] Docker container starts with persistent content and database volumes.
 
   ```bash
-  docker run -d -p 8100:8100 \
+  docker run -d -p 8100:8000 \
     -v lore-pages:/tmp/pages \
     -v lore-db:/tmp/db \
     -e LORE_AUTH_MODE=none \
@@ -162,7 +162,7 @@ verified against the release candidate build, not only local development code.
 - [ ] Package version matches changelog:
 
   ```bash
-  python -c "from importlib.metadata import version; print(version('axis-lore'))"
+  python -c "from importlib.metadata import version; print(version('lore'))"
   # Expected: 0.3.0b1 (or current release version)
   ```
 

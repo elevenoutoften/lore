@@ -98,7 +98,7 @@ jobs:
           docker build -t lore:ci-test .
       - name: Verify container starts
         run: |
-          docker run -d --name lore-ci -p 8101:8100 \
+          docker run -d --name lore-ci -p 8101:8000 \
             -e LORE_AUTH_MODE=none \
             -e LORE_CONTENT_DIR=/tmp/pages \
             -e LORE_SEARCH_DB=/tmp/db/search.db \
