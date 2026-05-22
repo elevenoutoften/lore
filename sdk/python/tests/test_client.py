@@ -87,6 +87,50 @@ class LoreClientTests(unittest.TestCase):
         self.assertEqual(json.loads(request.data.decode("utf-8")), {"content": "# Lore", "commit_message": "Update lore"})
 
     @patch("urllib.request.urlopen")
+    def test_post_request_create_trace(self, urlopen):
+        urlopen.return_value = MockResponse({"trace_id": "trace-abc", "actor": "nyx"})
+        client = LoreClient("https://lore.example.test")
+
+        result = client.create_trace(actor="nyx", reason_summary="Selected low-risk patch.")
+
+        self.assertEqual(result["trace_id"], "trace-abc")
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "https://lore.example.test/api/traces")
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(
+            json.loads(request.data.decode("utf-8")),
+            {
+                "actor": "nyx",
+                "reason_summary": "Selected low-risk patch.",
+                "status": "active",
+            },
+        )
+
+    @patch("urllib.request.urlopen")
+    def test_get_request_get_trace(self, urlopen):
+        urlopen.return_value = MockResponse({"trace_id": "trace-abc"})
+        client = LoreClient("https://lore.example.test")
+
+        result = client.get_trace("trace-abc")
+
+        self.assertEqual(result["trace_id"], "trace-abc")
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "https://lore.example.test/api/traces/trace-abc")
+        self.assertEqual(request.get_method(), "GET")
+
+    @patch("urllib.request.urlopen")
+    def test_get_request_list_traces(self, urlopen):
+        urlopen.return_value = MockResponse({"traces": []})
+        client = LoreClient("https://lore.example.test")
+
+        result = client.list_traces(actor="nyx")
+
+        self.assertEqual(result["traces"], [])
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "https://lore.example.test/api/traces?limit=20&actor=nyx")
+        self.assertEqual(request.get_method(), "GET")
+
+    @patch("urllib.request.urlopen")
     def test_delete_request_delete_page(self, urlopen):
         urlopen.return_value = MockResponse(None, status=204)
         client = LoreClient("https://lore.example.test")

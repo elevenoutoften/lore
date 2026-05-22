@@ -43,6 +43,9 @@ def test_mcp_initialize_and_tool_list(client):
         "lore_update_metadata",
         "lore_ingest_service",
         "lore_create_decision",
+        "lore_create_trace",
+        "lore_get_trace",
+        "lore_list_traces",
         "lore_upsert_page",
         "lore_distill_daily",
         "lore_get_daily",
@@ -418,3 +421,90 @@ def test_mcp_create_decision(client):
     assert page["frontmatter"]["status"] == "accepted"
     assert "## Consequences" in page["content"]
     assert "Created Lore decision" in payload["content"][0]["text"]
+
+
+def test_mcp_create_trace(client):
+    result = rpc(
+        client,
+        "tools/call",
+        {
+            "name": "lore_create_trace",
+            "arguments": {
+                "actor": "nyx",
+                "reason_summary": "Selected low-risk patch over full rewrite.",
+                "context_refs": [{"type": "page", "id": "services/lore"}],
+                "related_ids": {"task_id": "flow_000581"},
+            },
+        },
+    )
+
+    assert result.status_code == 200
+    trace = result.json()["result"]["structuredContent"]
+    assert trace["trace_id"].startswith("trace-")
+    assert trace["actor"] == "nyx"
+    assert trace["context_refs"] == [{"type": "page", "id": "services/lore"}]
+
+
+def test_mcp_get_trace(client):
+    created = rpc(
+        client,
+        "tools/call",
+        {
+            "name": "lore_create_trace",
+            "arguments": {
+                "actor": "nyx",
+                "reason_summary": "Created trace for round-trip verification.",
+            },
+        },
+    ).json()["result"]["structuredContent"]
+
+    fetched = rpc(
+        client,
+        "tools/call",
+        {"name": "lore_get_trace", "arguments": {"trace_id": created["trace_id"]}},
+    )
+
+    assert fetched.status_code == 200
+    trace = fetched.json()["result"]["structuredContent"]
+    assert trace["trace_id"] == created["trace_id"]
+    assert trace["reason_summary"] == "Created trace for round-trip verification."
+
+
+def test_mcp_list_traces(client):
+    rpc(
+        client,
+        "tools/call",
+        {
+            "name": "lore_create_trace",
+            "arguments": {
+                "actor": "mcp-list-nyx",
+                "reason_summary": "Matching trace.",
+                "related_ids": {"task_id": "flow_000581"},
+            },
+        },
+    )
+    rpc(
+        client,
+        "tools/call",
+        {
+            "name": "lore_create_trace",
+            "arguments": {
+                "actor": "codex",
+                "reason_summary": "Non-matching trace.",
+                "related_ids": {"task_id": "flow_000582"},
+            },
+        },
+    )
+
+    listed = rpc(
+        client,
+        "tools/call",
+        {"name": "lore_list_traces", "arguments": {"actor": "mcp-list-nyx", "limit": 10}},
+    )
+
+    assert listed.status_code == 200
+    content = listed.json()["result"]["structuredContent"]
+    assert content["total"] == 1
+    assert len(content["traces"]) == 1
+    assert content["traces"][0]["actor"] == "mcp-list-nyx"
+    assert content["traces"][0]["related_ids"]["task_id"] == "flow_000581"

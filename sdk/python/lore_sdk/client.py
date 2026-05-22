@@ -193,6 +193,63 @@ class LoreClient:
     def export_procedure(self, page_id: str) -> dict[str, Any] | list[Any]:
         return self._request("GET", f"/api/procedures/{self._path(page_id)}/export")
 
+    def create_trace(
+        self,
+        *,
+        actor: str,
+        reason_summary: str,
+        status: str = "active",
+        parent_trace_id: str | None = None,
+        context_refs: list[dict] | None = None,
+        tool_refs: list[dict] | None = None,
+        constraints: list[str] | None = None,
+        policy_refs: list[str] | None = None,
+        alternatives: list[dict] | None = None,
+        outcome: str = "",
+        related_ids: dict | None = None,
+    ) -> dict[str, Any] | list[Any]:
+        """Create a reasoning trace."""
+        payload: dict[str, Any] = {"actor": actor, "reason_summary": reason_summary, "status": status}
+        if parent_trace_id:
+            payload["parent_trace_id"] = parent_trace_id
+        if context_refs:
+            payload["context_refs"] = context_refs
+        if tool_refs:
+            payload["tool_refs"] = tool_refs
+        if constraints:
+            payload["constraints"] = constraints
+        if policy_refs:
+            payload["policy_refs"] = policy_refs
+        if alternatives:
+            payload["alternatives"] = alternatives
+        if outcome:
+            payload["outcome"] = outcome
+        if related_ids:
+            payload["related_ids"] = related_ids
+        return self._request("POST", "/api/traces", data=payload)
+
+    def get_trace(self, trace_id: str) -> dict[str, Any] | list[Any]:
+        """Retrieve a reasoning trace by ID."""
+        return self._request("GET", f"/api/traces/{trace_id}")
+
+    def list_traces(
+        self,
+        *,
+        actor: str | None = None,
+        status: str | None = None,
+        task_id: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any] | list[Any]:
+        """Query reasoning traces by filters."""
+        params: dict[str, Any] = {"limit": limit}
+        if actor:
+            params["actor"] = actor
+        if status:
+            params["status"] = status
+        if task_id:
+            params["task_id"] = task_id
+        return self._request("GET", "/api/traces", params=params)
+
     def code_references(self, code_path: str) -> dict[str, Any] | list[Any]:
         return self._request("GET", f"/api/code-references/{self._path(code_path)}")
 

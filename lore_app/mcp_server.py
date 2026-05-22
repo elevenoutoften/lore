@@ -5,6 +5,7 @@ import json
 import sys
 
 from .config import LoreConfig
+from .ledger import LedgerDB
 from .link_graph import LinkGraphCache
 from .mcp import PROJECT_NAME, PROTOCOL_VERSION, TOOLS
 from .rag.vector_store import VectorStore
@@ -19,6 +20,8 @@ def main() -> int:
     repo = LoreRepository(str(config.content_dir))
     search_idx = LoreSearchIndex(str(config.search_db))
     vector_store = VectorStore(str(config.vector_db))
+    ledger_db = LedgerDB(config.ledger_db)
+    ledger_db.initialize()
     graph_cache = LinkGraphCache()
 
     for line in sys.stdin:
@@ -48,7 +51,7 @@ def main() -> int:
             from .mcp import call_tool
 
             try:
-                response["result"] = call_tool(repo, params, search_idx, graph_cache, vector_store)
+                response["result"] = call_tool(repo, params, search_idx, graph_cache, vector_store, ledger_db=ledger_db)
             except Exception as exc:
                 response["error"] = {"code": -32603, "message": str(exc)}
         else:

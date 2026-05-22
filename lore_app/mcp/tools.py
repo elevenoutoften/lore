@@ -18,7 +18,7 @@ from ..heartbeat import heartbeat_review
 from ..rag.chunker import chunk_page
 from ..rag.hybrid_retrieval import hybrid_retrieve
 from ..repository import InvalidPageId, LoreRepository
-from ..schemas import CaptureRequest, DailyDistillRequest, MetadataUpdate
+from ..schemas import CaptureRequest, DailyDistillRequest, MetadataUpdate, TraceCreateRequest, TraceEntry, TraceListResponse
 from .decisions import build_decision_markdown, build_procedure_markdown, export_procedure_skill
 from .dispatch import JsonRpcError
 
@@ -28,6 +28,7 @@ WRITE_TOOL_NAMES = {
     "lore_apply_patch",
     "lore_consolidation_rollback",
     "lore_consolidation_run",
+    "lore_create_trace",
     "lore_create_decision",
     "lore_propose_procedure_candidate",
     "lore_promote_capture",
@@ -460,6 +461,95 @@ TOOLS: list[dict[str, Any]] = [
                 "status": {"type": "string", "default": "proposed", "description": "Decision status."},
             },
             "required": ["title", "summary", "context", "decision", "consequences"],
+        },
+    },
+    {
+        "name": "lore_create_trace",
+        "description": "Record a reasoning trace - a concise rationale summary explaining why a decision was made. NOT for raw model chain-of-thought. Use this when making important agent decisions, choosing between alternatives, or applying policies.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "actor": {"type": "string", "description": "Agent or person making the decision."},
+                "reason_summary": {"type": "string", "description": "Concise human-readable rationale (max 5000 chars)."},
+                "status": {"type": "string", "enum": ["active", "completed", "abandoned"], "description": "Trace status. Default: active."},
+                "parent_trace_id": {"type": "string", "description": "Parent trace ID for sub-decisions."},
+                "context_refs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string", "enum": ["page", "capture", "task", "candidate"]},
+                            "id": {"type": "string"},
+                        },
+                        "required": ["type", "id"],
+                    },
+                    "description": "Context entities examined during the decision.",
+                },
+                "tool_refs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "tool": {"type": "string"},
+                            "action": {"type": "string"},
+                            "result_summary": {"type": "string"},
+                        },
+                        "required": ["tool"],
+                    },
+                    "description": "Tools called during the decision.",
+                },
+                "constraints": {"type": "array", "items": {"type": "string"}, "description": "Constraints that applied."},
+                "policy_refs": {"type": "array", "items": {"type": "string"}, "description": "Policy IDs that governed the decision."},
+                "alternatives": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "description": {"type": "string"},
+                            "rejected_reason": {"type": "string"},
+                        },
+                        "required": ["description"],
+                    },
+                    "description": "Alternatives considered and why they were rejected.",
+                },
+                "outcome": {"type": "string", "description": "Outcome of the decision (fill in later if unknown at creation time)."},
+                "related_ids": {
+                    "type": "object",
+                    "description": "Linked entities: task_id, capture_id, page_id, candidate_id, decision_id.",
+                    "properties": {
+                        "task_id": {"type": "string"},
+                        "capture_id": {"type": "string"},
+                        "page_id": {"type": "string"},
+                        "candidate_id": {"type": "string"},
+                        "decision_id": {"type": "string"},
+                    },
+                },
+            },
+            "required": ["actor", "reason_summary"],
+        },
+    },
+    {
+        "name": "lore_get_trace",
+        "description": "Retrieve a reasoning trace by ID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "trace_id": {"type": "string", "description": "The trace ID to retrieve."},
+            },
+            "required": ["trace_id"],
+        },
+    },
+    {
+        "name": "lore_list_traces",
+        "description": "Query reasoning traces by actor, status, task, or other filters.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "actor": {"type": "string", "description": "Filter by actor name."},
+                "status": {"type": "string", "description": "Filter by status (active, completed, abandoned)."},
+                "task_id": {"type": "string", "description": "Filter by linked task ID."},
+                "limit": {"type": "integer", "description": "Max results. Default: 20."},
+            },
         },
     },
     {
@@ -1020,6 +1110,39 @@ This page was auto-created as a stub. Replace with actual content.
         invalidate_graph_cache(graph_cache)
         return tool_result({"page": page.model_dump()}, f"Created Lore decision: {page.id}")
 
+    if name == "lore_create_trace":
+        ledger = require_service(ledger_db, "ledger database")
+        try:
+            payload = TraceCreateRequest(**arguments)
+        except ValidationError as exc:
+            raise JsonRpcError(-32602, str(exc)) from exc
+        trace = TraceEntry(trace_id="", **payload.model_dump())
+        stored = ledger.store_trace(trace)
+        content = stored.model_dump(mode="json")
+        return tool_result(content, f"Created reasoning trace: {stored.trace_id}")
+
+    if name == "lore_get_trace":
+        ledger = require_service(ledger_db, "ledger database")
+        trace_id = require_string(arguments.get("trace_id"), "trace_id")
+        trace = ledger.get_trace(trace_id)
+        if trace is None:
+            return tool_result({"trace_id": trace_id}, f"Trace not found: {trace_id}", is_error=True)
+        return tool_result(trace.model_dump(mode="json"), f"Retrieved reasoning trace: {trace.trace_id}")
+
+    if name == "lore_list_traces":
+        ledger = require_service(ledger_db, "ledger database")
+        limit = max(1, min(int(arguments.get("limit") or 20), 500))
+        filters = {
+            "actor": optional_string(arguments.get("actor")),
+            "status": optional_string(arguments.get("status")),
+            "task_id": optional_string(arguments.get("task_id")),
+        }
+        traces = ledger.list_traces(**filters, limit=limit, offset=0)
+        total = ledger.count_traces(**filters)
+        response = TraceListResponse(traces=traces, total=total, limit=limit, offset=0)
+        payload = response.model_dump(mode="json")
+        return tool_result(payload, summarize_traces(payload))
+
     if name == "lore_upsert_page":
         page_id = require_string(arguments.get("page_id"), "page_id")
         content = require_string(arguments.get("content"), "content")
@@ -1384,6 +1507,14 @@ def summarize_search(payload: dict[str, Any]) -> str:
         lines.append(f"  {page.get('id', '?')} (score={hit.get('score', 0)})")
         for match in (hit.get("matches") or [])[:2]:
             lines.append(f"    {match[:100]}")
+    return "\n".join(lines)
+
+
+def summarize_traces(payload: dict[str, Any]) -> str:
+    traces = payload.get("traces") or []
+    lines = [f"Found {len(traces)} reasoning trace(s)."]
+    for trace in traces[:10]:
+        lines.append(f"  {trace.get('trace_id', '?')} - {trace.get('actor', '?')} ({trace.get('status', 'active')})")
     return "\n".join(lines)
 
 
