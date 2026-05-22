@@ -87,6 +87,8 @@ def suggest_fix(issue: LintIssue, page: PageDetail | None = None) -> tuple[str |
         "procedure_missing_steps": ("Add a non-empty `steps:` list to the procedure frontmatter.", True),
         "procedure_missing_trigger": ("Add a `trigger:` field describing when to use this procedure.", True),
         "procedure_step_not_in_body": ("Add the missing numbered step to the procedure body.", False),
+        "procedure-schema-version": ('Add `schema_version: "1.0"` to the procedure frontmatter.', True),
+        "procedure-unvalidated": ("Mark the procedure as validated via the validate endpoint.", False),
         "epistemic-label": ("Add `epistemic_status: operator_declared, retrieved, inferred, or assumption.`", True),
         "epistemic-weak": ("Verify and upgrade to operator_declared or retrieved, or add supporting evidence.", False),
         "epistemic-unsourced": ("Add sources, evidence, or downgrade to capture/inbox.", True),
@@ -330,7 +332,7 @@ def lint_contradictions(page: PageDetail) -> list[LintIssue]:
 def lint_procedure(page: PageDetail) -> list[LintIssue]:
     """Lint procedure-specific quality checks."""
     issues: list[LintIssue] = []
-    if page.kind != "procedure":
+    if page.kind not in ("procedure", "procedure-candidate"):
         return issues
 
     steps = page.frontmatter.get("steps", [])
@@ -367,6 +369,26 @@ def lint_procedure(page: PageDetail) -> list[LintIssue]:
                         detail=str(step),
                     )
                 )
+
+    if not optional_string(page.frontmatter.get("schema_version")):
+        issues.append(
+            page_issue(
+                page,
+                rule="procedure-schema-version",
+                severity="warning",
+                message="Procedure page should have a schema_version field.",
+            )
+        )
+
+    if page.kind == "procedure" and not page.frontmatter.get("validated"):
+        issues.append(
+            page_issue(
+                page,
+                rule="procedure-unvalidated",
+                severity="warning",
+                message="Procedure page has not been validated.",
+            )
+        )
 
     return issues
 

@@ -789,6 +789,40 @@ class ProcedureCandidateResponse(BaseModel):
     message: str
 
 
+class ProcedureArtifact(BaseModel):
+    """A formalized procedure artifact with strict metadata."""
+
+    page_id: str
+    title: str
+    schema_version: str = "1.0"
+    author: str = ""
+    trigger: str
+    steps: list[str] = Field(default_factory=list)
+    preconditions: list[str] = Field(default_factory=list)
+    postconditions: list[str] = Field(default_factory=list)
+    error_handling: str = ""
+    validated: bool = False
+    validated_at: str | None = None
+    source_capture_ids: list[str] = Field(default_factory=list)
+    epistemic_status: str | None = None
+
+
+class ProcedureExportRequest(BaseModel):
+    """Request to export a procedure page as a skill artifact."""
+
+    page_id: str = Field(min_length=1)
+    format: Literal["skill", "markdown"] = Field(default="skill", description="Export format.")
+
+
+class ProcedureExportResponse(BaseModel):
+    """Response for procedure export."""
+
+    page_id: str
+    format: str
+    content: str
+    filename: str
+
+
 class ExtractedEntity(BaseModel):
     """An entity extracted from a capture."""
 

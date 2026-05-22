@@ -60,6 +60,10 @@ FRONTMATTER_SPEC: dict[str, FrontmatterKindSpec] = {
             "postconditions",
             "error_handling",
             "epistemic_status",
+            "schema_version",
+            "validated",
+            "validated_at",
+            "author",
         ],
     ),
     "page": FrontmatterKindSpec(
