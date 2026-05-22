@@ -78,6 +78,8 @@ def parse_scalar(raw_value: str) -> Any:
         return True
     if value.casefold() == "false":
         return False
+    if value.casefold() in ("null", "none", "~"):
+        return None
     return value
 
 
@@ -102,6 +104,8 @@ def serialize_frontmatter_field(key: str, value: Any) -> list[str]:
         return [f"{key}:"] + [f"  - {frontmatter_scalar(item)}" for item in value]
     if isinstance(value, bool):
         return [f"{key}: {str(value).lower()}"]
+    if value is None:
+        return [f"{key}: null"]
     return [f"{key}: {frontmatter_scalar(value)}"]
 
 

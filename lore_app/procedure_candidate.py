@@ -203,9 +203,13 @@ def _build_candidate_markdown(
         "status: draft",
         f"trigger: {frontmatter_scalar(trigger)}",
         "steps: []",
+        'schema_version: "1.0"',
+        'author: ""',
+        "validated: false",
+        "validated_at: null",
         "proposed_from: repeated-pattern",
         f"proposed_at: {now}",
-        "sources:",
+        "source_capture_ids:",
     ]
     for cid in source_capture_ids:
         frontmatter_lines.append(f"  - {cid}")
