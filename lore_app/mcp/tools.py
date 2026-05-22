@@ -950,6 +950,8 @@ def call_tool(
     ledger_db: Any | None = None,
     patch_planner: Any | None = None,
     consolidation_worker: Any | None = None,
+    audit_log: Any | None = None,
+    metrics: Any | None = None,
 ) -> dict[str, Any]:
     name = require_string(params.get("name"), "name")
     arguments = params.get("arguments") or {}
@@ -1589,6 +1591,20 @@ This page was auto-created as a stub. Replace with actual content.
                 search_index.upsert_page_from_detail(capture)
             index_vector_page(vector_store, capture)
         invalidate_graph_cache(graph_cache)
+        if metrics is not None:
+            for _ in captures:
+                metrics.increment_index_size()
+        if audit_log is not None:
+            from ..audit import new_audit_entry
+
+            for capture in captures:
+                audit_log.record(new_audit_entry(
+                    actor="mcp:heartbeat_audit",
+                    operation="heartbeat_capture",
+                    page_id=capture.id,
+                    summary=f"Captured {capture.title}",
+                    diff_size=len(capture.content.encode("utf-8")),
+                ))
         payload = {"captures": [capture.model_dump() for capture in captures]}
         return tool_result(payload, summarize_heartbeat_audit(payload))
 

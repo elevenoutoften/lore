@@ -3,6 +3,18 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 
+def mcp_call(client, name, arguments=None):
+    return client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments or {}},
+        },
+    )
+
+
 def test_heartbeat_dashboard_includes_consolidation_section(client):
     response = client.get("/heartbeat")
 
@@ -176,3 +188,62 @@ def test_heartbeat_captures_writes_audit(client):
     assert audit_resp.status_code == 200
     entries = audit_resp.json()
     assert any(e.get("operation") == "heartbeat_capture" for e in entries)
+
+
+def test_heartbeat_audit_mcp_side_effects(client):
+    """MCP heartbeat audit should perform the route's post-write side effects."""
+    client.put(
+        "/api/pages/runbooks/mcp-side-effects-stale-runbook",
+        json={
+            "content": "---\ntitle: MCP Side Effects Stale Runbook\nkind: runbook\nvisibility: internal\nsummary: Tests MCP heartbeat side effects.\nconfidence: high\nstale_after: 2020-01-01\n---\n\n# MCP Side Effects Stale Runbook\n",
+        },
+    )
+    graph_cache = client.app.state.graph_cache
+    graph_cache.get(client.app.state.repository)
+    before_metrics = client.app.state.metrics.get_metrics()["index_size"]
+
+    response = mcp_call(client, "lore_heartbeat_audit")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert "error" not in payload
+    captures = payload["result"]["structuredContent"]["captures"]
+    assert len(captures) == 1
+    capture = captures[0]
+    assert capture["title"] == "Heartbeat audit: 1 stale page"
+
+    search_resp = client.get("/api/search/fts", params={"q": "mcp side effects stale"})
+    assert search_resp.status_code == 200
+    assert any(hit["page_id"] == capture["id"] for hit in search_resp.json()["hits"])
+
+    vector_hits = client.app.state.vector_store.search("mcp side effects stale", limit=10)
+    assert any(hit["page_id"] == capture["id"] for hit in vector_hits)
+    assert graph_cache.get_if_valid(client.app.state.repository) is None
+    assert client.app.state.metrics.get_metrics()["index_size"] == before_metrics + 1
+
+    audit_resp = client.get("/api/audit", params={"actor": "mcp:heartbeat_audit"})
+    assert audit_resp.status_code == 200
+    assert any(
+        entry["operation"] == "heartbeat_capture" and entry["page_id"] == capture["id"]
+        for entry in audit_resp.json()
+    )
+
+
+def test_heartbeat_audit_mcp_idempotent(client):
+    client.put(
+        "/api/pages/runbooks/mcp-idempotent-stale-runbook",
+        json={
+            "content": "---\ntitle: MCP Idempotent Stale Runbook\nkind: runbook\nvisibility: internal\nsummary: Tests MCP heartbeat idempotency.\nconfidence: high\nstale_after: 2020-01-01\n---\n\n# MCP Idempotent Stale Runbook\n",
+        },
+    )
+
+    first = mcp_call(client, "lore_heartbeat_audit")
+    second = mcp_call(client, "lore_heartbeat_audit")
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert len(first.json()["result"]["structuredContent"]["captures"]) == 1
+    assert second.json()["result"]["structuredContent"]["captures"] == []
+
+    audit_entries = client.get("/api/audit", params={"actor": "mcp:heartbeat_audit"}).json()
+    assert sum(entry["operation"] == "heartbeat_capture" for entry in audit_entries) == 1

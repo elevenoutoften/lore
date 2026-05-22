@@ -33,6 +33,8 @@ def handle_mcp_message(
     ledger_db: Any | None = None,
     patch_planner: Any | None = None,
     consolidation_worker: Any | None = None,
+    audit_log: Any | None = None,
+    metrics: Any | None = None,
 ) -> Any | None:
     if isinstance(message, list):
         responses = [
@@ -49,6 +51,8 @@ def handle_mcp_message(
                     ledger_db=ledger_db,
                     patch_planner=patch_planner,
                     consolidation_worker=consolidation_worker,
+                    audit_log=audit_log,
+                    metrics=metrics,
                 )
             )
             is not None
@@ -78,6 +82,8 @@ def handle_mcp_message(
             ledger_db=ledger_db,
             patch_planner=patch_planner,
             consolidation_worker=consolidation_worker,
+            audit_log=audit_log,
+            metrics=metrics,
         )
     except JsonRpcError as exc:
         return error_response(request_id, exc)
@@ -99,6 +105,8 @@ def handle_mcp_request(
     ledger_db: Any | None = None,
     patch_planner: Any | None = None,
     consolidation_worker: Any | None = None,
+    audit_log: Any | None = None,
+    metrics: Any | None = None,
 ) -> dict[str, Any]:
     from .prompts import list_prompts
     from .resources import list_resource_templates, list_resources, read_resource
@@ -136,6 +144,8 @@ def handle_mcp_request(
             ledger_db=ledger_db,
             patch_planner=patch_planner,
             consolidation_worker=consolidation_worker,
+            audit_log=audit_log,
+            metrics=metrics,
         )
 
     if method == "resources/list":

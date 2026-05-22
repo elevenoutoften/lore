@@ -6,19 +6,23 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 
 from ..deps import (
+    get_audit_log,
     get_code_inventories,
     get_consolidation_worker,
     get_graph_cache,
     get_ledger_db,
+    get_metrics,
     get_patch_planner,
     get_repo,
     get_search_index,
     get_vector_store,
 )
+from ..audit import AuditLog
 from ..consolidation_worker import ConsolidationWorker
 from ..ledger import LedgerDB
 from ..link_graph import LinkGraphCache
 from ..mcp import WRITE_TOOL_NAMES, exception_response, handle_mcp_message
+from ..observability import MetricsCollector
 from ..patch_planner import PatchPlanner
 from ..rag.vector_store import VectorStore
 from ..repository import LoreRepository
@@ -40,6 +44,8 @@ async def mcp(
     ledger_db: LedgerDB = Depends(get_ledger_db),
     patch_planner: PatchPlanner = Depends(get_patch_planner),
     consolidation_worker: ConsolidationWorker = Depends(get_consolidation_worker),
+    audit_log: AuditLog = Depends(get_audit_log),
+    metrics: MetricsCollector = Depends(get_metrics),
 ):
     try:
         payload = await request.json()
@@ -64,6 +70,8 @@ async def mcp(
             ledger_db=ledger_db,
             patch_planner=patch_planner,
             consolidation_worker=consolidation_worker,
+            audit_log=audit_log,
+            metrics=metrics,
         )
     except Exception as exc:
         return JSONResponse(exception_response(request_id, str(exc)), status_code=200)
