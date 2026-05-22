@@ -28,6 +28,16 @@ requests use bearer key authentication. Agents use Lore-owned bearer keys create
 through the `/api-keys` browser page or `/api/api-keys`; Lore no longer depends
 on Flow API keys.
 
+## Configuration
+
+`LORE_AUTH_MODE` accepts only `none`, `bearer`, `basic`, or `api_key`. Any other
+value causes Lore to fail to start rather than silently running without auth.
+
+`bearer` and `basic` require `LORE_AUTH_SECRET` to be set to a non-empty value.
+`api_key` uses the API key database configured by `LORE_API_KEYS_DB`.
+`none` disables auth entirely and is only suitable for private, trusted
+networks.
+
 ## API
 
 - `GET /healthz`

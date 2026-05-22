@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 
 from .api_keys import LoreApiKeyStore
 from .auth import AuthMiddleware
-from .config import LoreConfig
+from .config import LoreConfig, VALID_AUTH_MODES
 from .consolidation_worker import ConsolidationWorker
 from .ledger import LedgerDB
 from .link_graph import LinkGraphCache
@@ -53,6 +53,12 @@ def create_app(
                 lore_config.ledger_db = Path(search_db).with_name("ledger.db")
             if "LORE_API_KEYS_DB" not in os.environ:
                 lore_config.api_keys_db = Path(search_db).with_name("api_keys.db")
+
+    if lore_config.auth_mode not in VALID_AUTH_MODES:
+        raise ValueError(
+            f"Unsupported LORE_AUTH_MODE={lore_config.auth_mode!r}. "
+            f"Must be one of: {', '.join(VALID_AUTH_MODES)}."
+        )
 
     repo = LoreRepository(lore_config.content_dir)
     repo.ensure_root()

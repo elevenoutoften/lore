@@ -20,7 +20,7 @@ ExecStart=/usr/bin/docker run --rm --name axis-lore \
     -e LORE_SEARCH_DB=/data/db/search.db \
     -e LORE_VECTOR_DB=/data/db/vectors.db \
     -e LORE_LEDGER_DB=/data/db/ledger.db \
-    -e LORE_API_KEYS_DB=/data/db/api_keys.db \
+    -e LORE_API_KEYS_DB=${LORE_API_KEYS_DB} \
     -e LORE_AUTH_MODE=${LORE_AUTH_MODE} \
     -e LORE_AUTH_SECRET=${LORE_AUTH_SECRET} \
     axis-lore:latest \

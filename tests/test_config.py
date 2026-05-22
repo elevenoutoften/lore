@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from lore_app.config import LoreConfig
 from lore_app.main import create_app
 
@@ -92,6 +94,20 @@ def test_config_workspaces_env(monkeypatch, tmp_path):
 
     payload = config.to_dict()
     assert payload["workspaces"]["team"]["search_db"] == str(tmp_path / "team-search.db")
+
+
+def test_config_invalid_auth_mode_raises(monkeypatch):
+    monkeypatch.setenv("LORE_AUTH_MODE", "bearerr")
+    with pytest.raises(ValueError, match="Unsupported"):
+        LoreConfig()
+
+
+def test_config_valid_auth_modes(monkeypatch):
+    for mode in ("none", "bearer", "basic", "api_key"):
+        monkeypatch.setenv("LORE_AUTH_MODE", mode)
+        config = LoreConfig()
+        assert config.auth_mode == mode
+        monkeypatch.delenv("LORE_AUTH_MODE")
 
 
 def test_api_config_endpoint(content_dir, search_db, tmp_path):

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+VALID_AUTH_MODES = ("none", "bearer", "basic", "api_key")
+
 
 @dataclass(frozen=True)
 class WorkspaceConfig:
@@ -71,6 +73,11 @@ class LoreConfig:
         self.trusted_proxy_auth: bool = os.environ.get("LORE_TRUSTED_PROXY_AUTH", "").lower() in ("true", "1", "yes")
         self.csp_policy: str = os.environ.get("LORE_CSP_POLICY", "")
         self.workspaces: dict[str, WorkspaceConfig] = parse_workspaces(os.environ.get("LORE_WORKSPACES"))
+        if self.auth_mode not in VALID_AUTH_MODES:
+            raise ValueError(
+                f"Unsupported LORE_AUTH_MODE={self.auth_mode!r}. "
+                f"Must be one of: {', '.join(VALID_AUTH_MODES)}."
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {

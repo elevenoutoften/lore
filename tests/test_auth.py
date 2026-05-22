@@ -83,6 +83,18 @@ def test_bearer_accepts_valid_secret(content_dir, search_db, tmp_path):
     assert authorized.status_code == 200
 
 
+def test_invalid_auth_mode_rejected(content_dir, search_db, tmp_path):
+    config = make_config(content_dir, search_db, tmp_path, "bearerr", "secret")
+    with pytest.raises(ValueError, match="Unsupported"):
+        create_app(config)
+
+
+def test_invalid_auth_mode_rejected_no_secret(content_dir, search_db, tmp_path):
+    config = make_config(content_dir, search_db, tmp_path, "apikey", "")
+    with pytest.raises(ValueError, match="Unsupported"):
+        create_app(config)
+
+
 def test_basic_auth_protects_api(content_dir, search_db, tmp_path):
     app = create_app(make_config(content_dir, search_db, tmp_path, "basic", "user:pass"))
     header = base64.b64encode(b"user:pass").decode("ascii")
