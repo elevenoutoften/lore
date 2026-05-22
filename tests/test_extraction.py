@@ -31,6 +31,10 @@ lane: project
 observed_at: 2026-05-10T00:00:00+00:00
 valid_from: 2026-05-10
 source_task: flow_000375
+decision_id: decisions/memory-policy
+trace_id: trace-extraction-001
+policies_applied:
+  - L-MEM-03
 suggested_target_page: services/lore
 related:
   - projects/example-project
@@ -252,6 +256,10 @@ def test_rule_based_extraction_preserves_provenance(tmp_path):
     assert claim.actor == "nyx"
     assert claim.lane == "project"
     assert claim.observed_at == "2026-05-10T00:00:00+00:00"
+    assert claim.source_task == "flow_000375"
+    assert claim.decision_id == "decisions/memory-policy"
+    assert claim.trace_id == "trace-extraction-001"
+    assert claim.policies_applied == ["L-MEM-03"]
     assert "inbox/2026-05-10/lore-ledger" in claim.source_page_ids
     assert any(edge.target_entity == "services/workflow-engine" for edge in result.edges)
     assert result.invalidations[0].old_fact == "Lore only stores captures as Markdown."

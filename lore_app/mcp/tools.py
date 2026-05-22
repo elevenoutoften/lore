@@ -245,6 +245,24 @@ TOOLS: list[dict[str, Any]] = [
                 "agent": {"type": "string", "description": "Agent name for notes namespace."},
                 "capture_date": {"type": "string", "description": "Optional ISO date for the capture path."},
                 "source_task": {"type": "string", "description": "Optional Flow task or source task identifier."},
+                "task_id": {"type": "string", "description": "Source task ID (e.g. flow_000123)."},
+                "decision_id": {"type": "string", "description": "Linked decision page ID."},
+                "trace_id": {"type": "string", "description": "Reasoning trace correlation ID."},
+                "tool_calls": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "Tool call records from the capturing session.",
+                },
+                "constraints": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Constraints that applied during capture.",
+                },
+                "policies_applied": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Policy IDs that were enforced.",
+                },
                 "related_pages": {
                     "type": "array",
                     "items": {"type": "string"},

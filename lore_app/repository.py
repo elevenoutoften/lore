@@ -38,6 +38,12 @@ class MarkdownPage:
             summary=optional_string(frontmatter.get("summary")),
             tags=string_list(frontmatter.get("tags")),
             sources=string_list(frontmatter.get("sources")),
+            source_task=optional_string(frontmatter.get("source_task")),
+            decision_id=optional_string(frontmatter.get("decision_id")),
+            trace_id=optional_string(frontmatter.get("trace_id")),
+            tool_calls=dict_list(frontmatter.get("tool_calls")),
+            constraints=string_list(frontmatter.get("constraints")),
+            policies_applied=string_list(frontmatter.get("policies_applied")),
             updated_at=self.updated_at,
             size=self.size,
         )
@@ -240,6 +246,12 @@ def string_list(value: Any) -> list[str]:
         return [str(item).strip() for item in value if str(item).strip()]
     cleaned = str(value).strip()
     return [cleaned] if cleaned else []
+
+
+def dict_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 def score_page(page: MarkdownPage, summary: PageSummary, terms: list[str]) -> int:

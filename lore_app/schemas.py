@@ -15,6 +15,12 @@ class PageSummary(BaseModel):
     summary: str | None = None
     tags: list[str] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
+    source_task: str | None = None
+    decision_id: str | None = None
+    trace_id: str | None = None
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    policies_applied: list[str] = Field(default_factory=list)
     updated_at: str
     size: int
 
@@ -450,6 +456,10 @@ class ExtractedClaim(BaseModel):
     observed_at: str | None = None
     valid_from: str | None = None
     valid_until: str | None = None
+    source_task: str | None = None
+    decision_id: str | None = None
+    trace_id: str | None = None
+    policies_applied: list[str] = Field(default_factory=list)
     evidence: str | None = None
     source_page_ids: list[str] = Field(default_factory=list)
 

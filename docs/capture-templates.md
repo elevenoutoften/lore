@@ -32,6 +32,44 @@ Frontmatter fields:
 - `source_urls`
 - `evidence`
 
+### Structured Metadata Fields
+
+These fields support agent-driven capture workflows:
+
+- `source_task` -- Flow task or source task identifier (also set via `task_id` in the API)
+- `decision_id` -- Linked decision page ID for traceability
+- `trace_id` -- Reasoning trace correlation ID for linking captures to reasoning chains
+- `tool_calls` -- List of tool call records from the capturing session (JSON objects)
+- `constraints` -- Constraints that were active during capture
+- `policies_applied` -- Policy IDs that were enforced
+
+Example with structured metadata:
+
+```markdown
+---
+title: Flow task completed
+kind: capture
+visibility: internal
+status: draft
+summary: Task completed with policy enforcement
+captured_at: 2026-05-22T10:00:00+00:00
+confidence: high
+source_task: flow_000596
+decision_id: decisions/memory-policy
+trace_id: trace-abc-123
+tool_calls:
+  - {"tool":"search","query":"memory capture"}
+constraints:
+  - no-delete-without-review
+policies_applied:
+  - L-MEM-02
+---
+
+# Flow task completed
+
+Agent completed memory capture with structured metadata.
+```
+
 Example:
 
 ```markdown

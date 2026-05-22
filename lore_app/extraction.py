@@ -9,7 +9,7 @@ from typing import Any
 from .capture import CAPTURE_INTAKE_SUMMARY
 from .config import LoreConfig
 from .ledger import LedgerDB
-from .repository import LoreRepository, optional_string
+from .repository import LoreRepository, optional_string, string_list
 from .schemas import (
     ExtractedClaim,
     ExtractedEdge,
@@ -179,6 +179,10 @@ def _extract_capture(
     observed_at = optional_string(frontmatter.get("observed_at"))
     valid_from = optional_string(frontmatter.get("valid_from"))
     valid_until = optional_string(frontmatter.get("valid_until"))
+    source_task = optional_string(frontmatter.get("source_task"))
+    decision_id = optional_string(frontmatter.get("decision_id"))
+    trace_id = optional_string(frontmatter.get("trace_id"))
+    policies_applied = string_list(frontmatter.get("policies_applied"))
     suggested_target = optional_string(frontmatter.get("suggested_target_page"))
     front_summary = optional_string(frontmatter.get("summary"))
     if front_summary and front_summary.casefold().strip() == CAPTURE_INTAKE_SUMMARY.casefold():
@@ -220,6 +224,10 @@ def _extract_capture(
             observed_at=observed_at,
             valid_from=valid_from,
             valid_until=valid_until,
+            source_task=source_task,
+            decision_id=decision_id,
+            trace_id=trace_id,
+            policies_applied=policies_applied,
             evidence=evidence,
             source_page_ids=source_pages,
         )
