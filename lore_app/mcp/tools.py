@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from ..analytics import GraphAnalytics
 from ..capture import build_capture_digest, build_promotion_audit, capture_memory, list_captures, promote_capture, slugify, transition_capture_status, unique_page_id
 from ..context_graph import build_context_graph, explain_context, query_neighbors, query_paths
 from ..distillation import distill_daily, get_daily_captures, get_pending_days, promote_daily_note
@@ -167,6 +168,15 @@ TOOLS: list[dict[str, Any]] = [
         "name": "lore_context_graph",
         "title": "Lore Context Graph",
         "description": "Get the full context graph spanning pages, captures, entities, claims, plans, traces, actors, tasks, policies, and sources with typed edges.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "lore_graph_analytics",
+        "title": "Lore Graph Analytics",
+        "description": "Compute degree centrality, betweenness, community detection, and semantic entry points for the context graph. Results are advisory and cacheable.",
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -1071,6 +1081,13 @@ def call_tool(
         graph = build_context_graph(repo, ledger)
         payload = graph.model_dump(mode="json")
         return tool_result(payload, f"Context graph: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
+
+    if name == "lore_graph_analytics":
+        ledger = require_service(ledger_db, "ledger database")
+        graph = build_context_graph(repo, ledger)
+        result = GraphAnalytics(graph).compute()
+        payload = result.model_dump(mode="json")
+        return tool_result(payload, f"Graph analytics: {result.node_count} nodes, {len(result.communities)} communities")
 
     if name == "lore_context_graph_neighbors":
         node_id = require_string(arguments.get("node_id"), "node_id")

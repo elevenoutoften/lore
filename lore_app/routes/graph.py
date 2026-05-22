@@ -4,7 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from ..deps import get_graph_cache, get_repo, get_templates
+from ..analytics import GraphAnalytics, GraphAnalyticsResult
+from ..context_graph import build_context_graph
+from ..deps import get_graph_cache, get_ledger_db, get_repo, get_templates
+from ..ledger import LedgerDB
 from ..link_graph import LinkGraphCache, build_enriched_graph, build_source_edges, page_links
 from ..repository import InvalidPageId, LoreRepository
 from ..route_utils import template_context
@@ -36,6 +39,15 @@ def api_enriched_graph(repo: LoreRepository = Depends(get_repo), graph_cache: Li
 @router.get("/api/graph/sources", response_model=list[LinkEdge])
 def api_source_edges(repo: LoreRepository = Depends(get_repo)):
     return build_source_edges(repo)
+
+
+@router.get("/api/graph/analytics", response_model=GraphAnalyticsResult)
+def api_graph_analytics(
+    repo: LoreRepository = Depends(get_repo),
+    ledger: LedgerDB = Depends(get_ledger_db),
+) -> GraphAnalyticsResult:
+    graph = build_context_graph(repo, ledger)
+    return GraphAnalytics(graph).compute()
 
 
 @router.get("/api/pages/{page_id:path}/links", response_model=PageLinks)
