@@ -19,6 +19,7 @@ from .schemas import (
     ExtractionResult,
     ExtractionStatusResponse,
     PatchPlan,
+    TraceEntry,
 )
 
 CONFIDENCE_ORDER = {"unknown": 0, "low": 1, "medium": 2, "high": 3}
@@ -90,6 +91,22 @@ class LedgerDB:
             ("errors", "TEXT DEFAULT '[]'"),
             ("dry_run", "BOOLEAN DEFAULT 0"),
             ("status", "TEXT NOT NULL DEFAULT 'running'"),
+        ],
+        "reasoning_traces": [
+            ("trace_id", "TEXT PRIMARY KEY DEFAULT ''"),
+            ("parent_trace_id", "TEXT DEFAULT NULL"),
+            ("actor", "TEXT NOT NULL DEFAULT ''"),
+            ("reason_summary", "TEXT NOT NULL DEFAULT ''"),
+            ("status", "TEXT NOT NULL DEFAULT 'active'"),
+            ("context_refs", "TEXT NOT NULL DEFAULT '[]'"),
+            ("tool_refs", "TEXT NOT NULL DEFAULT '[]'"),
+            ("constraints", "TEXT NOT NULL DEFAULT '[]'"),
+            ("policy_refs", "TEXT NOT NULL DEFAULT '[]'"),
+            ("alternatives", "TEXT NOT NULL DEFAULT '[]'"),
+            ("outcome", "TEXT NOT NULL DEFAULT ''"),
+            ("related_ids", "TEXT NOT NULL DEFAULT '{}'"),
+            ("created_at", "TEXT NOT NULL DEFAULT ''"),
+            ("updated_at", "TEXT NOT NULL DEFAULT ''"),
         ],
     }
 
@@ -171,6 +188,27 @@ class LedgerDB:
                 dry_run BOOLEAN DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'running'
             );
+
+            CREATE TABLE IF NOT EXISTS reasoning_traces (
+                trace_id TEXT PRIMARY KEY DEFAULT '',
+                parent_trace_id TEXT DEFAULT NULL,
+                actor TEXT NOT NULL DEFAULT '',
+                reason_summary TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'active',
+                context_refs TEXT NOT NULL DEFAULT '[]',
+                tool_refs TEXT NOT NULL DEFAULT '[]',
+                constraints TEXT NOT NULL DEFAULT '[]',
+                policy_refs TEXT NOT NULL DEFAULT '[]',
+                alternatives TEXT NOT NULL DEFAULT '[]',
+                outcome TEXT NOT NULL DEFAULT '',
+                related_ids TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT ''
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_traces_actor ON reasoning_traces(actor);
+            CREATE INDEX IF NOT EXISTS idx_traces_status ON reasoning_traces(status);
+            CREATE INDEX IF NOT EXISTS idx_traces_related_task ON reasoning_traces(related_ids);
             """
         )
         self.connection.commit()
@@ -928,6 +966,115 @@ class LedgerDB:
             "stuck_runs": [_decode_consolidation_run(row) for row in stuck_rows],
         }
 
+    def store_trace(self, trace: TraceEntry) -> TraceEntry:
+        """Insert or update a reasoning trace. Returns the stored trace."""
+        now = utc_now()
+        trace_id = trace.trace_id or f"trace-{uuid.uuid4().hex[:12]}"
+        existing = self.connection.execute(
+            "SELECT created_at FROM reasoning_traces WHERE trace_id = ?",
+            (trace_id,),
+        ).fetchone()
+        created_at = trace.created_at or (
+            str(existing["created_at"]) if existing is not None and existing["created_at"] else now
+        )
+        updated_at = trace.updated_at or now
+        stored = trace.model_copy(
+            update={
+                "trace_id": trace_id,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+        )
+        payload = stored.model_dump(mode="json")
+        self.connection.execute(
+            """
+            INSERT OR REPLACE INTO reasoning_traces (
+                trace_id, parent_trace_id, actor, reason_summary, status,
+                context_refs, tool_refs, constraints, policy_refs, alternatives,
+                outcome, related_ids, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload["trace_id"],
+                payload["parent_trace_id"],
+                payload["actor"],
+                payload["reason_summary"],
+                payload["status"],
+                json.dumps(payload["context_refs"]),
+                json.dumps(payload["tool_refs"]),
+                json.dumps(payload["constraints"]),
+                json.dumps(payload["policy_refs"]),
+                json.dumps(payload["alternatives"]),
+                payload["outcome"],
+                json.dumps(payload["related_ids"]),
+                payload["created_at"],
+                payload["updated_at"],
+            ),
+        )
+        self.connection.commit()
+        return stored
+
+    def get_trace(self, trace_id: str) -> TraceEntry | None:
+        """Get a trace by ID."""
+        row = self.connection.execute(
+            "SELECT * FROM reasoning_traces WHERE trace_id = ?",
+            (trace_id,),
+        ).fetchone()
+        return _decode_trace_row(row) if row is not None else None
+
+    def list_traces(
+        self,
+        *,
+        actor: str | None = None,
+        status: str | None = None,
+        task_id: str | None = None,
+        capture_id: str | None = None,
+        page_id: str | None = None,
+        candidate_id: str | None = None,
+        policy_ref: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[TraceEntry]:
+        """Query traces by various filters."""
+        where, params = _trace_filter_clauses(
+            actor=actor,
+            status=status,
+            task_id=task_id,
+            capture_id=capture_id,
+            page_id=page_id,
+            candidate_id=candidate_id,
+            policy_ref=policy_ref,
+        )
+        params.extend([max(1, min(limit, 500)), max(0, offset)])
+        rows = self.connection.execute(
+            f"""
+            SELECT *
+            FROM reasoning_traces
+            {where}
+            ORDER BY created_at DESC, trace_id
+            LIMIT ? OFFSET ?
+            """,
+            params,
+        ).fetchall()
+        return [_decode_trace_row(row) for row in rows]
+
+    def count_traces(self, **filters: Any) -> int:
+        """Count traces matching filters."""
+        where, params = _trace_filter_clauses(
+            actor=filters.get("actor"),
+            status=filters.get("status"),
+            task_id=filters.get("task_id"),
+            capture_id=filters.get("capture_id"),
+            page_id=filters.get("page_id"),
+            candidate_id=filters.get("candidate_id"),
+            policy_ref=filters.get("policy_ref"),
+        )
+        row = self.connection.execute(
+            f"SELECT COUNT(*) AS count FROM reasoning_traces {where}",
+            params,
+        ).fetchone()
+        return int(row["count"] if row is not None else 0)
+
     def close(self) -> None:
         if self._connection is not None:
             self._connection.close()
@@ -1012,3 +1159,56 @@ def _decode_consolidation_run(row: sqlite3.Row) -> dict[str, Any]:
         decoded["errors"] = []
     decoded["dry_run"] = bool(decoded.get("dry_run"))
     return decoded
+
+
+def _trace_filter_clauses(
+    *,
+    actor: str | None = None,
+    status: str | None = None,
+    task_id: str | None = None,
+    capture_id: str | None = None,
+    page_id: str | None = None,
+    candidate_id: str | None = None,
+    policy_ref: str | None = None,
+) -> tuple[str, list[Any]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if actor:
+        clauses.append("actor = ?")
+        params.append(actor)
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+    for key, value in (
+        ("task_id", task_id),
+        ("capture_id", capture_id),
+        ("page_id", page_id),
+        ("candidate_id", candidate_id),
+    ):
+        if value:
+            clauses.append(f"json_extract(related_ids, '$.{key}') = ?")
+            params.append(value)
+    if policy_ref:
+        clauses.append(
+            "EXISTS (SELECT 1 FROM json_each(reasoning_traces.policy_refs) WHERE value = ?)"
+        )
+        params.append(policy_ref)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return where, params
+
+
+def _decode_trace_row(row: sqlite3.Row) -> TraceEntry:
+    decoded = dict(row)
+    for key, fallback in (
+        ("context_refs", []),
+        ("tool_refs", []),
+        ("constraints", []),
+        ("policy_refs", []),
+        ("alternatives", []),
+        ("related_ids", {}),
+    ):
+        try:
+            decoded[key] = json.loads(str(decoded.get(key) or json.dumps(fallback)))
+        except (TypeError, json.JSONDecodeError):
+            decoded[key] = fallback
+    return TraceEntry(**decoded)

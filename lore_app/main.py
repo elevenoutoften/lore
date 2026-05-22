@@ -22,7 +22,7 @@ from .patch_planner import PatchPlanner
 from .rag.vector_store import VectorStore
 from .repository import LoreRepository
 from .route_utils import actor_from_request, client_rate_limit_key, is_rate_limited_write, retrieve_context, workspace_lore_config
-from .routes import admin_router, api_keys_router, captures_router, consolidation_router, distillation_router, extraction_router, graph_router, heartbeat_router, ledger_router, lint_router, mcp_router, memory_router, metadata_router, pages_router, procedures_router, rag_router, search_router
+from .routes import admin_router, api_keys_router, captures_router, consolidation_router, distillation_router, extraction_router, graph_router, heartbeat_router, ledger_router, lint_router, mcp_router, memory_router, metadata_router, pages_router, procedures_router, rag_router, search_router, trace_router
 from .routes.admin import package_name, package_version
 from .search_index import LoreSearchIndex
 from .security import RateLimiter
@@ -182,6 +182,7 @@ def create_app(
     app.include_router(consolidation_router)
     app.include_router(memory_router)
     app.include_router(search_router)
+    app.include_router(trace_router)
     app.include_router(rag_router)
     app.include_router(lint_router)
     app.include_router(heartbeat_router)

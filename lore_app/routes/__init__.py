@@ -17,6 +17,7 @@ from .procedures import router as procedures_router
 from .rag import router as rag_router
 from .ledger import ledger_router
 from .search import router as search_router
+from .traces import router as trace_router
 
 __all__ = [
     "admin_router",
@@ -36,4 +37,5 @@ __all__ = [
     "procedures_router",
     "rag_router",
     "search_router",
+    "trace_router",
 ]

@@ -247,6 +247,84 @@ class MemoryCaptureResponse(BaseModel):
     timestamp: str
 
 
+class ContextRef(BaseModel):
+    """Reference to a context entity involved in a reasoning trace."""
+
+    type: Literal["page", "capture", "task", "candidate"]
+    id: str
+
+
+class ToolRef(BaseModel):
+    """Tool call reference in a reasoning trace."""
+
+    tool: str
+    action: str = ""
+    result_summary: str = ""
+
+
+class Alternative(BaseModel):
+    """An alternative considered but not chosen."""
+
+    description: str
+    rejected_reason: str = ""
+
+
+class TraceCreateRequest(BaseModel):
+    """Create a new reasoning trace."""
+
+    parent_trace_id: str | None = None
+    actor: str = Field(min_length=1, max_length=120)
+    reason_summary: str = Field(min_length=1, max_length=5000)
+    status: Literal["active", "completed", "abandoned"] = "active"
+    context_refs: list[ContextRef] = Field(default_factory=list)
+    tool_refs: list[ToolRef] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    policy_refs: list[str] = Field(default_factory=list)
+    alternatives: list[Alternative] = Field(default_factory=list)
+    outcome: str = ""
+    related_ids: dict[str, str] = Field(default_factory=dict)
+
+
+class TraceUpdateRequest(BaseModel):
+    """Update an existing trace (e.g., add outcome, change status)."""
+
+    reason_summary: str | None = None
+    status: Literal["active", "completed", "abandoned"] | None = None
+    context_refs: list[ContextRef] | None = None
+    tool_refs: list[ToolRef] | None = None
+    constraints: list[str] | None = None
+    policy_refs: list[str] | None = None
+    alternatives: list[Alternative] | None = None
+    outcome: str | None = None
+    related_ids: dict[str, str] | None = None
+
+
+class TraceEntry(BaseModel):
+    """A stored reasoning trace."""
+
+    trace_id: str
+    parent_trace_id: str | None = None
+    actor: str
+    reason_summary: str
+    status: str = "active"
+    context_refs: list[ContextRef] = Field(default_factory=list)
+    tool_refs: list[ToolRef] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    policy_refs: list[str] = Field(default_factory=list)
+    alternatives: list[Alternative] = Field(default_factory=list)
+    outcome: str = ""
+    related_ids: dict[str, str] = Field(default_factory=dict)
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class TraceListResponse(BaseModel):
+    traces: list[TraceEntry]
+    total: int
+    limit: int
+    offset: int
+
+
 class CaptureStatusUpdate(BaseModel):
     status: Literal["draft", "review", "accepted", "rejected", "archived"]
 
