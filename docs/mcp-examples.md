@@ -428,6 +428,216 @@ Response:
 }
 ```
 
+## Tool: `lore_create_trace` → `lore_capture` Linked Flow
+
+Create the trace first so the returned `trace_id` can be attached to the
+capture.
+
+Request:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 19,
+  "method": "tools/call",
+  "params": {
+    "name": "lore_create_trace",
+    "arguments": {
+      "actor": "nyx",
+      "reason_summary": "Observed that the deployment config was missing FLOW_SESSION_SECRET.",
+      "context_refs": [
+        {"type": "page", "id": "services/flow"},
+        {"type": "task", "id": "flow_000643"}
+      ],
+      "tool_refs": [
+        {"tool": "lore_search", "action": "query", "result_summary": "Found session auth docs."}
+      ],
+      "outcome": "missing-session-secret"
+    }
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 19,
+  "result": {
+    "content": [{"type": "text", "text": "Created reasoning trace: trace-abc123def456"}],
+    "structuredContent": {
+      "trace_id": "trace-abc123def456",
+      "actor": "nyx",
+      "reason_summary": "Observed that the deployment config was missing FLOW_SESSION_SECRET.",
+      "status": "active",
+      "context_refs": [
+        {"type": "page", "id": "services/flow"},
+        {"type": "task", "id": "flow_000643"}
+      ],
+      "tool_refs": [
+        {"tool": "lore_search", "action": "query", "result_summary": "Found session auth docs."}
+      ],
+      "constraints": [],
+      "policy_refs": [],
+      "alternatives": [],
+      "outcome": "missing-session-secret",
+      "related_ids": {},
+      "created_at": "2026-05-22T10:15:00+00:00",
+      "updated_at": "2026-05-22T10:15:00+00:00"
+    },
+    "isError": false
+  }
+}
+```
+
+Request:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 20,
+  "method": "tools/call",
+  "params": {
+    "name": "lore_capture",
+    "arguments": {
+      "title": "Flow session auth missing secret",
+      "observation": "Flow session auth is missing FLOW_SESSION_SECRET in production.",
+      "capture_date": "2026-05-22",
+      "related_pages": ["services/flow"],
+      "trace_id": "trace-abc123def456",
+      "sources": ["agent:nyx"]
+    }
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 20,
+  "result": {
+    "content": [{"type": "text", "text": "Captured Lore memory: inbox/2026-05-22/flow-session-auth-missing-secret"}],
+    "structuredContent": {
+      "page": {
+        "id": "inbox/2026-05-22/flow-session-auth-missing-secret",
+        "title": "Flow session auth missing secret",
+        "kind": "capture",
+        "visibility": "internal",
+        "status": "draft",
+        "summary": "Rough agent memory capture; not canonical truth.",
+        "tags": ["capture", "agent-memory"],
+        "sources": ["agent:nyx"],
+        "trace_id": "trace-abc123def456",
+        "updated_at": "2026-05-22T10:16:00+00:00",
+        "size": 620
+      }
+    },
+    "isError": false
+  }
+}
+```
+
+Request:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 21,
+  "method": "tools/call",
+  "params": {
+    "name": "lore_list_captures",
+    "arguments": {
+      "status": "draft",
+      "limit": 20
+    }
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 21,
+  "result": {
+    "content": [{"type": "text", "text": "1 Lore captures for status: draft.\ninbox/2026-05-22/flow-session-auth-missing-secret - Flow session auth missing secret (draft)"}],
+    "structuredContent": {
+      "status": "draft",
+      "count": 1,
+      "captures": [
+        {
+          "id": "inbox/2026-05-22/flow-session-auth-missing-secret",
+          "title": "Flow session auth missing secret",
+          "kind": "capture",
+          "visibility": "internal",
+          "status": "draft",
+          "summary": "Rough agent memory capture; not canonical truth.",
+          "tags": ["capture", "agent-memory"],
+          "sources": ["agent:nyx"],
+          "trace_id": "trace-abc123def456",
+          "updated_at": "2026-05-22T10:16:00+00:00",
+          "size": 620
+        }
+      ]
+    },
+    "isError": false
+  }
+}
+```
+
+Request:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 22,
+  "method": "tools/call",
+  "params": {
+    "name": "lore_get_trace",
+    "arguments": {
+      "trace_id": "trace-abc123def456"
+    }
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 22,
+  "result": {
+    "content": [{"type": "text", "text": "Retrieved reasoning trace: trace-abc123def456"}],
+    "structuredContent": {
+      "trace_id": "trace-abc123def456",
+      "actor": "nyx",
+      "reason_summary": "Observed that the deployment config was missing FLOW_SESSION_SECRET.",
+      "status": "active",
+      "context_refs": [
+        {"type": "page", "id": "services/flow"},
+        {"type": "task", "id": "flow_000643"}
+      ],
+      "tool_refs": [
+        {"tool": "lore_search", "action": "query", "result_summary": "Found session auth docs."}
+      ],
+      "constraints": [],
+      "policy_refs": [],
+      "alternatives": [],
+      "outcome": "missing-session-secret",
+      "related_ids": {},
+      "created_at": "2026-05-22T10:15:00+00:00",
+      "updated_at": "2026-05-22T10:15:00+00:00"
+    },
+    "isError": false
+  }
+}
+```
+
 ## Tool: `lore_upsert_page`
 
 Request:
