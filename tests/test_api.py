@@ -6,7 +6,7 @@ def test_version_endpoint(client):
     assert response.status_code == 200
     payload = response.json()
     assert {"name", "version", "python_version", "api_version"} <= payload.keys()
-    assert payload["version"] == "0.2.0"
+    assert payload["version"] == "0.3.0b1"
 
 
 def test_list_read_and_catalog(client):

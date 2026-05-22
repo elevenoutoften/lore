@@ -12,11 +12,12 @@ patterns.
   workspaces, and backup/restore commands.
 - [API Reference](api-reference.md): REST endpoints, schemas, errors, and rate
   limits.
+- [MCP Examples](mcp-examples.md): JSON-RPC examples for MCP clients.
 - [Security](security.md): auth, headers, validation, CSP, and rate limiting.
 - [Deployment](deployment.md): Docker, systemd, reverse proxy, and environment
   setup.
 
-## Existing Guides
+## Guides
 
 - [Agent Integration](agent-integration.md): REST, SDK, and MCP recipes for
   coding agents, CI bots, and custom tools.
@@ -24,7 +25,29 @@ patterns.
   calls.
 - [Capture Templates](capture-templates.md): capture patterns for project
   memory.
-- [MCP Examples](mcp-examples.md): JSON-RPC examples for MCP clients.
+- [Governance](governance.md): policies, procedures, provenance, and reasoning
+  traces.
+- [Consolidation](consolidation.md): extraction, patch planning, and automated
+  knowledge maintenance.
+- [Distillation](distillation.md): session captures to daily notes, heartbeat
+  self-audit.
+- [Analytics](analytics-design.md): graph analytics, centrality, and community
+  detection.
+- [Policies](policies.md): policy engine, epistemic gates, and rule evaluation.
+
+## SDKs
+
+- [Python SDK](../sdk/python/README.md): install, connect, and use the Lore
+  Python client.
+- [TypeScript SDK](../sdk/typescript/README.md): npm package, embed widget,
+  and TypeScript client.
+
+## Migration & Release
+
+- [Migration Guide](migration-guide.md): moving from GPUBox services/lore to
+  the standalone repo.
+- [Beta Release Checklist](beta-release-checklist.md): pre-release verification
+  steps.
 
 ## Roadmap
 

@@ -72,9 +72,19 @@ verified against the release candidate build, not only local development code.
 
 - [ ] Python SDK installs into a clean virtual environment from the release
   package.
+
+  ```bash
+  cd sdk/python && python -m pip install -e ".[test]" && python -m pytest tests/ -v
+  ```
+
 - [ ] Python SDK can connect, create pages, read pages, update pages, delete
   pages, search, and capture memory.
 - [ ] TypeScript SDK installs into a clean project from the release package.
+
+  ```bash
+  cd sdk/typescript && npm ci && npm run build && npm test
+  ```
+
 - [ ] TypeScript SDK can connect, create pages, read pages, update pages, delete
   pages, search, and capture memory.
 - [ ] Embed widget loads in an iframe, renders the selected page or search view,
@@ -83,9 +93,33 @@ verified against the release candidate build, not only local development code.
 ## Deployment
 
 - [ ] Docker image builds from a clean checkout.
+
+  ```bash
+  docker build -t lore:release .
+  ```
+
 - [ ] Docker container starts with persistent content and database volumes.
+
+  ```bash
+  docker run -d -p 8100:8100 \
+    -v lore-pages:/tmp/pages \
+    -v lore-db:/tmp/db \
+    -e LORE_AUTH_MODE=none \
+    -e LORE_CONTENT_DIR=/tmp/pages \
+    -e LORE_SEARCH_DB=/tmp/db/search.db \
+    -e LORE_VECTOR_DB=/tmp/db/vectors.db \
+    -e LORE_LEDGER_DB=/tmp/db/ledger.db \
+    -e LORE_API_KEYS_DB=/tmp/db/api_keys.db \
+    lore:release
+  ```
+
 - [ ] Docker container responds to `/healthz` and supports authenticated API
   requests.
+
+  ```bash
+  curl -f http://localhost:8100/healthz
+  ```
+
 - [ ] Systemd service starts, restarts on failure, and responds through the
   configured port.
 - [ ] Backup CLI exports content, search database, vector database, and audit
@@ -114,6 +148,22 @@ verified against the release candidate build, not only local development code.
 
   ```bash
   pytest tests/ eval
+  ```
+
+- [ ] Package builds cleanly:
+
+  ```bash
+  python -m pip install --upgrade pip build
+  python -m build
+  python -m pip install dist/*.whl
+  python -c "import lore_app; print('Package import OK')"
+  ```
+
+- [ ] Package version matches changelog:
+
+  ```bash
+  python -c "from importlib.metadata import version; print(version('axis-lore'))"
+  # Expected: 0.3.0b1 (or current release version)
   ```
 
 - [ ] Capture-to-durable memory regression passes:
