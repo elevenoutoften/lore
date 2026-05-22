@@ -70,6 +70,13 @@ class MemoryProvider:
         metadata: dict[str, Any] | None = None,
         lane: str | None = None,
         actor: str | None = None,
+        *,
+        task_id: str | None = None,
+        decision_id: str | None = None,
+        trace_id: str | None = None,
+        tool_calls: list[dict[str, Any]] | None = None,
+        constraints: list[str] | None = None,
+        policies_applied: list[str] | None = None,
     ) -> str:
         """Write a memory capture to Lore.
 
@@ -80,6 +87,12 @@ class MemoryProvider:
             metadata: Optional frontmatter fields such as confidence, source_task, tags.
             lane: Retrieval lane — project, procedural, ops, companion, draft.
             actor: Agent name for provenance (defaults to agent_name if not set).
+            task_id: Source task ID (e.g. "flow_000123").
+            decision_id: Linked decision page ID.
+            trace_id: Reasoning trace correlation ID.
+            tool_calls: Tool call records from the capturing session.
+            constraints: Constraints that applied during capture.
+            policies_applied: Policy IDs that were enforced.
         """
         payload: dict[str, Any] = {
             "text": memory_text,
@@ -93,6 +106,18 @@ class MemoryProvider:
             payload["actor"] = actor or agent_name
         if metadata:
             payload["metadata"] = metadata
+        if task_id:
+            payload["task_id"] = task_id
+        if decision_id:
+            payload["decision_id"] = decision_id
+        if trace_id:
+            payload["trace_id"] = trace_id
+        if tool_calls:
+            payload["tool_calls"] = tool_calls
+        if constraints:
+            payload["constraints"] = constraints
+        if policies_applied:
+            payload["policies_applied"] = policies_applied
 
         result = self._post_with_retry("/api/memory/capture", payload)
         return str(result.get("capture_id") or result.get("page", {}).get("id"))

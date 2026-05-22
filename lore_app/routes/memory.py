@@ -43,7 +43,7 @@ def api_memory_capture(
         namespace=payload.namespace,
         agent=payload.agent_name,
         capture_date=metadata.get("capture_date"),
-        source_task=metadata.get("source_task"),
+        source_task=payload.task_id or metadata.get("source_task"),
         related_pages=metadata.get("related_pages") or [],
         confidence=metadata.get("confidence", "unknown"),
         suggested_target_page=metadata.get("suggested_target_page"),
@@ -53,6 +53,15 @@ def api_memory_capture(
         evidence=metadata.get("evidence"),
         actor=payload.actor or payload.agent_name,
         lane=payload.lane or metadata.get("lane"),
+        task_id=payload.task_id or metadata.get("source_task"),
+        decision_id=payload.decision_id or metadata.get("decision_id"),
+        trace_id=payload.trace_id or metadata.get("trace_id"),
+        tool_calls=payload.tool_calls
+        or (metadata.get("tool_calls") if isinstance(metadata.get("tool_calls"), list) else []),
+        constraints=payload.constraints
+        or (metadata.get("constraints") if isinstance(metadata.get("constraints"), list) else []),
+        policies_applied=payload.policies_applied
+        or (metadata.get("policies_applied") if isinstance(metadata.get("policies_applied"), list) else []),
     )
 
     try:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
@@ -64,6 +65,14 @@ def parse_scalar(raw_value: str) -> Any:
         if not inner:
             return []
         return [parse_scalar(part.strip()) for part in inner.split(",")]
+    if value.startswith("{") and value.endswith("}"):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            pass
+        else:
+            if isinstance(parsed, dict):
+                return parsed
     if value.casefold() == "true":
         return True
     if value.casefold() == "false":

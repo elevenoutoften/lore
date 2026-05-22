@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import re
 from datetime import date, datetime, timezone
+from typing import Any
 
 from .frontmatter import frontmatter_scalar
 from .repository import InvalidPageId, LoreRepository, infer_kind, normalize_page_id, optional_string, string_list
@@ -57,12 +59,13 @@ def capture_memory(repo: LoreRepository, payload: CaptureRequest) -> PageDetail:
     related_pages = normalize_page_ids(payload.related_pages)
     suggested_target_page = normalize_optional_page_id(payload.suggested_target_page)
     page_id = unique_page_id(repo, base_page_id)
+    effective_source_task = optional_string(payload.source_task) or optional_string(payload.task_id)
     content = build_capture_markdown(
         title=title,
         observation=payload.observation,
         captured_at=datetime.now(timezone.utc).isoformat(),
         confidence=optional_string(payload.confidence) or "unknown",
-        source_task=optional_string(payload.source_task),
+        source_task=effective_source_task,
         related_pages=related_pages,
         suggested_target_page=suggested_target_page,
         sources=string_list(payload.sources),
@@ -74,6 +77,12 @@ def capture_memory(repo: LoreRepository, payload: CaptureRequest) -> PageDetail:
         observed_at=optional_string(payload.observed_at) or datetime.now(timezone.utc).isoformat(),
         valid_from=optional_string(payload.valid_from),
         valid_until=optional_string(payload.valid_until),
+        task_id=optional_string(payload.task_id),
+        decision_id=optional_string(payload.decision_id),
+        trace_id=optional_string(payload.trace_id),
+        tool_calls=payload.tool_calls or None,
+        constraints=string_list(payload.constraints) or None,
+        policies_applied=string_list(payload.policies_applied) or None,
     )
     return repo.upsert_page(page_id, content)
 
@@ -302,7 +311,14 @@ def build_capture_markdown(
     observed_at: str | None = None,
     valid_from: str | None = None,
     valid_until: str | None = None,
+    task_id: str | None = None,
+    decision_id: str | None = None,
+    trace_id: str | None = None,
+    tool_calls: list[dict[str, Any]] | None = None,
+    constraints: list[str] | None = None,
+    policies_applied: list[str] | None = None,
 ) -> str:
+    effective_source_task = source_task or task_id
     frontmatter = [
         "---",
         f"title: {frontmatter_scalar(title)}",
@@ -318,8 +334,8 @@ def build_capture_markdown(
         frontmatter.append(f"actor: {frontmatter_scalar(actor)}")
     if lane:
         frontmatter.append(f"lane: {frontmatter_scalar(lane)}")
-    if source_task:
-        frontmatter.append(f"source_task: {frontmatter_scalar(source_task)}")
+    if effective_source_task:
+        frontmatter.append(f"source_task: {frontmatter_scalar(effective_source_task)}")
     if suggested_target_page:
         frontmatter.append(f"suggested_target_page: {suggested_target_page}")
     if related_pages:
@@ -342,6 +358,20 @@ def build_capture_markdown(
         frontmatter.append(f"valid_from: {frontmatter_scalar(valid_from)}")
     if valid_until:
         frontmatter.append(f"valid_until: {frontmatter_scalar(valid_until)}")
+    if decision_id:
+        frontmatter.append(f"decision_id: {frontmatter_scalar(decision_id)}")
+    if trace_id:
+        frontmatter.append(f"trace_id: {frontmatter_scalar(trace_id)}")
+    if tool_calls:
+        frontmatter.append("tool_calls:")
+        for tool_call in tool_calls:
+            frontmatter.append(f"  - {json.dumps(tool_call, separators=(',', ':'))}")
+    if constraints:
+        frontmatter.append("constraints:")
+        frontmatter.extend(f"  - {frontmatter_scalar(constraint)}" for constraint in constraints)
+    if policies_applied:
+        frontmatter.append("policies_applied:")
+        frontmatter.extend(f"  - {frontmatter_scalar(policy)}" for policy in policies_applied)
     frontmatter.append("---")
 
     body = [
@@ -353,8 +383,8 @@ def build_capture_markdown(
         "",
         observation.strip(),
     ]
-    if source_task:
-        body.extend(["", "## Source Task", "", source_task])
+    if effective_source_task:
+        body.extend(["", "## Source Task", "", effective_source_task])
     if sources:
         body.extend(["", "## Sources", ""])
         body.extend(f"- {source}" for source in sources)

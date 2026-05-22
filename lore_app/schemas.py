@@ -206,6 +206,15 @@ class CaptureRequest(BaseModel):
     observed_at: str | None = Field(default=None, description="When the fact was observed (ISO timestamp).")
     valid_from: str | None = Field(default=None, description="When the fact became true in the world (ISO date).")
     valid_until: str | None = Field(default=None, description="When the fact ceased to be true (null = still valid).")
+    task_id: str | None = Field(default=None, description="Source task ID (e.g. flow_000123).")
+    decision_id: str | None = Field(default=None, description="Linked decision page ID.")
+    trace_id: str | None = Field(default=None, description="Reasoning trace correlation ID.")
+    tool_calls: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Tool call records from the capturing session.",
+    )
+    constraints: list[str] = Field(default_factory=list, description="Constraints that applied during capture.")
+    policies_applied: list[str] = Field(default_factory=list, description="Policy IDs that were enforced.")
 
 
 class MemoryCaptureRequest(BaseModel):
@@ -215,6 +224,15 @@ class MemoryCaptureRequest(BaseModel):
     tags: list[str] = Field(default_factory=list)
     lane: str | None = Field(default=None, description="Retrieval lane: project, procedural, ops, companion, draft.")
     actor: str | None = Field(default=None, description="Agent name for provenance.")
+    task_id: str | None = Field(default=None, description="Source task ID (e.g. flow_000123).")
+    decision_id: str | None = Field(default=None, description="Linked decision page ID.")
+    trace_id: str | None = Field(default=None, description="Reasoning trace correlation ID.")
+    tool_calls: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Tool call records from the capturing session.",
+    )
+    constraints: list[str] = Field(default_factory=list, description="Constraints that applied during capture.")
+    policies_applied: list[str] = Field(default_factory=list, description="Policy IDs that were enforced.")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Extra frontmatter fields.")
 
 
