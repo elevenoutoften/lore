@@ -60,6 +60,7 @@ def lore_capture(
     source_task: str | None = None,
     related_pages: list[str] | None = None,
     confidence: str | None = "unknown",
+    epistemic_status: str | None = None,
     suggested_target_page: str | None = None,
     sources: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -74,6 +75,7 @@ def lore_capture(
         "capture_date": capture_date,
         "source_task": source_task,
         "related_pages": related_pages,
+        "epistemic_status": epistemic_status,
         "suggested_target_page": suggested_target_page,
         "sources": sources,
     }

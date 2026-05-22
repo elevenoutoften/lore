@@ -9,27 +9,27 @@ FRONTMATTER_SPEC: dict[str, FrontmatterKindSpec] = {
     "project": FrontmatterKindSpec(
         kind="project",
         required=["title", "kind", "visibility", "summary", "owner"],
-        optional=["tags", "sources", "status", "stale_after", "reviewed_at", "confidence"],
+        optional=["tags", "sources", "status", "stale_after", "reviewed_at", "confidence", "epistemic_status"],
     ),
     "service": FrontmatterKindSpec(
         kind="service",
         required=["title", "kind", "visibility", "summary", "owner"],
-        optional=["tags", "sources", "status", "stale_after", "reviewed_at", "confidence", "dependencies"],
+        optional=["tags", "sources", "status", "stale_after", "reviewed_at", "confidence", "dependencies", "epistemic_status"],
     ),
     "decision": FrontmatterKindSpec(
         kind="decision",
         required=["title", "kind", "visibility", "summary", "status", "decided_at", "deciders"],
-        optional=["tags", "sources", "alternatives", "stale_after", "reviewed_at", "confidence"],
+        optional=["tags", "sources", "alternatives", "stale_after", "reviewed_at", "confidence", "epistemic_status"],
     ),
     "runbook": FrontmatterKindSpec(
         kind="runbook",
         required=["title", "kind", "visibility", "summary"],
-        optional=["tags", "sources", "owner", "status", "stale_after", "reviewed_at", "confidence", "steps"],
+        optional=["tags", "sources", "owner", "status", "stale_after", "reviewed_at", "confidence", "steps", "epistemic_status"],
     ),
     "concept": FrontmatterKindSpec(
         kind="concept",
         required=["title", "kind", "visibility", "summary"],
-        optional=["tags", "sources", "owner", "status", "stale_after", "reviewed_at", "confidence"],
+        optional=["tags", "sources", "owner", "status", "stale_after", "reviewed_at", "confidence", "epistemic_status"],
     ),
     "capture": FrontmatterKindSpec(
         kind="capture",
@@ -42,6 +42,7 @@ FRONTMATTER_SPEC: dict[str, FrontmatterKindSpec] = {
             "related",
             "evidence",
             "promoted_to",
+            "epistemic_status",
         ],
     ),
     "procedure": FrontmatterKindSpec(
@@ -58,12 +59,13 @@ FRONTMATTER_SPEC: dict[str, FrontmatterKindSpec] = {
             "preconditions",
             "postconditions",
             "error_handling",
+            "epistemic_status",
         ],
     ),
     "page": FrontmatterKindSpec(
         kind="page",
         required=["title", "kind", "visibility"],
-        optional=["summary", "tags", "sources", "owner", "status", "stale_after", "reviewed_at", "confidence"],
+        optional=["summary", "tags", "sources", "owner", "status", "stale_after", "reviewed_at", "confidence", "epistemic_status"],
     ),
 }
 

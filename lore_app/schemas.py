@@ -22,6 +22,7 @@ class PageSummary(BaseModel):
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
     policies_applied: list[str] = Field(default_factory=list)
+    epistemic_status: "EpistemicStatus | None" = None
     updated_at: str
     size: int
 
@@ -77,6 +78,7 @@ class MetadataUpdate(BaseModel):
     observed_at: str | None = Field(default=None, description="When the fact was observed (capture time).")
     valid_from: str | None = Field(default=None, description="When the fact became true in the world.")
     valid_until: str | None = Field(default=None, description="When the fact ceased to be true (null = still valid).")
+    epistemic_status: str | None = None
     status: str | None = None
 
 
@@ -401,6 +403,7 @@ class CaptureRequest(BaseModel):
     source_paths: list[str] = Field(default_factory=list, description="Repo paths or file references.")
     source_urls: list[str] = Field(default_factory=list, description="HTTP/HTTPS URLs.")
     evidence: str | None = Field(default=None, description="Supporting evidence text.")
+    epistemic_status: "EpistemicStatus | None" = Field(default=None, description="How this knowledge was obtained.")
     actor: str | None = Field(default=None, description="Agent name that produced this capture.")
     lane: str | None = Field(default=None, description="Retrieval lane: project, procedural, ops, companion, draft.")
     observed_at: str | None = Field(default=None, description="When the fact was observed (ISO timestamp).")
@@ -477,6 +480,7 @@ class TraceCreateRequest(BaseModel):
     policy_refs: list[str] = Field(default_factory=list)
     alternatives: list[Alternative] = Field(default_factory=list)
     provenance: ProvenanceRef | None = Field(default=None, description="Unified provenance references.")
+    epistemic_status: "EpistemicStatus | None" = Field(default=None, description="How this trace knowledge was obtained.")
     outcome: str = ""
     related_ids: dict[str, str] = Field(default_factory=dict)
 
@@ -492,8 +496,18 @@ class TraceUpdateRequest(BaseModel):
     policy_refs: list[str] | None = None
     alternatives: list[Alternative] | None = None
     provenance: ProvenanceRef | None = None
+    epistemic_status: "EpistemicStatus | None" = None
     outcome: str | None = None
     related_ids: dict[str, str] | None = None
+
+
+class EpistemicStatus(str, Enum):
+    """How was this knowledge obtained?"""
+
+    operator_declared = "operator_declared"
+    retrieved = "retrieved"
+    inferred = "inferred"
+    assumption = "assumption"
 
 
 class TraceEntry(BaseModel):
@@ -510,6 +524,7 @@ class TraceEntry(BaseModel):
     policy_refs: list[str] = Field(default_factory=list)
     alternatives: list[Alternative] = Field(default_factory=list)
     provenance: ProvenanceRef | None = Field(default=None, description="Unified provenance references.")
+    epistemic_status: EpistemicStatus | None = None
     outcome: str = ""
     related_ids: dict[str, str] = Field(default_factory=dict)
     created_at: str = ""
@@ -644,6 +659,7 @@ class RagExpandedResult(BaseModel):
     contradicting_claims: list[str] = Field(default_factory=list, description="Claim IDs that contradict this page.")
     related_decisions: list[str] = Field(default_factory=list, description="Decision page IDs related to this result.")
     related_traces: list[str] = Field(default_factory=list, description="Trace IDs that reference this page.")
+    epistemic_status: str | None = None
     relevant_because: str = Field(default="", description="Human-readable summary of why this result is relevant.")
 
 
@@ -801,6 +817,7 @@ class ExtractedClaim(BaseModel):
     policies_applied: list[str] = Field(default_factory=list)
     evidence: str | None = None
     source_page_ids: list[str] = Field(default_factory=list)
+    epistemic_status: EpistemicStatus | None = None
 
 
 class ExtractedEdge(BaseModel):

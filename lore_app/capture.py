@@ -74,6 +74,7 @@ def capture_memory(repo: LoreRepository, payload: CaptureRequest) -> PageDetail:
         source_paths=string_list(payload.source_paths),
         source_urls=string_list(payload.source_urls),
         evidence=optional_string(payload.evidence),
+        epistemic_status=payload.epistemic_status,
         actor=optional_string(payload.actor) or optional_string(payload.agent),
         lane=optional_string(payload.lane),
         observed_at=optional_string(payload.observed_at) or datetime.now(timezone.utc).isoformat(),
@@ -309,6 +310,7 @@ def build_capture_markdown(
     source_paths: list[str] | None = None,
     source_urls: list[str] | None = None,
     evidence: str | None = None,
+    epistemic_status: str | None = None,
     actor: str | None = None,
     lane: str | None = None,
     observed_at: str | None = None,
@@ -356,6 +358,8 @@ def build_capture_markdown(
         frontmatter.extend(f"  - {frontmatter_scalar(url)}" for url in source_urls)
     if evidence:
         frontmatter.append(f"evidence: {frontmatter_scalar(evidence)}")
+    if epistemic_status:
+        frontmatter.append(f"epistemic_status: {frontmatter_scalar(epistemic_status)}")
     if observed_at:
         frontmatter.append(f"observed_at: {frontmatter_scalar(observed_at)}")
     if valid_from:

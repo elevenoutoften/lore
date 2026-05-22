@@ -63,6 +63,7 @@ def api_memory_capture(
         source_paths=metadata.get("source_paths") or [],
         source_urls=metadata.get("source_urls") or [],
         evidence=metadata.get("evidence"),
+        epistemic_status=metadata.get("epistemic_status"),
         actor=payload.actor or payload.agent_name,
         lane=payload.lane or metadata.get("lane"),
         task_id=payload.task_id or metadata.get("source_task"),

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .frontmatter import parse_frontmatter
-from .schemas import CatalogResponse, PageDetail, PageSummary, SearchHit, SearchResponse
+from .schemas import CatalogResponse, EpistemicStatus, PageDetail, PageSummary, SearchHit, SearchResponse
 
 PAGE_SEGMENT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 HEADING_PATTERN = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
@@ -44,6 +44,7 @@ class MarkdownPage:
             tool_calls=dict_list(frontmatter.get("tool_calls")),
             constraints=string_list(frontmatter.get("constraints")),
             policies_applied=string_list(frontmatter.get("policies_applied")),
+            epistemic_status=epistemic_status_value(frontmatter.get("epistemic_status")),
             updated_at=self.updated_at,
             size=self.size,
         )
@@ -182,6 +183,7 @@ class LoreRepository:
     def _read_file(self, path: Path, page_id: str) -> MarkdownPage:
         content = path.read_text(encoding="utf-8")
         frontmatter, body = parse_frontmatter(content)
+        normalized_frontmatter = normalize_frontmatter(frontmatter)
         stat = path.stat()
         updated_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
         return MarkdownPage(
@@ -189,7 +191,7 @@ class LoreRepository:
             path=path,
             content=content,
             body=body,
-            frontmatter=frontmatter,
+            frontmatter=normalized_frontmatter,
             updated_at=updated_at,
             size=stat.st_size,
         )
@@ -252,6 +254,26 @@ def dict_list(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def epistemic_status_value(value: Any) -> EpistemicStatus | None:
+    if isinstance(value, EpistemicStatus):
+        return value
+    cleaned = optional_string(value)
+    if not cleaned:
+        return None
+    try:
+        return EpistemicStatus(cleaned)
+    except ValueError:
+        return None
+
+
+def normalize_frontmatter(frontmatter: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(frontmatter)
+    epistemic_status = epistemic_status_value(normalized.get("epistemic_status"))
+    if epistemic_status is not None:
+        normalized["epistemic_status"] = epistemic_status
+    return normalized
 
 
 def score_page(page: MarkdownPage, summary: PageSummary, terms: list[str]) -> int:

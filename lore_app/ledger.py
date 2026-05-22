@@ -114,6 +114,7 @@ class LedgerDB:
             ("supersedes", "TEXT DEFAULT NULL"),
             ("superseded_by", "TEXT DEFAULT NULL"),
             ("invalidation_reason", "TEXT DEFAULT NULL"),
+            ("epistemic_status", "TEXT DEFAULT NULL"),
         ],
         "patch_plans": [
             ("batch_id", "TEXT DEFAULT NULL"),
@@ -158,6 +159,7 @@ class LedgerDB:
             ("policy_refs", "TEXT NOT NULL DEFAULT '[]'"),
             ("alternatives", "TEXT NOT NULL DEFAULT '[]'"),
             ("provenance", "TEXT NOT NULL DEFAULT '{}'"),
+            ("epistemic_status", "TEXT DEFAULT NULL"),
             ("outcome", "TEXT NOT NULL DEFAULT ''"),
             ("related_ids", "TEXT NOT NULL DEFAULT '{}'"),
             ("created_at", "TEXT NOT NULL DEFAULT ''"),
@@ -200,6 +202,7 @@ class LedgerDB:
                 candidate_type TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'candidate',
                 confidence TEXT,
+                epistemic_status TEXT,
                 actor TEXT,
                 lane TEXT,
                 content_json TEXT NOT NULL,
@@ -273,6 +276,7 @@ class LedgerDB:
                 policy_refs TEXT NOT NULL DEFAULT '[]',
                 alternatives TEXT NOT NULL DEFAULT '[]',
                 provenance TEXT NOT NULL DEFAULT '{}',
+                epistemic_status TEXT DEFAULT NULL,
                 outcome TEXT NOT NULL DEFAULT '',
                 related_ids TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL DEFAULT '',
@@ -448,17 +452,18 @@ class LedgerDB:
                     self.connection.execute(
                         """
                         INSERT INTO extraction_candidates (
-                            candidate_id, batch_id, candidate_type, status, confidence,
+                            candidate_id, batch_id, candidate_type, status, confidence, epistemic_status,
                             actor, lane, content_json, dedupe_hash, source_capture_ids,
                             source_page_ids, observed_at, valid_from, valid_until,
                             strength, created_at, updated_at
-                        ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             str(uuid.uuid4()),
                             result.batch_id,
                             candidate_type,
                             metadata.get("confidence"),
+                            metadata.get("epistemic_status"),
                             metadata.get("actor"),
                             metadata.get("lane"),
                             candidate.model_dump_json(),
@@ -507,7 +512,7 @@ class LedgerDB:
         # Check for existing compatible claim
         existing = self.connection.execute(
             """
-            SELECT candidate_id, strength, confidence, source_capture_ids,
+            SELECT candidate_id, strength, confidence, epistemic_status, source_capture_ids,
                    source_page_ids, valid_from, valid_until
             FROM extraction_candidates
             WHERE dedupe_hash = ? AND candidate_type = 'claim'
@@ -538,6 +543,9 @@ class LedgerDB:
                 if CONFIDENCE_ORDER.get(new_confidence, 0) > CONFIDENCE_ORDER.get(existing_confidence, 0)
                 else existing_confidence
             )
+            best_epistemic_status = metadata.get("epistemic_status") or (
+                str(existing["epistemic_status"]) if existing["epistemic_status"] else None
+            )
 
             # Keep more specific temporal bounds
             existing_valid_from = str(existing["valid_from"]) if existing["valid_from"] else metadata.get("valid_from")
@@ -546,7 +554,7 @@ class LedgerDB:
             self.connection.execute(
                 """
                 UPDATE extraction_candidates
-                SET strength = ?, confidence = ?, source_capture_ids = ?,
+                SET strength = ?, confidence = ?, epistemic_status = ?, source_capture_ids = ?,
                     source_page_ids = ?, valid_from = ?, valid_until = ?,
                     updated_at = ?
                 WHERE candidate_id = ?
@@ -554,6 +562,7 @@ class LedgerDB:
                 (
                     new_strength,
                     best_confidence,
+                    best_epistemic_status,
                     json.dumps(merged_captures),
                     json.dumps(merged_pages),
                     existing_valid_from,
@@ -582,18 +591,19 @@ class LedgerDB:
         self.connection.execute(
             """
             INSERT INTO extraction_candidates (
-                candidate_id, batch_id, candidate_type, status, confidence,
+                candidate_id, batch_id, candidate_type, status, confidence, epistemic_status,
                 actor, lane, content_json, dedupe_hash, source_capture_ids,
                 source_page_ids, observed_at, valid_from, valid_until,
                 strength, normalized_subject, normalized_predicate, normalized_object,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 candidate_id,
                 batch_id,
                 candidate_type,
                 metadata.get("confidence"),
+                metadata.get("epistemic_status"),
                 metadata.get("actor"),
                 metadata.get("lane"),
                 candidate.model_dump_json(),
@@ -1167,8 +1177,8 @@ class LedgerDB:
             INSERT OR REPLACE INTO reasoning_traces (
                 trace_id, parent_trace_id, actor, reason_summary, status,
                 context_refs, tool_refs, constraints, policy_refs, alternatives,
-                provenance, outcome, related_ids, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                provenance, epistemic_status, outcome, related_ids, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload["trace_id"],
@@ -1182,6 +1192,7 @@ class LedgerDB:
                 json.dumps(payload["policy_refs"]),
                 json.dumps(payload["alternatives"]),
                 json.dumps(payload["provenance"] or {}),
+                payload["epistemic_status"],
                 payload["outcome"],
                 json.dumps(payload["related_ids"]),
                 payload["created_at"],
@@ -1282,6 +1293,7 @@ def _candidate_metadata(candidate: Any) -> dict[str, Any]:
     if isinstance(candidate, ExtractedClaim):
         return {
             "confidence": candidate.confidence,
+            "epistemic_status": candidate.epistemic_status,
             "actor": candidate.actor,
             "lane": candidate.lane,
             "observed_at": candidate.observed_at,
@@ -1314,6 +1326,8 @@ def _decode_row(row: sqlite3.Row) -> dict[str, Any]:
             pass
     if "auto_appliable" in decoded:
         decoded["auto_appliable"] = bool(decoded["auto_appliable"])
+    if "epistemic_status" in decoded and decoded["epistemic_status"] is not None:
+        decoded["epistemic_status"] = str(decoded["epistemic_status"])
     return decoded
 
 

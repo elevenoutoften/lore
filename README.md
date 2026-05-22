@@ -83,6 +83,13 @@ The captures endpoint lists the intake queue. It defaults to draft captures and
 accepts `status=all` to show every capture status. Human review is an escalation
 path for low-confidence, conflicting, or sensitive captures, not the default
 memory-management loop.
+
+## Governance
+
+Lore tracks both confidence and epistemic provenance. See
+[docs/governance.md](docs/governance.md) for the epistemic status labels
+(`operator_declared`, `retrieved`, `inferred`, `assumption`) and review
+guidance.
 ## Wiki links
 
 Lore stores ordinary Markdown, but the browser reader understands Lore page

@@ -361,6 +361,11 @@ TOOLS: list[dict[str, Any]] = [
                     "description": "Related Lore page IDs.",
                 },
                 "confidence": {"type": "string", "description": "Confidence such as low, medium, high, or unknown."},
+                "epistemic_status": {
+                    "type": "string",
+                    "enum": ["operator_declared", "retrieved", "inferred", "assumption"],
+                    "description": "How was this knowledge obtained? operator_declared=human stated, retrieved=fetched from source, inferred=deduced, assumption=LLM guess.",
+                },
                 "suggested_target_page": {
                     "type": "string",
                     "description": "Canonical Lore page where this may eventually be promoted.",
@@ -505,6 +510,11 @@ TOOLS: list[dict[str, Any]] = [
                 "reviewed_at": {"type": "string", "description": "ISO date when the page was reviewed."},
                 "stale_after": {"type": "string", "description": "ISO date after which the page needs review."},
                 "confidence": {"type": "string", "enum": ["low", "medium", "high"], "description": "Confidence level."},
+                "epistemic_status": {
+                    "type": "string",
+                    "enum": ["operator_declared", "retrieved", "inferred", "assumption"],
+                    "description": "How this page knowledge was obtained.",
+                },
                 "status": {
                     "type": "string",
                     "enum": ["draft", "review", "accepted", "deprecated"],

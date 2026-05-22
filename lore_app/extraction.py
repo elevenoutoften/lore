@@ -183,6 +183,7 @@ def _extract_capture(
     decision_id = optional_string(frontmatter.get("decision_id"))
     trace_id = optional_string(frontmatter.get("trace_id"))
     policies_applied = string_list(frontmatter.get("policies_applied"))
+    epistemic_status = frontmatter.get("epistemic_status")
     suggested_target = optional_string(frontmatter.get("suggested_target_page"))
     front_summary = optional_string(frontmatter.get("summary"))
     if front_summary and front_summary.casefold().strip() == CAPTURE_INTAKE_SUMMARY.casefold():
@@ -230,6 +231,7 @@ def _extract_capture(
             policies_applied=policies_applied,
             evidence=evidence,
             source_page_ids=source_pages,
+            epistemic_status=epistemic_status,
         )
     ]
 

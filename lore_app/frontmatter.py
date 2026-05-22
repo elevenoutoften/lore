@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from enum import Enum
 from typing import Any
 
 
@@ -98,11 +99,13 @@ def serialize_markdown(frontmatter: dict[str, Any], body: str) -> str:
 
 def serialize_frontmatter_field(key: str, value: Any) -> list[str]:
     if isinstance(value, list):
-        return [f"{key}:"] + [f"  - {frontmatter_scalar(str(item))}" for item in value]
+        return [f"{key}:"] + [f"  - {frontmatter_scalar(item)}" for item in value]
     if isinstance(value, bool):
         return [f"{key}: {str(value).lower()}"]
-    return [f"{key}: {frontmatter_scalar(str(value))}"]
+    return [f"{key}: {frontmatter_scalar(value)}"]
 
 
 def frontmatter_scalar(value: Any) -> str:
+    if isinstance(value, Enum):
+        value = value.value
     return " ".join(str(value).split())
