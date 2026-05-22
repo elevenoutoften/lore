@@ -228,6 +228,23 @@ def test_procedure_lint_unvalidated(client):
     assert "procedure-unvalidated" in rules
 
 
+def test_procedure_lint_missing_author_and_validated_at(client):
+    """Lint warns when procedure pages lack author or validated_at."""
+    resp = client.put(
+        "/api/pages/procedures/test-no-author",
+        json={
+            "content": "---\ntitle: No Author Proc\nkind: procedure\nvisibility: internal\nsummary: Test\ntrigger: test\nsteps:\n  - Do thing\nschema_version: \"1.0\"\nvalidated: true\nsources:\n  - operator note\n---\n\n# No Author Proc\n\n1. Do thing\n"
+        },
+    )
+    assert resp.status_code == 200
+
+    resp = client.get("/api/lint")
+    issues = resp.json()["issues"]
+    rules = [i["rule"] for i in issues if i["page_id"] == "procedures/test-no-author"]
+    assert "procedure-missing-author" in rules
+    assert "procedure-missing-validated-at" in rules
+
+
 def test_procedure_export_not_procedure_422(client):
     client.put(
         "/api/pages/services/not-a-procedure",

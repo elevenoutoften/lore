@@ -43,7 +43,7 @@ def main() -> int:
             response["result"] = {
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": {"name": PROJECT_NAME, "version": "0.2.0"},
+                "serverInfo": {"name": PROJECT_NAME, "version": "0.3.0b1"},
             }
         elif method == "tools/list":
             response["result"] = {"tools": TOOLS}

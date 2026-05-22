@@ -380,6 +380,26 @@ def lint_procedure(page: PageDetail) -> list[LintIssue]:
             )
         )
 
+    if not optional_string(page.frontmatter.get("author")):
+        issues.append(
+            page_issue(
+                page,
+                rule="procedure-missing-author",
+                severity="warning",
+                message="Procedure page should have an 'author' field.",
+            )
+        )
+
+    if not optional_string(page.frontmatter.get("validated_at")):
+        issues.append(
+            page_issue(
+                page,
+                rule="procedure-missing-validated-at",
+                severity="warning",
+                message="Procedure page should have a 'validated_at' field.",
+            )
+        )
+
     if page.kind == "procedure" and not page.frontmatter.get("validated"):
         issues.append(
             page_issue(

@@ -11,7 +11,7 @@ def package_version() -> str:
     try:
         return version(PROJECT_NAME)
     except PackageNotFoundError:
-        return "0.2.0"
+        return "0.3.0b1"
 
 
 class JsonRpcError(Exception):
