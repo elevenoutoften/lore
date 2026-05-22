@@ -13,6 +13,7 @@ from .capture import is_capture_page_id
 from .frontmatter import serialize_markdown, update_frontmatter
 from .ledger import LedgerDB, utc_now
 from .link_graph import LinkGraphCache
+from .policy_engine import PolicyEngine
 from .repository import InvalidPageId, LoreRepository, infer_kind, normalize_page_id, optional_string
 from .route_utils import index_vectors_for_page
 from .schemas import (
@@ -23,6 +24,7 @@ from .schemas import (
     PatchOperation,
     PatchPlan,
     PatchPreview,
+    PolicyDecision,
     RiskLevel,
     ToolRef,
     TraceEntry,
@@ -51,6 +53,7 @@ class PatchPlanner:
         search_index: LoreSearchIndex | None = None,
         vector_store: "VectorStore | None" = None,
         graph_cache: "LinkGraphCache | None" = None,
+        policy_engine: PolicyEngine | None = None,
     ):
         self.repo = repo
         self.ledger = ledger
@@ -58,6 +61,7 @@ class PatchPlanner:
         self.search_index = search_index
         self.vector_store = vector_store
         self.graph_cache = graph_cache
+        self.policy_engine = policy_engine
 
     def plan_batch(
         self,
@@ -93,6 +97,7 @@ class PatchPlanner:
             unified_diff=_unified_diff(current_content, proposed_content, plan.target_page_id),
             risk_level=plan.risk_level,
             auto_appliable=plan.auto_appliable,
+            policies_applied=plan.policies_applied,
         )
 
     def apply_plan(self, plan_id: str, *, force: bool = False) -> PatchApplyResult:
@@ -173,7 +178,17 @@ class PatchPlanner:
         contradictions = self._find_contradictions(bundles)
         operation = self._choose_operation(target_page_id, page is not None, bundles, contradictions)
         risk_level = self._assess_risk(target_page_id, operation, contradictions)
+        high_confidence = all(optional_string(bundle.row.get("confidence")) == "high" for bundle in bundles)
         auto_appliable = self._is_auto_appliable(target_page_id, operation, bundles, contradictions)
+        policy_decisions = self._evaluate_policies(
+            target_page_id,
+            operation,
+            bool(contradictions),
+            high_confidence,
+        )
+        if any(not decision.passed for decision in policy_decisions):
+            auto_appliable = False
+        risk_level = self._risk_level_from_policy_decisions(risk_level, policy_decisions)
         target_section = self._target_section(target_page_id, operation)
         candidate_ids = [bundle.row["candidate_id"] for bundle in bundles]
         trace = self.ledger.store_trace(
@@ -190,7 +205,7 @@ class PatchPlanner:
                 ],
                 tool_refs=[ToolRef(tool="patch-planner", action="build_plan")],
                 constraints=self._trace_constraints(target_page_id, contradictions),
-                policy_refs=self._trace_policy_refs(target_page_id, operation, auto_appliable),
+                policy_refs=self._trace_policy_refs(target_page_id, operation, auto_appliable, policy_decisions),
                 alternatives=self._trace_alternatives(auto_appliable),
                 outcome="plan_generated",
                 related_ids={
@@ -200,7 +215,14 @@ class PatchPlanner:
             )
         )
 
-        preview = self._preview_for(target_page_id, operation, target_section, bundles, page_content=page.content if page else "")
+        preview = self._preview_for(
+            target_page_id,
+            operation,
+            target_section,
+            bundles,
+            page_content=page.content if page else "",
+            policies_applied=policy_decisions,
+        )
         plan = PatchPlan(
             plan_id=str(uuid.uuid4()),
             trace_id=trace.trace_id,
@@ -211,6 +233,7 @@ class PatchPlanner:
             content_diff=preview.unified_diff,
             risk_level=risk_level,
             auto_appliable=auto_appliable,
+            policies_applied=policy_decisions,
             status="pending",
             created_at=now,
         )
@@ -249,12 +272,35 @@ class PatchPlanner:
             constraints.append(f"Protected {kind} pages require review before auto-apply.")
         return constraints
 
+    def _evaluate_policies(
+        self,
+        target_page_id: str,
+        operation: PatchOperation,
+        has_contradictions: bool,
+        high_confidence: bool,
+    ) -> list[PolicyDecision]:
+        if self.policy_engine is None:
+            return []
+        return self.policy_engine.evaluate(
+            page_id=target_page_id,
+            page_kind=self._page_kind(target_page_id),
+            operation=operation,
+            has_contradictions=has_contradictions,
+            high_confidence=high_confidence,
+        )
+
     def _trace_policy_refs(
         self,
         target_page_id: str,
         operation: PatchOperation,
         auto_appliable: bool,
+        policy_decisions: list[PolicyDecision] | None = None,
     ) -> list[str]:
+        if policy_decisions:
+            return [
+                f"{decision.policy_id}:{'pass' if decision.passed else 'fail'}"
+                for decision in policy_decisions
+            ]
         policy_refs = ["patch-planner:auto-apply"]
         if not auto_appliable:
             policy_refs.append("patch-planner:review-required")
@@ -278,6 +324,15 @@ class PatchPlanner:
                 rejected_reason="Plan requires review",
             )
         ]
+
+    def _risk_level_from_policy_decisions(
+        self,
+        fallback: RiskLevel,
+        policy_decisions: list[PolicyDecision],
+    ) -> RiskLevel:
+        if any(decision.gate == "risk-assessment" and not decision.passed for decision in policy_decisions):
+            return RiskLevel.high
+        return fallback
 
     def _load_plan(self, plan_id: str) -> PatchPlan:
         row = self.ledger.get_patch_plan(plan_id)
@@ -385,6 +440,7 @@ class PatchPlanner:
         bundles: list[_CandidateBundle],
         *,
         page_content: str,
+        policies_applied: list[PolicyDecision] | None = None,
     ) -> PatchPreview:
         proposed_content = self._render_content(
             target_page_id,
@@ -402,6 +458,7 @@ class PatchPlanner:
             unified_diff=_unified_diff(page_content, proposed_content, target_page_id),
             risk_level=self._assess_risk(target_page_id, operation, self._find_contradictions(bundles)),
             auto_appliable=self._is_auto_appliable(target_page_id, operation, bundles, self._find_contradictions(bundles)),
+            policies_applied=policies_applied or [],
         )
 
     def _proposed_content(self, plan: PatchPlan) -> str:

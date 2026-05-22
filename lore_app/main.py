@@ -19,10 +19,11 @@ from .link_graph import LinkGraphCache
 from .lint_config import LintConfig
 from .observability import MetricsCollector, log_request
 from .patch_planner import PatchPlanner
+from .policy_engine import PolicyEngine
 from .rag.vector_store import VectorStore
 from .repository import LoreRepository
 from .route_utils import actor_from_request, client_rate_limit_key, is_rate_limited_write, retrieve_context, workspace_lore_config
-from .routes import admin_router, api_keys_router, captures_router, consolidation_router, distillation_router, extraction_router, graph_router, heartbeat_router, ledger_router, lint_router, mcp_router, memory_router, metadata_router, pages_router, procedures_router, rag_router, search_router, trace_router
+from .routes import admin_router, api_keys_router, captures_router, consolidation_router, distillation_router, extraction_router, graph_router, heartbeat_router, ledger_router, lint_router, mcp_router, memory_router, metadata_router, pages_router, policies_router, procedures_router, rag_router, search_router, trace_router
 from .routes.admin import package_name, package_version
 from .search_index import LoreSearchIndex
 from .security import RateLimiter
@@ -68,6 +69,7 @@ def create_app(
     graph_cache = LinkGraphCache()
     ledger_db = LedgerDB(lore_config.ledger_db)
     ledger_db.initialize()
+    policy_engine = PolicyEngine(ledger_db)
     api_key_store = LoreApiKeyStore(lore_config.api_keys_db)
     api_key_store.initialize()
     audit_log = AuditLog(Path(lore_config.content_dir) / ".lore" / "audit", retention_days=lore_config.audit_retention_days)
@@ -84,9 +86,10 @@ def create_app(
     app.state.lint_config = lint_config
     app.state.graph_cache = graph_cache
     app.state.ledger_db = ledger_db
+    app.state.policy_engine = policy_engine
     app.state.api_key_store = api_key_store
     app.state.audit_log = audit_log
-    app.state.patch_planner = PatchPlanner(repo, ledger_db, audit_log)
+    app.state.patch_planner = PatchPlanner(repo, ledger_db, audit_log, policy_engine=policy_engine)
     app.state.consolidation_worker = ConsolidationWorker(
         repo,
         ledger_db,
@@ -189,6 +192,7 @@ def create_app(
     app.include_router(graph_router)
     app.include_router(mcp_router)
     app.include_router(pages_router)
+    app.include_router(policies_router)
     app.include_router(procedures_router)
 
     return app

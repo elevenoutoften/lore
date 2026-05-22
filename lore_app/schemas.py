@@ -670,6 +670,37 @@ class RiskLevel(str, Enum):
     high = "high"
 
 
+class PolicyRule(BaseModel):
+    """A policy that gates patch planning decisions."""
+
+    policy_id: str = Field(..., description="Unique policy identifier, e.g. 'protected-surface:v1'.")
+    name: str = Field(..., min_length=1, max_length=200, description="Human-readable policy name.")
+    description: str = Field(default="", max_length=2000, description="What this policy enforces.")
+    gate: Literal[
+        "auto-apply",
+        "review-required",
+        "protected-surface",
+        "contradiction-review",
+        "risk-assessment",
+    ] = Field(..., description="Which decision gate this policy controls.")
+    condition_kind: list[str] = Field(default_factory=list, description="Page kinds this policy applies to (empty = all).")
+    condition_operation: list[str] = Field(default_factory=list, description="Patch operations this policy applies to (empty = all).")
+    effect_pass: str = Field(default="allow", description="Result when policy passes: 'allow' or 'auto-apply'.")
+    effect_fail: str = Field(default="block", description="Result when policy fails: 'block', 'review', or 'escalate'.")
+    fail_reason_template: str = Field(default="", description="Template for the failure reason. {kind}, {operation}, {page_id} available.")
+    version: int = Field(default=1, ge=1, description="Policy version for tracking changes.")
+    enabled: bool = Field(default=True, description="Whether this policy is active.")
+
+
+class PolicyDecision(BaseModel):
+    """Result of evaluating a single policy against a patch plan context."""
+
+    policy_id: str
+    gate: str
+    passed: bool
+    reason: str = ""
+
+
 class PatchPlan(BaseModel):
     plan_id: str
     trace_id: str | None = None
@@ -680,6 +711,7 @@ class PatchPlan(BaseModel):
     content_diff: str
     risk_level: RiskLevel
     auto_appliable: bool
+    policies_applied: list[PolicyDecision] = Field(default_factory=list, description="Policy evaluation results for this plan.")
     status: str = "pending"
     created_at: str
     applied_at: str | None = None
@@ -696,6 +728,7 @@ class PatchPreview(BaseModel):
     unified_diff: str
     risk_level: RiskLevel
     auto_appliable: bool
+    policies_applied: list[PolicyDecision] = Field(default_factory=list, description="Policy evaluation results for this plan.")
 
 
 class PatchApplyResult(BaseModel):

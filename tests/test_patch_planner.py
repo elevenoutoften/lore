@@ -29,7 +29,7 @@ class PlannerContext:
 def patch_ledger_row_decoder(monkeypatch):
     def decode_row(row):
         decoded = dict(row)
-        for key in ("content_json", "source_capture_ids", "source_page_ids", "candidate_ids"):
+        for key in ("content_json", "source_capture_ids", "source_page_ids", "candidate_ids", "policies_applied"):
             if key in decoded and isinstance(decoded[key], str):
                 try:
                     decoded[key] = json.loads(decoded[key])

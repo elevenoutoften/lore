@@ -13,6 +13,7 @@ from .mcp import router as mcp_router
 from .memory import router as memory_router
 from .metadata import router as metadata_router
 from .pages import router as pages_router
+from .policies import router as policies_router
 from .procedures import router as procedures_router
 from .rag import router as rag_router
 from .ledger import ledger_router
@@ -34,6 +35,7 @@ __all__ = [
     "memory_router",
     "metadata_router",
     "pages_router",
+    "policies_router",
     "procedures_router",
     "rag_router",
     "search_router",

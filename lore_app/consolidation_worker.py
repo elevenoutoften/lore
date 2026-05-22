@@ -164,6 +164,8 @@ class ConsolidationWorker:
             dry_ledger = LedgerDB(Path(temp_dir) / "ledger.db")
             dry_ledger.initialize()
             try:
+                from .policy_engine import PolicyEngine
+
                 dry_ledger.store_extraction_result(extraction_result)
                 dry_planner = PatchPlanner(
                     self.repo,
@@ -172,6 +174,7 @@ class ConsolidationWorker:
                     search_index=self.planner.search_index,
                     vector_store=self.planner.vector_store,
                     graph_cache=self.planner.graph_cache,
+                    policy_engine=PolicyEngine(dry_ledger) if self.planner.policy_engine is not None else None,
                 )
                 return dry_planner.plan_batch(batch_id=extraction_result.batch_id)
             finally:

@@ -19,10 +19,61 @@ from .schemas import (
     ExtractionResult,
     ExtractionStatusResponse,
     PatchPlan,
+    PolicyRule,
     TraceEntry,
 )
 
 CONFIDENCE_ORDER = {"unknown": 0, "low": 1, "medium": 2, "high": 3}
+SEED_POLICIES = [
+    PolicyRule(
+        policy_id="auto-apply:v1",
+        name="Auto-apply safe patches",
+        gate="auto-apply",
+        condition_kind=[],
+        condition_operation=["insert_new_fact", "append_sourced_paragraph", "create_stub_page"],
+        effect_pass="auto-apply",
+        effect_fail="review",
+        fail_reason_template="Patch for {page_id} requires review: {gate} policy {policy_id} blocked auto-apply.",
+        version=1,
+        enabled=True,
+    ),
+    PolicyRule(
+        policy_id="protected-surface:v1",
+        name="Protect decision and runbook pages",
+        gate="protected-surface",
+        condition_kind=["decision", "runbook"],
+        condition_operation=[],
+        effect_pass="allow",
+        effect_fail="review",
+        fail_reason_template="Protected {kind} page {page_id} requires review before auto-apply.",
+        version=1,
+        enabled=True,
+    ),
+    PolicyRule(
+        policy_id="contradiction-review:v1",
+        name="Require review for contradictions",
+        gate="contradiction-review",
+        condition_kind=[],
+        condition_operation=["update_existing_fact", "mark_stale"],
+        effect_pass="allow",
+        effect_fail="review",
+        fail_reason_template="Patch for {page_id} has contradicting candidates and requires review.",
+        version=1,
+        enabled=True,
+    ),
+    PolicyRule(
+        policy_id="risk-high:v1",
+        name="High risk for protected surfaces and contradictions",
+        gate="risk-assessment",
+        condition_kind=["decision", "runbook"],
+        condition_operation=["update_existing_fact", "mark_stale"],
+        effect_pass="allow",
+        effect_fail="review",
+        fail_reason_template="High risk assessment for {page_id}: {kind} page with {operation} operation.",
+        version=1,
+        enabled=True,
+    ),
+]
 VALID_TRANSITIONS = {
     "candidate": {"active", "rejected"},
     "active": {"superseded", "archived"},
@@ -73,6 +124,7 @@ class LedgerDB:
             ("content_diff", "TEXT NOT NULL DEFAULT ''"),
             ("risk_level", "TEXT NOT NULL DEFAULT 'low'"),
             ("auto_appliable", "BOOLEAN NOT NULL DEFAULT 0"),
+            ("policies_applied", "TEXT NOT NULL DEFAULT '[]'"),
             ("status", "TEXT NOT NULL DEFAULT 'pending'"),
             ("created_at", "TEXT NOT NULL DEFAULT ''"),
             ("applied_at", "TEXT DEFAULT NULL"),
@@ -106,6 +158,21 @@ class LedgerDB:
             ("alternatives", "TEXT NOT NULL DEFAULT '[]'"),
             ("outcome", "TEXT NOT NULL DEFAULT ''"),
             ("related_ids", "TEXT NOT NULL DEFAULT '{}'"),
+            ("created_at", "TEXT NOT NULL DEFAULT ''"),
+            ("updated_at", "TEXT NOT NULL DEFAULT ''"),
+        ],
+        "policies": [
+            ("policy_id", "TEXT PRIMARY KEY"),
+            ("name", "TEXT NOT NULL DEFAULT ''"),
+            ("description", "TEXT NOT NULL DEFAULT ''"),
+            ("gate", "TEXT NOT NULL DEFAULT ''"),
+            ("condition_kind", "TEXT NOT NULL DEFAULT '[]'"),
+            ("condition_operation", "TEXT NOT NULL DEFAULT '[]'"),
+            ("effect_pass", "TEXT NOT NULL DEFAULT 'allow'"),
+            ("effect_fail", "TEXT NOT NULL DEFAULT 'block'"),
+            ("fail_reason_template", "TEXT NOT NULL DEFAULT ''"),
+            ("version", "INTEGER NOT NULL DEFAULT 1"),
+            ("enabled", "INTEGER NOT NULL DEFAULT 1"),
             ("created_at", "TEXT NOT NULL DEFAULT ''"),
             ("updated_at", "TEXT NOT NULL DEFAULT ''"),
         ],
@@ -169,6 +236,7 @@ class LedgerDB:
                 content_diff TEXT NOT NULL DEFAULT '',
                 risk_level TEXT NOT NULL DEFAULT 'low',
                 auto_appliable BOOLEAN NOT NULL DEFAULT 0,
+                policies_applied TEXT NOT NULL DEFAULT '[]',
                 status TEXT NOT NULL DEFAULT 'pending',
                 created_at TEXT NOT NULL,
                 applied_at TEXT,
@@ -208,6 +276,22 @@ class LedgerDB:
                 updated_at TEXT NOT NULL DEFAULT ''
             );
 
+            CREATE TABLE IF NOT EXISTS policies (
+                policy_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                gate TEXT NOT NULL,
+                condition_kind TEXT NOT NULL DEFAULT '[]',
+                condition_operation TEXT NOT NULL DEFAULT '[]',
+                effect_pass TEXT NOT NULL DEFAULT 'allow',
+                effect_fail TEXT NOT NULL DEFAULT 'block',
+                fail_reason_template TEXT NOT NULL DEFAULT '',
+                version INTEGER NOT NULL DEFAULT 1,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_traces_actor ON reasoning_traces(actor);
             CREATE INDEX IF NOT EXISTS idx_traces_status ON reasoning_traces(status);
             CREATE INDEX IF NOT EXISTS idx_traces_related_task ON reasoning_traces(related_ids);
@@ -215,6 +299,7 @@ class LedgerDB:
         )
         self.connection.commit()
         self._run_migrations()
+        self._seed_policies()
 
     def _run_migrations(self) -> None:
         """Add columns from _MIGRATION_COLUMNS that don't yet exist."""
@@ -232,6 +317,89 @@ class LedgerDB:
                     except sqlite3.OperationalError:
                         pass  # Column already exists from concurrent migration
             self.connection.commit()
+
+    def _seed_policies(self) -> None:
+        existing = {
+            str(row["policy_id"])
+            for row in self.connection.execute("SELECT policy_id FROM policies").fetchall()
+        }
+        for policy in SEED_POLICIES:
+            if policy.policy_id not in existing:
+                self.store_policy(policy)
+
+    def store_policy(self, policy: PolicyRule) -> PolicyRule:
+        now = utc_now()
+        existing = self.connection.execute(
+            "SELECT created_at FROM policies WHERE policy_id = ?",
+            (policy.policy_id,),
+        ).fetchone()
+        created_at = str(existing["created_at"]) if existing is not None and existing["created_at"] else now
+        self.connection.execute(
+            """
+            INSERT OR REPLACE INTO policies (
+                policy_id, name, description, gate, condition_kind, condition_operation,
+                effect_pass, effect_fail, fail_reason_template, version, enabled,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                policy.policy_id,
+                policy.name,
+                policy.description,
+                policy.gate,
+                json.dumps(policy.condition_kind),
+                json.dumps(policy.condition_operation),
+                policy.effect_pass,
+                policy.effect_fail,
+                policy.fail_reason_template,
+                policy.version,
+                int(policy.enabled),
+                created_at,
+                now,
+            ),
+        )
+        self.connection.commit()
+        return policy
+
+    def get_policy(self, policy_id: str) -> PolicyRule | None:
+        row = self.connection.execute(
+            "SELECT * FROM policies WHERE policy_id = ?",
+            (policy_id,),
+        ).fetchone()
+        return _decode_policy_row(row) if row is not None else None
+
+    def list_policies(self, gate: str | None = None, enabled_only: bool = True) -> list[PolicyRule]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if gate:
+            clauses.append("gate = ?")
+            params.append(gate)
+        if enabled_only:
+            clauses.append("enabled = 1")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.connection.execute(
+            f"""
+            SELECT *
+            FROM policies
+            {where}
+            ORDER BY gate, policy_id
+            """,
+            params,
+        ).fetchall()
+        return [_decode_policy_row(row) for row in rows]
+
+    def delete_policy(self, policy_id: str) -> bool:
+        now = utc_now()
+        cursor = self.connection.execute(
+            """
+            UPDATE policies
+            SET enabled = 0, updated_at = ?
+            WHERE policy_id = ?
+            """,
+            (now, policy_id),
+        )
+        self.connection.commit()
+        return cursor.rowcount > 0
 
     def store_extraction_result(self, result: ExtractionResult) -> None:
         from .extraction import compute_extraction_hash
@@ -825,9 +993,9 @@ class LedgerDB:
             """
             INSERT OR REPLACE INTO patch_plans (
                 plan_id, batch_id, trace_id, candidate_ids, target_page_id, target_section,
-                operation, content_diff, risk_level, auto_appliable, status,
-                created_at, applied_at, rejected_at, rejection_reason
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                operation, content_diff, risk_level, auto_appliable, policies_applied,
+                status, created_at, applied_at, rejected_at, rejection_reason
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 plan.plan_id,
@@ -840,6 +1008,7 @@ class LedgerDB:
                 plan.content_diff,
                 plan.risk_level.value,
                 int(plan.auto_appliable),
+                json.dumps([decision.model_dump(mode="json") for decision in plan.policies_applied]),
                 plan.status,
                 plan.created_at,
                 plan.applied_at,
@@ -1131,7 +1300,7 @@ def _candidate_source_page_ids(candidate: Any) -> list[str]:
 
 def _decode_row(row: sqlite3.Row) -> dict[str, Any]:
     decoded = dict(row)
-    for key in ("content_json", "source_capture_ids", "source_page_ids", "candidate_ids"):
+    for key in ("content_json", "source_capture_ids", "source_page_ids", "candidate_ids", "policies_applied"):
         if key not in decoded:
             continue
         try:
@@ -1141,6 +1310,29 @@ def _decode_row(row: sqlite3.Row) -> dict[str, Any]:
     if "auto_appliable" in decoded:
         decoded["auto_appliable"] = bool(decoded["auto_appliable"])
     return decoded
+
+
+def _decode_policy_row(row: sqlite3.Row) -> PolicyRule:
+    decoded = dict(row)
+    for key in ("condition_kind", "condition_operation"):
+        try:
+            decoded[key] = json.loads(str(decoded.get(key) or "[]"))
+        except (TypeError, json.JSONDecodeError):
+            decoded[key] = []
+    decoded["enabled"] = bool(decoded.get("enabled"))
+    return PolicyRule(
+        policy_id=str(decoded["policy_id"]),
+        name=str(decoded["name"]),
+        description=str(decoded.get("description") or ""),
+        gate=str(decoded["gate"]),
+        condition_kind=decoded["condition_kind"],
+        condition_operation=decoded["condition_operation"],
+        effect_pass=str(decoded.get("effect_pass") or "allow"),
+        effect_fail=str(decoded.get("effect_fail") or "block"),
+        fail_reason_template=str(decoded.get("fail_reason_template") or ""),
+        version=int(decoded.get("version") or 1),
+        enabled=bool(decoded.get("enabled")),
+    )
 
 
 def _candidate_has_source_capture(source_capture_ids: Any, capture_ids: list[str]) -> bool:

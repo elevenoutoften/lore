@@ -255,6 +255,7 @@ def cmd_consolidate(args: argparse.Namespace) -> int:
     from .consolidation_worker import ConsolidationWorker
     from .ledger import LedgerDB
     from .patch_planner import PatchPlanner
+    from .policy_engine import PolicyEngine
     from .repository import LoreRepository
 
     config = LoreConfig()
@@ -269,7 +270,7 @@ def cmd_consolidate(args: argparse.Namespace) -> int:
         Path(config.content_dir) / ".lore" / "audit",
         retention_days=config.audit_retention_days,
     )
-    planner = PatchPlanner(repo, ledger, audit)
+    planner = PatchPlanner(repo, ledger, audit, policy_engine=PolicyEngine(ledger))
     worker = ConsolidationWorker(repo, ledger, planner, config, audit)
 
     result = worker.run(

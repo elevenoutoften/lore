@@ -553,6 +553,30 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "lore_list_policies",
+        "title": "List Lore Policies",
+        "description": "List policy rules that gate patch planning decisions.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "gate": {"type": "string", "description": "Optional gate filter, such as auto-apply or protected-surface."},
+                "enabled_only": {"type": "boolean", "default": True, "description": "Only return enabled policies."},
+            },
+        },
+    },
+    {
+        "name": "lore_get_policy",
+        "title": "Get Lore Policy",
+        "description": "Retrieve one patch planning policy by ID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "policy_id": {"type": "string", "description": "Policy ID, for example auto-apply:v1."},
+            },
+            "required": ["policy_id"],
+        },
+    },
+    {
         "name": "lore_upsert_page",
         "title": "Upsert Lore Page",
         "description": "Create or replace a Markdown page in Lore.",
@@ -1142,6 +1166,24 @@ This page was auto-created as a stub. Replace with actual content.
         response = TraceListResponse(traces=traces, total=total, limit=limit, offset=0)
         payload = response.model_dump(mode="json")
         return tool_result(payload, summarize_traces(payload))
+
+    if name == "lore_list_policies":
+        ledger = require_service(ledger_db, "ledger database")
+        enabled_only = bool(arguments.get("enabled_only", True))
+        policies = ledger.list_policies(
+            gate=optional_string(arguments.get("gate")),
+            enabled_only=enabled_only,
+        )
+        payload = {"count": len(policies), "policies": [policy.model_dump(mode="json") for policy in policies]}
+        return tool_result(payload, f"Found {len(policies)} policy rule(s).")
+
+    if name == "lore_get_policy":
+        ledger = require_service(ledger_db, "ledger database")
+        policy_id = require_string(arguments.get("policy_id"), "policy_id")
+        policy = ledger.get_policy(policy_id)
+        if policy is None:
+            return tool_result({"policy_id": policy_id}, f"Policy not found: {policy_id}", is_error=True)
+        return tool_result(policy.model_dump(mode="json"), f"Retrieved policy: {policy.policy_id}")
 
     if name == "lore_upsert_page":
         page_id = require_string(arguments.get("page_id"), "page_id")
