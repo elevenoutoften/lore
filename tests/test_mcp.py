@@ -61,6 +61,7 @@ def test_mcp_initialize_and_tool_list(client):
         "lore_promote_daily",
         "lore_heartbeat_review",
         "lore_heartbeat_summary",
+        "lore_heartbeat_audit",
         "lore_find_repeated_captures",
         "lore_propose_procedure_candidate",
         "lore_consolidation_status",

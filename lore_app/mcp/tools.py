@@ -17,7 +17,7 @@ from ..precedent_search import search_precedents
 from ..link_graph import build_link_graph, page_links
 from ..lint import lint_contradiction_review, lint_lore, lint_stale_queue
 from ..lint_config import LintConfig
-from ..heartbeat import heartbeat_review
+from ..heartbeat import emit_heartbeat_captures, heartbeat_review
 from ..rag.chunker import chunk_page
 from ..rag.hybrid_retrieval import hybrid_retrieve, hybrid_retrieve_expanded
 from ..repository import InvalidPageId, LoreRepository
@@ -45,6 +45,7 @@ WRITE_TOOL_NAMES = {
     "lore_create_trace",
     "lore_create_decision",
     "lore_propose_procedure_candidate",
+    "lore_heartbeat_audit",
     "lore_promote_capture",
     "lore_reject_patch",
     "lore_upsert_page",
@@ -793,6 +794,15 @@ TOOLS: list[dict[str, Any]] = [
         "name": "lore_heartbeat_summary",
         "title": "Lore Heartbeat Summary",
         "description": "Return just the issue counts per category without item details.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "lore_heartbeat_audit",
+        "title": "Lore Heartbeat Self-Audit Captures",
+        "description": "Run heartbeat review and create capture drafts for any issues found (stale, contradictory, low-confidence, expired, or procedure problems). Idempotent: skips categories already captured today.",
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -1548,6 +1558,15 @@ This page was auto-created as a stub. Replace with actual content.
         payload["generated_at"] = result.generated_at
         return tool_result(payload, summarize_heartbeat(payload))
 
+    if name == "lore_heartbeat_audit":
+        _lint_config = _resolve_lint_config(repo)
+        captures = emit_heartbeat_captures(repo, _lint_config, graph_cache.get(repo) if graph_cache else None)
+        if search_index is not None:
+            for capture in captures:
+                search_index.upsert_page_from_detail(capture)
+        payload = {"captures": [capture.model_dump() for capture in captures]}
+        return tool_result(payload, summarize_heartbeat_audit(payload))
+
     if name == "lore_find_repeated_captures":
         groups = find_repeated_captures(repo)
         payload = {"groups": [g.model_dump() for g in groups]}
@@ -1688,7 +1707,7 @@ def require_service(value: Any | None, name: str) -> Any:
 
 def _resolve_lint_config(repo: LoreRepository) -> LintConfig:
     from pathlib import Path
-    config_path = Path(repo.content_dir) / ".lore-lint.json"
+    config_path = Path(repo.root) / ".lore-lint.json"
     return LintConfig(config_path)
 
 
@@ -1988,6 +2007,13 @@ def summarize_heartbeat(payload: dict[str, Any]) -> str:
         if count:
             lines.append(f"  {label}: {count}")
     return "\n".join(lines)
+
+
+def summarize_heartbeat_audit(payload: dict[str, Any]) -> str:
+    captures = payload.get("captures") or []
+    if not captures:
+        return "Heartbeat audit created no new captures."
+    return f"Heartbeat audit created {len(captures)} capture draft(s)."
 
 
 def dumps_pretty(payload: Any) -> str:

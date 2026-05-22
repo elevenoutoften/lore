@@ -508,6 +508,7 @@ class EpistemicStatus(str, Enum):
     retrieved = "retrieved"
     inferred = "inferred"
     assumption = "assumption"
+    hearsay = "hearsay"
 
 
 class TraceEntry(BaseModel):
@@ -749,6 +750,17 @@ class HeartbeatResponse(BaseModel):
     low_confidence: HeartbeatCategory
     expired_facts: HeartbeatCategory
     procedure_issues: HeartbeatCategory
+
+
+class HeartbeatCaptureResponse(BaseModel):
+    """Response for heartbeat self-audit captures."""
+
+    captures: list[PageDetail] = Field(default_factory=list)
+    categories_covered: list[str] = Field(default_factory=list)
+    skipped_categories: list[str] = Field(
+        default_factory=list,
+        description="Categories skipped because captures already exist for today or no issues were found.",
+    )
 
 
 class MemoryHealthResponse(BaseModel):
