@@ -60,6 +60,8 @@ def build_procedure_markdown(
     preconditions: list[str],
     postconditions: list[str],
     error_handling: str,
+    author: str = "",
+    schema_version: str = "1.0",
 ) -> str:
     frontmatter = [
         "---",
@@ -81,6 +83,10 @@ def build_procedure_markdown(
         frontmatter.append(f"error_handling: {frontmatter_scalar(error_handling)}")
     frontmatter.extend(
         [
+            f"schema_version: {frontmatter_scalar(schema_version)}",
+            "author: " + (frontmatter_scalar(author) if author else '""'),
+            "validated: false",
+            "validated_at: null",
             "sources:",
             "  - mcp:lore_create_procedure",
             "status: draft",

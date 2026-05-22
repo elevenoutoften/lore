@@ -496,6 +496,10 @@ steps:
 postconditions:
   - Expected state after completion
 error_handling: "What to do if things go wrong."
+schema_version: "1.0"
+author: ""
+validated: false
+validated_at: null
 status: draft
 ---
 

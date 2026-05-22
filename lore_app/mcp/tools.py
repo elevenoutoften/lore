@@ -314,6 +314,8 @@ TOOLS: list[dict[str, Any]] = [
                     "description": "Expected state after completion.",
                 },
                 "error_handling": {"type": "string", "description": "What to do if things go wrong."},
+                "author": {"type": "string", "description": "Procedure author."},
+                "schema_version": {"type": "string", "description": "Procedure schema version."},
             },
             "required": ["title", "summary", "trigger", "steps"],
         },
@@ -1193,6 +1195,8 @@ def call_tool(
         preconditions = string_arguments(arguments.get("preconditions"))
         postconditions = string_arguments(arguments.get("postconditions"))
         error_handling = optional_string(arguments.get("error_handling")) or ""
+        author = optional_string(arguments.get("author")) or ""
+        schema_version = optional_string(arguments.get("schema_version")) or "1.0"
         page_id = unique_page_id(repo, f"procedures/{slugify(title)}")
         content = build_procedure_markdown(
             title=title,
@@ -1202,6 +1206,8 @@ def call_tool(
             preconditions=preconditions,
             postconditions=postconditions,
             error_handling=error_handling,
+            author=author,
+            schema_version=schema_version,
         )
         try:
             page = repo.upsert_page(page_id, content)

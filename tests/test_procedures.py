@@ -106,6 +106,59 @@ def test_procedure_validation_endpoint(client):
     assert page["frontmatter"]["validated_at"]
 
 
+def test_mcp_create_procedure_has_contract_fields(client):
+    resp = client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "lore_create_procedure",
+                "arguments": {
+                    "title": "Contract Test Proc",
+                    "summary": "Test contract compliance",
+                    "trigger": "When testing",
+                    "steps": ["Step one", "Step two"],
+                    "author": "test-agent",
+                },
+            },
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    page = body["result"]["structuredContent"]["page"]
+    fm = page["frontmatter"]
+    assert fm["schema_version"] == "1.0"
+    assert fm["validated"] is False
+    assert fm["validated_at"] is None
+    assert fm["author"] == "test-agent"
+
+
+def test_procedure_template_has_contract_fields(client):
+    resp = client.get("/api/frontmatter/spec")
+    assert resp.status_code == 200
+    spec = resp.json()["specs"]["procedure"]
+    for field in ["schema_version", "validated", "validated_at", "author"]:
+        assert field in spec["required"], f"{field} should be required for procedure"
+
+
+def test_procedure_frontmatter_validation_catches_missing_contract(client):
+    from lore_app.frontmatter_spec import validate_frontmatter
+
+    incomplete = {
+        "title": "Test",
+        "kind": "procedure",
+        "visibility": "internal",
+        "summary": "test",
+        "trigger": "test",
+        "steps": ["step1"],
+    }
+    missing = validate_frontmatter("procedure", incomplete)
+    for field in ["schema_version", "validated", "validated_at", "author"]:
+        assert field in missing, f"{field} should be reported as missing"
+
+
 def test_procedure_export_skill_format(client):
     _create_procedure(client)
 

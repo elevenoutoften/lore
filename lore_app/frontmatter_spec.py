@@ -47,7 +47,18 @@ FRONTMATTER_SPEC: dict[str, FrontmatterKindSpec] = {
     ),
     "procedure": FrontmatterKindSpec(
         kind="procedure",
-        required=["title", "kind", "visibility", "summary", "trigger", "steps"],
+        required=[
+            "title",
+            "kind",
+            "visibility",
+            "summary",
+            "trigger",
+            "steps",
+            "schema_version",
+            "validated",
+            "validated_at",
+            "author",
+        ],
         optional=[
             "tags",
             "sources",
@@ -60,10 +71,6 @@ FRONTMATTER_SPEC: dict[str, FrontmatterKindSpec] = {
             "postconditions",
             "error_handling",
             "epistemic_status",
-            "schema_version",
-            "validated",
-            "validated_at",
-            "author",
         ],
     ),
     "page": FrontmatterKindSpec(
@@ -81,10 +88,13 @@ def get_frontmatter_spec() -> FrontmatterSpecResponse:
 
 def validate_frontmatter(kind: str, frontmatter: dict[str, Any]) -> list[str]:
     spec = FRONTMATTER_SPEC.get(kind) or FRONTMATTER_SPEC["page"]
-    return [field for field in spec.required if not has_frontmatter_value(frontmatter.get(field))]
+    return [field for field in spec.required if not has_frontmatter_value(frontmatter, field)]
 
 
-def has_frontmatter_value(value: Any) -> bool:
+def has_frontmatter_value(frontmatter: dict[str, Any], field: str) -> bool:
+    if field in {"author", "validated", "validated_at"}:
+        return field in frontmatter
+    value = frontmatter.get(field)
     if value is None:
         return False
     if isinstance(value, list):

@@ -8,7 +8,18 @@ def test_frontmatter_spec_lists_expected_kinds():
 
     assert set(spec.specs) == {"project", "service", "decision", "runbook", "concept", "capture", "procedure", "page"}
     assert spec.specs["project"].required == ["title", "kind", "visibility", "summary", "owner"]
-    assert spec.specs["procedure"].required == ["title", "kind", "visibility", "summary", "trigger", "steps"]
+    assert spec.specs["procedure"].required == [
+        "title",
+        "kind",
+        "visibility",
+        "summary",
+        "trigger",
+        "steps",
+        "schema_version",
+        "validated",
+        "validated_at",
+        "author",
+    ]
     assert "confidence" in spec.all_fields
     assert FRONTMATTER_SPEC["decision"].kind == "decision"
 
