@@ -136,6 +136,64 @@ class EnrichedLinkGraphResponse(BaseModel):
     broken_links: list[LinkEdge] = Field(default_factory=list)
 
 
+class ContextNodeType(str, Enum):
+    page = "page"
+    capture = "capture"
+    entity = "entity"
+    claim = "claim"
+    invalidation = "invalidation"
+    plan = "plan"
+    trace = "trace"
+    actor = "actor"
+    task = "task"
+    policy = "policy"
+    source = "source"
+    tool = "tool"
+
+
+class ContextEdgeType(str, Enum):
+    provenance = "provenance"
+    mentions = "mentions"
+    supports = "supports"
+    contradicts = "contradicts"
+    supersedes = "supersedes"
+    generated = "generated"
+    applied = "applied"
+    used_policy = "used-policy"
+    source_of = "source-of"
+    task_related = "task-related"
+    parent = "parent"
+    authored = "authored"
+    used_tool = "used-tool"
+
+
+class ContextGraphNode(BaseModel):
+    """A node in the context graph spanning all Lore entity types."""
+
+    id: str
+    type: ContextNodeType
+    label: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContextGraphEdge(BaseModel):
+    """A typed directed edge in the context graph."""
+
+    source: str
+    target: str
+    type: ContextEdgeType
+    label: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContextGraph(BaseModel):
+    """Complete context graph over all Lore entities."""
+
+    nodes: list[ContextGraphNode] = Field(default_factory=list)
+    edges: list[ContextGraphEdge] = Field(default_factory=list)
+    stats: dict[str, int] = Field(default_factory=dict)
+
+
 class StubRequest(BaseModel):
     title: str | None = None
     kind: str = "page"
@@ -275,7 +333,7 @@ class MemoryCaptureResponse(BaseModel):
 class ContextRef(BaseModel):
     """Reference to a context entity involved in a reasoning trace."""
 
-    type: Literal["page", "capture", "task", "candidate", "plan"]
+    type: Literal["page", "capture", "task", "candidate", "plan", "trace", "policy", "source", "actor", "tool"]
     id: str
 
 

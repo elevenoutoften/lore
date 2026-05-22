@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from ..capture import build_capture_digest, build_promotion_audit, capture_memory, list_captures, promote_capture, slugify, transition_capture_status, unique_page_id
+from ..context_graph import build_context_graph
 from ..distillation import distill_daily, get_daily_captures, get_pending_days, promote_daily_note
 from ..procedure_candidate import find_repeated_captures, propose_procedure_candidate
 from ..code_ingest.ingest_service import ingest_service_code
@@ -122,6 +123,15 @@ TOOLS: list[dict[str, Any]] = [
         "name": "lore_link_graph",
         "title": "Lore Link Graph",
         "description": "Return Lore page links and broken internal links for graph-aware agent navigation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "lore_context_graph",
+        "title": "Lore Context Graph",
+        "description": "Get the full context graph spanning pages, captures, entities, claims, plans, traces, actors, tasks, policies, and sources with typed edges.",
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -878,6 +888,12 @@ def call_tool(
         graph = build_link_graph(repo)
         payload = graph.model_dump()
         return tool_result(payload, summarize_link_graph(payload))
+
+    if name == "lore_context_graph":
+        ledger = require_service(ledger_db, "ledger database")
+        graph = build_context_graph(repo, ledger)
+        payload = graph.model_dump(mode="json")
+        return tool_result(payload, f"Context graph: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
 
     if name == "lore_page_links":
         page_id = require_string(arguments.get("page_id"), "page_id")

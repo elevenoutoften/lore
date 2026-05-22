@@ -4,6 +4,7 @@ from .admin import router as admin_router
 from .api_keys import router as api_keys_router
 from .captures import router as captures_router
 from .consolidation import consolidation_router
+from .context_graph import router as context_graph_router
 from .heartbeat import router as heartbeat_router
 from .distillation import router as distillation_router
 from .extraction import router as extraction_router
@@ -26,6 +27,7 @@ __all__ = [
     "api_keys_router",
     "captures_router",
     "consolidation_router",
+    "context_graph_router",
     "distillation_router",
     "extraction_router",
     "graph_router",
