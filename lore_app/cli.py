@@ -41,6 +41,40 @@ def main(argv: list[str] | None = None) -> int:
     p_verify = sub.add_parser("verify", help="Verify backup integrity")
     p_verify.add_argument("--input", required=True, help="Input tar.gz file")
 
+    p_consolidate = sub.add_parser("consolidate", help="Run one consolidation pass")
+    p_consolidate.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=True,
+        help="Dry run (default: True, no changes applied)",
+    )
+    p_consolidate.add_argument(
+        "--apply",
+        action="store_true",
+        default=False,
+        help="Enable auto-apply of safe plans (implies --no-dry-run)",
+    )
+    p_consolidate.add_argument(
+        "--max-auto-apply",
+        type=int,
+        default=0,
+        help="Maximum plans to auto-apply (default: 0)",
+    )
+    p_consolidate.add_argument(
+        "--batch-size",
+        type=int,
+        default=10,
+        help="Capture batch size (default: 10)",
+    )
+    p_consolidate.add_argument(
+        "--force-reextract",
+        action="store_true",
+        default=False,
+        help="Force re-extraction of already-extracted captures",
+    )
+
+    sub.add_parser("status", help="Show consolidation status")
+
     sub.add_parser("info", help="Show vault info")
 
     args = parser.parse_args(argv)
@@ -60,6 +94,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_import(input_file, args.content_dir)
     if args.command == "verify":
         return cmd_verify(args.input)
+    if args.command == "consolidate":
+        return cmd_consolidate(args)
+    if args.command == "status":
+        return cmd_status(args)
     if args.command == "info":
         return cmd_info()
 
@@ -208,6 +246,77 @@ def cmd_info() -> int:
     config = LoreConfig()
     for key, value in config.to_dict().items():
         print(f"  {key}: {value}")
+    return 0
+
+
+def cmd_consolidate(args: argparse.Namespace) -> int:
+    from .audit import AuditLog
+    from .config import LoreConfig
+    from .consolidation_worker import ConsolidationWorker
+    from .ledger import LedgerDB
+    from .patch_planner import PatchPlanner
+    from .repository import LoreRepository
+
+    config = LoreConfig()
+    dry_run = not args.apply
+    max_auto_apply = args.max_auto_apply if args.max_auto_apply else (5 if args.apply else 0)
+
+    repo = LoreRepository(config.content_dir)
+    repo.ensure_root()
+    ledger = LedgerDB(config.ledger_db)
+    ledger.initialize()
+    audit = AuditLog(
+        Path(config.content_dir) / ".lore" / "audit",
+        retention_days=config.audit_retention_days,
+    )
+    planner = PatchPlanner(repo, ledger, audit)
+    worker = ConsolidationWorker(repo, ledger, planner, config, audit)
+
+    result = worker.run(
+        dry_run=dry_run,
+        batch_size=args.batch_size,
+        max_auto_apply=max_auto_apply,
+        force_reextract=args.force_reextract,
+    )
+
+    print(json.dumps(result.model_dump(), indent=2, default=str))
+    return 1 if result.errors else 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    from .config import LoreConfig
+    from .ledger import LedgerDB
+    from .repository import LoreRepository
+
+    config = LoreConfig()
+    repo = LoreRepository(config.content_dir)
+    ledger = LedgerDB(config.ledger_db)
+    ledger.initialize()
+    ledger_status = ledger.get_consolidation_status()
+
+    last_run = ledger_status.get("last_run")
+    plans_by_status = {
+        "draft": 0,
+        "pending": 0,
+        "review": 0,
+        "applied": 0,
+        "rejected": 0,
+        **ledger_status.get("plans_by_status", {}),
+    }
+    pending_captures = sum(
+        1
+        for page in repo.list_pages(kind="capture")
+        if page.status == "draft"
+        and page.id.startswith(("inbox/", "notes/"))
+        and not ledger.is_capture_extracted(page.id)
+    )
+    status = {
+        "last_run": (last_run.get("completed_at") or last_run.get("started_at")) if last_run else None,
+        "pending_captures": pending_captures,
+        "plans_by_status": plans_by_status,
+        "stuck_runs": len(ledger_status.get("stuck_runs", [])),
+    }
+    print(json.dumps(status, indent=2, default=str))
     return 0
 
 
