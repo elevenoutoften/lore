@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from argparse import Namespace
 from dataclasses import dataclass
+import json
 
 import pytest
 from fastapi.testclient import TestClient
 
 from lore_app.audit import AuditLog
+from lore_app.cli import cmd_status
 from lore_app.config import LoreConfig
 from lore_app.consolidation_worker import ConsolidationWorker
 from lore_app.ledger import LedgerDB
@@ -121,6 +124,11 @@ def store_claims(
     )
 
 
+def count_rows(ledger: LedgerDB, table: str) -> int:
+    row = ledger.connection.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()
+    return int(row["count"])
+
+
 def make_claim(
     subject: str,
     obj: str,
@@ -154,7 +162,60 @@ def test_run_dry_run_extracts_and_plans_without_applying(tmp_path, monkeypatch):
     assert result.auto_applied == 0
     assert page is not None
     assert "Lore plans safe patches." not in page.content
-    assert ctx.ledger.list_patch_plans(status="pending")
+    assert ctx.ledger.list_patch_plans(status="pending") == []
+
+
+def test_dry_run_does_not_persist_state(tmp_path, monkeypatch):
+    ctx = make_context(tmp_path, monkeypatch)
+    write_page(ctx.repo, "services/lore")
+    add_capture(ctx.repo, "inbox/2026-05-10/dry-run-state", summary="Lore dry runs are repeatable.")
+
+    dry_run = ctx.worker.run(dry_run=True, batch_size=10, max_auto_apply=5)
+
+    assert dry_run.dry_run is True
+    assert dry_run.captures_processed == 1
+    assert dry_run.plans_generated == 1
+    assert dry_run.auto_applied == 0
+    assert count_rows(ctx.ledger, "extraction_candidates") == 0
+    assert count_rows(ctx.ledger, "extraction_batches") == 0
+    assert count_rows(ctx.ledger, "patch_plans") == 0
+    assert count_rows(ctx.ledger, "consolidation_runs") == 0
+    assert ctx.ledger.list_traces(actor="consolidation-worker") == []
+
+    apply_run = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=5)
+
+    assert apply_run.dry_run is False
+    assert apply_run.captures_processed == 1
+    assert apply_run.plans_generated == 1
+    assert count_rows(ctx.ledger, "extraction_candidates") > 0
+    assert count_rows(ctx.ledger, "extraction_batches") == 1
+    assert ctx.ledger.list_patch_plans()
+
+
+def test_status_includes_all_fields(tmp_path, monkeypatch, capsys):
+    ctx = make_context(tmp_path, monkeypatch)
+    write_page(ctx.repo, "services/lore")
+    add_capture(ctx.repo, "inbox/2026-05-10/status-fields", summary="Lore status has all fields.")
+    ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=0)
+
+    assert cmd_status(Namespace()) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert set(payload) == {
+        "last_run",
+        "pending_captures",
+        "plans_by_status",
+        "generated_plans",
+        "auto_applied",
+        "review_required",
+        "errors",
+        "stuck_runs",
+    }
+    assert payload["generated_plans"] == 1
+    assert payload["auto_applied"] == 0
+    assert payload["review_required"] == 1
+    assert payload["errors"] == []
+    assert payload["stuck_runs"] == 0
 
 
 def test_run_auto_applies_safe_plans(tmp_path, monkeypatch):

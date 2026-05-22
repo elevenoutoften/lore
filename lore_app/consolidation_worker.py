@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
 import uuid
+from pathlib import Path
 from typing import Any
 
 from .audit import AuditEntry, AuditLog, new_audit_entry
@@ -11,7 +13,7 @@ from .extraction import extract_from_captures
 from .ledger import LedgerDB, utc_now
 from .patch_planner import PatchPlanner
 from .repository import LoreRepository, infer_kind, optional_string
-from .schemas import ConsolidationRunResult, PatchPlan, RollbackResult, ToolRef, TraceEntry
+from .schemas import ConsolidationRunResult, ExtractionResult, PatchPlan, RollbackResult, ToolRef, TraceEntry
 
 
 def _content_hash(content: str) -> str:
@@ -59,7 +61,7 @@ class ConsolidationWorker:
             extraction_result = extract_from_captures(
                 self.repo,
                 batch_size=batch_size,
-                dry_run=False,
+                dry_run=dry_run,
                 ledger_db=self.ledger,
             )
             batch_id = extraction_result.batch_id
@@ -69,7 +71,10 @@ class ConsolidationWorker:
         plans: list[PatchPlan] = []
         if extraction_result is not None and extraction_result.source_capture_ids:
             try:
-                plans = self.planner.plan_batch(batch_id=batch_id)
+                if dry_run:
+                    plans = self._plan_dry_run(extraction_result)
+                else:
+                    plans = self.planner.plan_batch(batch_id=batch_id)
             except Exception as exc:
                 errors.append(f"planning failed: {exc}")
 
@@ -109,24 +114,45 @@ class ConsolidationWorker:
             errors=errors,
             dry_run=dry_run,
         )
-        self.ledger.store_consolidation_run(result, status="completed" if not errors else "completed_with_errors")
-        self.ledger.store_trace(
-            TraceEntry(
-                trace_id="",
-                actor="consolidation-worker",
-                reason_summary=(
-                    f"Consolidation run: {result.captures_processed} captures, "
-                    f"{result.plans_generated} plans, {result.auto_applied} auto-applied, "
-                    f"{result.review_required} review-required"
-                ),
-                context_refs=[],
-                tool_refs=[ToolRef(tool="consolidation-worker", action="run")],
-                status="completed",
-                outcome=f"batch_id={result.batch_id}",
-                related_ids={"task_id": f"consolidation-{result.batch_id}"},
+        if not dry_run:
+            self.ledger.store_consolidation_run(result, status="completed" if not errors else "completed_with_errors")
+            self.ledger.store_trace(
+                TraceEntry(
+                    trace_id="",
+                    actor="consolidation-worker",
+                    reason_summary=(
+                        f"Consolidation run: {result.captures_processed} captures, "
+                        f"{result.plans_generated} plans, {result.auto_applied} auto-applied, "
+                        f"{result.review_required} review-required"
+                    ),
+                    context_refs=[],
+                    tool_refs=[ToolRef(tool="consolidation-worker", action="run")],
+                    status="completed",
+                    outcome=f"batch_id={result.batch_id}",
+                    related_ids={"task_id": f"consolidation-{result.batch_id}"},
+                )
             )
-        )
         return result
+
+    def _plan_dry_run(self, extraction_result: ExtractionResult) -> list[PatchPlan]:
+        """Generate patch plans from dry-run extraction without touching the real ledger."""
+
+        with tempfile.TemporaryDirectory(prefix="lore-dry-run-") as temp_dir:
+            dry_ledger = LedgerDB(Path(temp_dir) / "ledger.db")
+            dry_ledger.initialize()
+            try:
+                dry_ledger.store_extraction_result(extraction_result)
+                dry_planner = PatchPlanner(
+                    self.repo,
+                    dry_ledger,
+                    self.audit_log,
+                    search_index=self.planner.search_index,
+                    vector_store=self.planner.vector_store,
+                    graph_cache=self.planner.graph_cache,
+                )
+                return dry_planner.plan_batch(batch_id=extraction_result.batch_id)
+            finally:
+                dry_ledger.close()
 
     def rollback(self, plan_id: str) -> RollbackResult:
         """Restore a page to the content captured before a worker-applied plan."""

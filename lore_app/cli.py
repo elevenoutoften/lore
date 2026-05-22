@@ -310,10 +310,16 @@ def cmd_status(args: argparse.Namespace) -> int:
         and page.id.startswith(("inbox/", "notes/"))
         and not ledger.is_capture_extracted(page.id)
     )
+    last_run_data = last_run if last_run else {}
+    errors = last_run_data.get("errors")
     status = {
-        "last_run": (last_run.get("completed_at") or last_run.get("started_at")) if last_run else None,
+        "last_run": last_run_data.get("completed_at") or last_run_data.get("started_at"),
         "pending_captures": pending_captures,
         "plans_by_status": plans_by_status,
+        "generated_plans": sum(plans_by_status.values()),
+        "auto_applied": plans_by_status.get("applied", 0),
+        "review_required": plans_by_status.get("review", 0) + plans_by_status.get("pending", 0),
+        "errors": errors if isinstance(errors, list) else [],
         "stuck_runs": len(ledger_status.get("stuck_runs", [])),
     }
     print(json.dumps(status, indent=2, default=str))

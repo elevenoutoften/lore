@@ -148,6 +148,7 @@ def test_lore_consolidation_run_dry_run_returns_plans_without_auto_apply(tmp_pat
     assert content["dry_run"] is True
     assert ctx.repo.read_page("services/lore") is not None
     assert "Lore MCP run creates plans." not in ctx.repo.read_page("services/lore").content
+    assert ctx.ledger.list_patch_plans(status="pending") == []
 
 
 def test_lore_list_patch_plans_returns_plans_after_run(tmp_path, monkeypatch):
@@ -157,7 +158,7 @@ def test_lore_list_patch_plans_returns_plans_after_run(tmp_path, monkeypatch):
 
     app = create_app(ctx.config, mount_workspaces=False)
     with TestClient(app) as client:
-        result_payload(rpc(client, "lore_consolidation_run", {"dry_run": True}))
+        result_payload(rpc(client, "lore_consolidation_run", {"dry_run": False, "max_auto_apply": 0}))
         result = result_payload(rpc(client, "lore_list_patch_plans", {"status": "pending"}))
 
     content = result["structuredContent"]
@@ -170,7 +171,7 @@ def test_lore_preview_patch_returns_content_and_diff(tmp_path, monkeypatch):
     ctx = make_context(tmp_path, monkeypatch)
     write_page(ctx.repo, "services/lore")
     add_capture(ctx.repo, "inbox/2026-05-10/preview", summary="Lore MCP previews diffs.")
-    ctx.worker.run(dry_run=True, batch_size=10, max_auto_apply=5)
+    ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=0)
     [plan] = ctx.ledger.list_patch_plans(status="pending")
 
     app = create_app(ctx.config, mount_workspaces=False)
@@ -188,7 +189,7 @@ def test_lore_apply_patch_applies_pending_plan(tmp_path, monkeypatch):
     ctx = make_context(tmp_path, monkeypatch)
     write_page(ctx.repo, "services/lore")
     add_capture(ctx.repo, "inbox/2026-05-10/apply", summary="Lore MCP applies pending plans.")
-    ctx.worker.run(dry_run=True, batch_size=10, max_auto_apply=5)
+    ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=0)
     [plan] = ctx.ledger.list_patch_plans(status="pending")
 
     app = create_app(ctx.config, mount_workspaces=False)
@@ -207,7 +208,7 @@ def test_lore_reject_patch_rejects_pending_plan(tmp_path, monkeypatch):
     ctx = make_context(tmp_path, monkeypatch)
     write_page(ctx.repo, "services/lore")
     add_capture(ctx.repo, "inbox/2026-05-10/reject", summary="Lore MCP rejects pending plans.")
-    ctx.worker.run(dry_run=True, batch_size=10, max_auto_apply=5)
+    ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=0)
     [plan] = ctx.ledger.list_patch_plans(status="pending")
 
     app = create_app(ctx.config, mount_workspaces=False)
@@ -230,7 +231,7 @@ def test_lore_review_batch_groups_plans_by_risk_and_recommends(tmp_path, monkeyp
         target="decisions/routing",
             summary="Decision patches require audit.",
     )
-    run_result = ctx.worker.run(dry_run=True, batch_size=10, max_auto_apply=5)
+    run_result = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=0)
 
     app = create_app(ctx.config, mount_workspaces=False)
     with TestClient(app) as client:
