@@ -1584,9 +1584,11 @@ This page was auto-created as a stub. Replace with actual content.
     if name == "lore_heartbeat_audit":
         _lint_config = _resolve_lint_config(repo)
         captures = emit_heartbeat_captures(repo, _lint_config, graph_cache.get(repo) if graph_cache else None)
-        if search_index is not None:
-            for capture in captures:
+        for capture in captures:
+            if search_index is not None:
                 search_index.upsert_page_from_detail(capture)
+            index_vector_page(vector_store, capture)
+        invalidate_graph_cache(graph_cache)
         payload = {"captures": [capture.model_dump() for capture in captures]}
         return tool_result(payload, summarize_heartbeat_audit(payload))
 

@@ -90,6 +90,35 @@ A distilled daily note contains:
 - **Frontmatter**: title, kind (`daily-note`), visibility, status, summary, tags, `distilled_at` timestamp, actor, and sources listing all capture page IDs.
 - **Body**: An introduction with capture count, followed by each capture as a section with its title, confidence/lane metadata, and full body text.
 
+## Heartbeat Self-Audit Captures
+
+The heartbeat self-audit adds a proactive maintenance loop alongside session captures. It scans for:
+
+- **Stale pages** — pages past their `stale_after` date
+- **Contradictions** — pages containing `CONTRADICTION:` markers
+- **Low-confidence pages** — pages with low or unreviewed confidence
+- **Expired facts** — pages past their `valid_until` date
+- **Procedure issues** — procedures missing steps, trigger, or with body/frontmatter mismatch
+
+### Creating Heartbeat Captures
+
+Call `POST /api/heartbeat/captures` or the MCP tool `lore_heartbeat_audit` to generate one inbox capture draft per issue category. Each capture:
+
+- Lives in `inbox/YYYY-MM-DD/` with prefix "Heartbeat audit:"
+- Has `kind: capture`, `confidence: low`, `epistemic_status: hearsay`, `lane: ops`
+- Includes `source_task: heartbeat-self-audit`
+- Links to all affected pages via `related_pages`
+- Is idempotent per category per day (repeat calls skip already-created categories)
+
+### Heartbeat → Distill → Promote Flow
+
+1. **Generate**: Call `lore_heartbeat_audit` or `POST /api/heartbeat/captures` at the start of each maintenance cycle.
+2. **Review**: Inspect heartbeat captures in the inbox. They carry `confidence: low` and `hearsay` epistemic status — verify findings before promoting.
+3. **Distill**: Call `lore_distill_daily` or `POST /api/distill/daily` to consolidate all captures (including heartbeat) into a daily note.
+4. **Promote**: Once reviewed and verified, call `lore_promote_daily` or `POST /api/distill/promote/{date}` to mark the daily note as canonical.
+
+The key difference from session captures: heartbeat captures are system-generated findings that need human or agent review before they become canonical knowledge. They should never be auto-promoted without verification.
+
 ## Implementation
 
 The distillation logic lives in `lore_app/distillation.py`:

@@ -133,3 +133,46 @@ CONTRADICTION: verify the service endpoint before relying on this page.
     assert "stale_after 2020-01-01" in captures["Heartbeat audit: 1 stale page"]["body"]
     assert "CONTRADICTION: verify the service endpoint" in captures["Heartbeat audit: 1 contradiction"]["body"]
     assert "valid_until 2020-02-01" in captures["Heartbeat audit: 1 expired fact"]["body"]
+
+
+def test_heartbeat_captures_procedure_issues(client):
+    """Heartbeat captures should include procedure_issue category."""
+    client.put(
+        "/api/pages/procedures/test-proc-no-steps",
+        json={
+            "content": '---\ntitle: No Steps Proc\nkind: procedure\nvisibility: internal\nsummary: Broken procedure\ntrigger: test\nsteps: []\nschema_version: "1.0"\nvalidated: false\nvalidated_at: null\nauthor: ""\n---\n\n# No Steps Proc\n',
+        },
+    )
+    response = client.post("/api/heartbeat/captures")
+    assert response.status_code == 200
+    titles = [c["title"] for c in response.json()["captures"]]
+    assert any("procedure issue" in t.lower() or "procedure issue" in t for t in titles)
+
+
+def test_heartbeat_captures_updates_search_index(client):
+    """Heartbeat captures should appear in search after creation."""
+    client.put(
+        "/api/pages/runbooks/search-idx-heartbeat-runbook",
+        json={
+            "content": "---\ntitle: Search Idx Heartbeat Runbook\nkind: runbook\nvisibility: internal\nsummary: Tests search index update.\nconfidence: high\nstale_after: 2020-01-01\n---\n\n# Search Idx Heartbeat Runbook\n",
+        },
+    )
+    response = client.post("/api/heartbeat/captures")
+    assert response.status_code == 200
+    assert len(response.json()["captures"]) == 1
+
+
+def test_heartbeat_captures_writes_audit(client):
+    """Heartbeat captures should create audit log entries."""
+    client.put(
+        "/api/pages/runbooks/audit-test-heartbeat-runbook",
+        json={
+            "content": "---\ntitle: Audit Test Heartbeat Runbook\nkind: runbook\nvisibility: internal\nsummary: Tests audit log.\nconfidence: high\nstale_after: 2020-01-01\n---\n\n# Audit Test Heartbeat Runbook\n",
+        },
+    )
+    response = client.post("/api/heartbeat/captures")
+    assert response.status_code == 200
+    audit_resp = client.get("/api/audit", params={"limit": 20})
+    assert audit_resp.status_code == 200
+    entries = audit_resp.json()
+    assert any(e.get("operation") == "heartbeat_capture" for e in entries)

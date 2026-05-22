@@ -1,10 +1,20 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from ..deps import get_graph_cache, get_lint_config, get_repo, get_templates
+from ..audit import AuditLog
+from ..deps import (
+    get_audit_log,
+    get_graph_cache,
+    get_lint_config,
+    get_metrics,
+    get_repo,
+    get_search_index,
+    get_templates,
+    get_vector_store,
+)
 from ..heartbeat import (
     emit_heartbeat_captures,
     heartbeat_capture_category_for_title,
@@ -13,8 +23,11 @@ from ..heartbeat import (
 )
 from ..link_graph import LinkGraphCache
 from ..lint_config import LintConfig
+from ..observability import MetricsCollector
+from ..rag.vector_store import VectorStore
 from ..repository import LoreRepository
-from ..route_utils import template_context
+from ..route_utils import index_vectors_for_page, record_audit, template_context
+from ..search_index import LoreSearchIndex
 from ..schemas import HeartbeatCaptureResponse, HeartbeatResponse
 
 router = APIRouter()
@@ -31,11 +44,30 @@ def api_heartbeat(
 
 @router.post("/api/heartbeat/captures", response_model=HeartbeatCaptureResponse)
 def api_heartbeat_captures(
+    request: Request,
+    background_tasks: BackgroundTasks,
     repo: LoreRepository = Depends(get_repo),
     lint_config: LintConfig = Depends(get_lint_config),
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
+    search_idx: LoreSearchIndex = Depends(get_search_index),
+    vector_store: VectorStore = Depends(get_vector_store),
+    audit_log: AuditLog = Depends(get_audit_log),
+    metrics: MetricsCollector = Depends(get_metrics),
 ):
     captures = emit_heartbeat_captures(repo, config=lint_config, graph=graph_cache.get(repo))
+    for capture in captures:
+        metrics.increment_index_size()
+        search_idx.upsert_page_from_detail(capture)
+        background_tasks.add_task(index_vectors_for_page, vector_store, capture)
+        graph_cache.invalidate()
+        record_audit(
+            request,
+            audit_log,
+            operation="heartbeat_capture",
+            page_id=capture.id,
+            summary=f"Captured {capture.title}",
+            diff_size=len(capture.content.encode("utf-8")),
+        )
     categories_covered = [
         category
         for capture in captures
