@@ -109,22 +109,18 @@ def validate_optional_content(content: str | None) -> None:
 
 
 def is_rate_limited_write(request: Request) -> bool:
+    """Rate-limit all write methods under /api/ and /mcp, except GET/HEAD/OPTIONS."""
     path = request.url.path
     method = request.method.upper()
-    if method in {"PUT", "PATCH", "DELETE"} and path.startswith("/api/pages/"):
+
+    # Only rate-limit mutation methods
+    if method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return False
+
+    # Rate-limit all mutations under /api/ and /mcp
+    if path.startswith("/api/") or path == "/mcp":
         return True
-    if method == "POST" and (
-        path == "/api/capture"
-        or path.startswith("/api/captures/")
-        or (path.startswith("/api/pages/") and path.endswith("/stub"))
-        or path.startswith("/api/code-ingest/")
-        or path == "/api/search/reindex"
-        or path == "/api/memory/capture"
-        or path.startswith("/api/procedures/candidates")
-        or path == "/api/distill/daily"
-        or path.startswith("/api/distill/promote/")
-    ):
-        return True
+
     return False
 
 
