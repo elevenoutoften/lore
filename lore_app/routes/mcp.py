@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
@@ -22,7 +23,13 @@ from ..audit import AuditLog
 from ..consolidation_worker import ConsolidationWorker
 from ..ledger import LedgerDB
 from ..link_graph import LinkGraphCache
-from ..mcp import WRITE_TOOL_NAMES, exception_response, handle_mcp_message
+from ..mcp import (
+    WRITE_TOOL_NAMES,
+    JsonRpcError,
+    error_response,
+    exception_response,
+    handle_mcp_message,
+)
 from ..observability import MetricsCollector
 from ..config import LoreConfig
 from ..patch_planner import PatchPlanner
@@ -31,6 +38,8 @@ from ..repository import LoreRepository
 from ..route_utils import client_rate_limit_key
 from ..routes.admin import package_name
 from ..search_index import LoreSearchIndex
+
+logger = logging.getLogger("lore.mcp")
 
 router = APIRouter()
 
@@ -77,8 +86,14 @@ async def mcp(
             audit_log=audit_log,
             metrics=metrics,
         )
+    except JsonRpcError as exc:
+        return JSONResponse(error_response(request_id, exc), status_code=200)
     except Exception as exc:
-        return JSONResponse(exception_response(request_id, str(exc)), status_code=200)
+        logger.exception("Unexpected error in MCP handler")
+        return JSONResponse(
+            exception_response(request_id, "internal error; see server logs"),
+            status_code=500,
+        )
 
     if response_payload is None:
         return Response(status_code=202)

@@ -522,3 +522,49 @@ def test_mcp_list_traces(client):
     ]
     assert content["total"] >= 1
     assert len(matching_traces) == 1
+
+
+def test_mcp_unexpected_exception_redacts_message(client):
+    """Unexpected exceptions return a generic message, not the raw exception string."""
+    from unittest.mock import patch
+
+    with patch("lore_app.mcp.dispatch.handle_mcp_message", side_effect=RuntimeError("secret DB connection string at /var/lib/db")):
+        response = client.post("/mcp", json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "lore_list_pages", "arguments": {}},
+        })
+    assert response.status_code == 500
+    payload = response.json()
+    assert "secret" not in payload["error"]["message"]
+    assert "internal error" in payload["error"]["message"].lower()
+
+
+def test_mcp_expected_jsonrpc_error_keeps_detail(client):
+    """Expected JsonRpcError messages are surfaced to the client."""
+    response = client.post("/mcp", json={
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {"name": "nonexistent_tool"},
+    })
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["error"]["code"] == -32601
+    assert "Unsupported" in payload["error"]["message"]
+
+
+def test_mcp_unexpected_exception_logs_traceback(client, caplog):
+    """Unexpected exceptions are logged with traceback."""
+    from unittest.mock import patch
+
+    with patch("lore_app.mcp.dispatch.handle_mcp_message", side_effect=ValueError("oops")):
+        response = client.post("/mcp", json={
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/list",
+            "params": {},
+        })
+    assert response.status_code == 500
+    assert any("Unexpected error in MCP handler" in record.message for record in caplog.records)
