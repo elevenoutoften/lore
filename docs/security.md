@@ -140,6 +140,13 @@ If you run Lore behind a trusted reverse proxy or an auth gate, set
 `LORE_ALLOW_INSECURE_BIND=true` and ensure your deployment boundary enforces
 authentication.
 
+## HTML Sanitization
+
+User-supplied markdown is rendered to HTML and sanitized using [nh3](https://pypi.org/project/nh3/),
+a Python binding to Mozilla's ammonia sanitizer. The allowlist policy permits
+safe formatting tags, table elements, and restricted link/image attributes.
+JavaScript URLs, event handlers, and disallowed tags/attributes are stripped.
+
 ## CSP and Rendering
 
 Lore stores Markdown as the source of truth and renders browser HTML through the

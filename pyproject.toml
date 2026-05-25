@@ -9,7 +9,7 @@ description = "Markdown-backed LLM wiki and project registry."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "bleach>=6,<7",
+  "nh3>=0.2,<1.0",
   "fastapi>=0.111,<1.0",
   "jinja2>=3.1,<4.0",
   "markdown-it-py[linkify]>=4,<5",

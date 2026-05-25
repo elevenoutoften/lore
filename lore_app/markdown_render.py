@@ -7,7 +7,7 @@ from html import escape
 from typing import Iterable
 from urllib.parse import urldefrag, urlparse
 
-import bleach
+import nh3
 from markdown_it import MarkdownIt
 from markdown_it.renderer import RendererHTML
 from markdown_it.token import Token
@@ -55,13 +55,37 @@ ALLOWED_TAGS = {
     "ul",
 }
 
+_ALLOW_GLOBAL_ATTRS = {"class", "id"}
+
 ALLOWED_ATTRIBUTES = {
-    "*": ["class", "id"],
-    "a": ["href", "rel", "title", "target"],
-    "code": ["class"],
-    "img": ["alt", "loading", "src", "title"],
-    "th": ["align"],
-    "td": ["align"],
+    "a": _ALLOW_GLOBAL_ATTRS | {"href", "rel", "title", "target"},
+    "blockquote": _ALLOW_GLOBAL_ATTRS,
+    "br": _ALLOW_GLOBAL_ATTRS,
+    "code": _ALLOW_GLOBAL_ATTRS | {"class"},
+    "del": _ALLOW_GLOBAL_ATTRS,
+    "div": _ALLOW_GLOBAL_ATTRS,
+    "em": _ALLOW_GLOBAL_ATTRS,
+    "h1": _ALLOW_GLOBAL_ATTRS,
+    "h2": _ALLOW_GLOBAL_ATTRS,
+    "h3": _ALLOW_GLOBAL_ATTRS,
+    "h4": _ALLOW_GLOBAL_ATTRS,
+    "h5": _ALLOW_GLOBAL_ATTRS,
+    "h6": _ALLOW_GLOBAL_ATTRS,
+    "hr": _ALLOW_GLOBAL_ATTRS,
+    "img": _ALLOW_GLOBAL_ATTRS | {"alt", "loading", "src", "title"},
+    "li": _ALLOW_GLOBAL_ATTRS,
+    "ol": _ALLOW_GLOBAL_ATTRS,
+    "p": _ALLOW_GLOBAL_ATTRS,
+    "pre": _ALLOW_GLOBAL_ATTRS,
+    "span": _ALLOW_GLOBAL_ATTRS,
+    "strong": _ALLOW_GLOBAL_ATTRS,
+    "table": _ALLOW_GLOBAL_ATTRS,
+    "tbody": _ALLOW_GLOBAL_ATTRS,
+    "td": _ALLOW_GLOBAL_ATTRS | {"align"},
+    "th": _ALLOW_GLOBAL_ATTRS | {"align"},
+    "thead": _ALLOW_GLOBAL_ATTRS,
+    "tr": _ALLOW_GLOBAL_ATTRS,
+    "ul": _ALLOW_GLOBAL_ATTRS,
 }
 
 ALLOWED_PROTOCOLS = {"http", "https", "mailto", "tel"}
@@ -119,12 +143,13 @@ def render_page_markdown(page: PageDetail, page_ids: Iterable[str]) -> RenderedM
     tokens = md.parse(body, env)
     rewrite_links(tokens, context)
     rendered = md.renderer.render(tokens, md.options, env)
-    safe_html = bleach.clean(
+    safe_html = nh3.clean(
         rendered,
         tags=ALLOWED_TAGS,
         attributes=ALLOWED_ATTRIBUTES,
-        protocols=ALLOWED_PROTOCOLS,
-        strip=True,
+        url_schemes=ALLOWED_PROTOCOLS,
+        strip_comments=True,
+        link_rel=None,
     )
     safe_html = wrap_tables(safe_html)
     missing_links = [link for link in context.links if not link.external and not link.exists]
