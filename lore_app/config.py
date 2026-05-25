@@ -69,6 +69,7 @@ class LoreConfig:
         self.write_rate_limit: int = int(os.environ.get("LORE_WRITE_RATE_LIMIT", "30"))
         self.write_rate_window_seconds: int = int(os.environ.get("LORE_WRITE_RATE_WINDOW_SECONDS", "60"))
         self.audit_retention_days: int = int(os.environ.get("LORE_AUDIT_RETENTION_DAYS", "365"))
+        self.allow_insecure_bind: bool = os.environ.get("LORE_ALLOW_INSECURE_BIND", "").lower() in ("true", "1", "yes")
         self.trusted_headers: bool = os.environ.get("LORE_TRUSTED_HEADERS", "").lower() in ("true", "1", "yes")
         self.trusted_proxy_auth: bool = os.environ.get("LORE_TRUSTED_PROXY_AUTH", "").lower() in ("true", "1", "yes")
         self.csp_policy: str = os.environ.get("LORE_CSP_POLICY", "")
@@ -97,6 +98,7 @@ class LoreConfig:
             "audit_retention_days": self.audit_retention_days,
             "trusted_headers": self.trusted_headers,
             "trusted_proxy_auth": self.trusted_proxy_auth,
+            "allow_insecure_bind": self.allow_insecure_bind,
             "csp_policy": self.csp_policy,
             "workspaces": {name: workspace.to_dict() for name, workspace in self.workspaces.items()},
         }

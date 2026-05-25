@@ -126,3 +126,64 @@ def test_api_config_endpoint(content_dir, search_db, tmp_path):
 
     assert response.status_code == 200
     assert response.json()["content_dir"] == str(content_dir)
+
+
+def test_insecure_bind_rejected(monkeypatch, tmp_path):
+    monkeypatch.setenv("LORE_AUTH_MODE", "none")
+    monkeypatch.setenv("LORE_HOST", "0.0.0.0")
+    monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
+    monkeypatch.setenv("LORE_SEARCH_DB", str(tmp_path / "search.db"))
+    monkeypatch.setenv("LORE_LEDGER_DB", str(tmp_path / "ledger.db"))
+    monkeypatch.setenv("LORE_API_KEYS_DB", str(tmp_path / "api_keys.db"))
+    monkeypatch.delenv("LORE_ALLOW_INSECURE_BIND", raising=False)
+    with pytest.raises(ValueError, match="SECURITY"):
+        create_app()
+
+
+def test_insecure_bind_allowed_with_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("LORE_AUTH_MODE", "none")
+    monkeypatch.setenv("LORE_HOST", "0.0.0.0")
+    monkeypatch.setenv("LORE_ALLOW_INSECURE_BIND", "true")
+    monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
+    monkeypatch.setenv("LORE_SEARCH_DB", str(tmp_path / "search.db"))
+    monkeypatch.setenv("LORE_LEDGER_DB", str(tmp_path / "ledger.db"))
+    monkeypatch.setenv("LORE_API_KEYS_DB", str(tmp_path / "api_keys.db"))
+    app = create_app()
+    assert app is not None
+
+
+def test_loopback_bind_allowed_without_auth(monkeypatch, tmp_path):
+    monkeypatch.setenv("LORE_AUTH_MODE", "none")
+    monkeypatch.setenv("LORE_HOST", "127.0.0.1")
+    monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
+    monkeypatch.setenv("LORE_SEARCH_DB", str(tmp_path / "search.db"))
+    monkeypatch.setenv("LORE_LEDGER_DB", str(tmp_path / "ledger.db"))
+    monkeypatch.setenv("LORE_API_KEYS_DB", str(tmp_path / "api_keys.db"))
+    monkeypatch.delenv("LORE_ALLOW_INSECURE_BIND", raising=False)
+    app = create_app()
+    assert app is not None
+
+
+def test_localhost_bind_allowed_without_auth(monkeypatch, tmp_path):
+    monkeypatch.setenv("LORE_AUTH_MODE", "none")
+    monkeypatch.setenv("LORE_HOST", "localhost")
+    monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
+    monkeypatch.setenv("LORE_SEARCH_DB", str(tmp_path / "search.db"))
+    monkeypatch.setenv("LORE_LEDGER_DB", str(tmp_path / "ledger.db"))
+    monkeypatch.setenv("LORE_API_KEYS_DB", str(tmp_path / "api_keys.db"))
+    monkeypatch.delenv("LORE_ALLOW_INSECURE_BIND", raising=False)
+    app = create_app()
+    assert app is not None
+
+
+def test_auth_mode_does_not_trigger_bind_guard(monkeypatch, tmp_path):
+    monkeypatch.setenv("LORE_AUTH_MODE", "bearer")
+    monkeypatch.setenv("LORE_AUTH_SECRET", "secret")
+    monkeypatch.setenv("LORE_HOST", "0.0.0.0")
+    monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
+    monkeypatch.setenv("LORE_SEARCH_DB", str(tmp_path / "search.db"))
+    monkeypatch.setenv("LORE_LEDGER_DB", str(tmp_path / "ledger.db"))
+    monkeypatch.setenv("LORE_API_KEYS_DB", str(tmp_path / "api_keys.db"))
+    monkeypatch.delenv("LORE_ALLOW_INSECURE_BIND", raising=False)
+    app = create_app()
+    assert app is not None

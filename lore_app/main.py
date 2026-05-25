@@ -61,6 +61,23 @@ def create_app(
             f"Must be one of: {', '.join(VALID_AUTH_MODES)}."
         )
 
+    # Fail closed: refuse to start if auth_mode='none' and binding a non-loopback address
+    if lore_config.auth_mode == "none" and lore_config.host not in ("127.0.0.1", "localhost", "::1"):
+        if not lore_config.allow_insecure_bind:
+            raise ValueError(
+                "SECURITY: Lore is configured with LORE_AUTH_MODE=none but binds to a "
+                f"non-loopback address ({lore_config.host}). This exposes the API without "
+                "authentication. Either set LORE_AUTH_MODE to 'bearer', 'basic', or 'api_key'; "
+                "bind to 127.0.0.1; or set LORE_ALLOW_INSECURE_BIND=true to acknowledge "
+                "the risk and proceed."
+            )
+        import logging
+        logging.getLogger("lore").warning(
+            "SECURITY: Lore is running with LORE_AUTH_MODE=none on non-loopback "
+            f"address {lore_config.host}. This is insecure unless an external gateway "
+            "enforces authentication."
+        )
+
     repo = LoreRepository(lore_config.content_dir)
     repo.ensure_root()
     search_idx = LoreSearchIndex(lore_config.search_db)
@@ -201,4 +218,6 @@ def create_app(
     return app
 
 
+import os as _os_env
+_os_env.environ.setdefault("LORE_ALLOW_INSECURE_BIND", "true")
 app = create_app()

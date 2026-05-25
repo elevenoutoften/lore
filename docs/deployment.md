@@ -27,6 +27,11 @@ docker run -d --name lore \
   lore-app
 ```
 
+> **Insecure Bind Guard**: When running with `LORE_AUTH_MODE=none`, the container
+> refuses to start if bound to a non-loopback address like `0.0.0.0` (the default).
+> To run without auth, either set `LORE_HOST=127.0.0.1` or acknowledge the risk
+> with `LORE_ALLOW_INSECURE_BIND=true`. See [security.md](security.md) for details.
+
 Verify:
 
 ```bash
@@ -89,6 +94,11 @@ When `LORE_AUTH_MODE` is `bearer` or `basic`, `LORE_AUTH_SECRET` must be a
 non-empty string. If it is unset, empty, or whitespace-only, the application
 refuses to start with a configuration error. For `api_key` or `none` modes,
 `LORE_AUTH_SECRET` is not required.
+
+`LORE_ALLOW_INSECURE_BIND` (default: unset/false) — When set to `true`,
+acknowledges the risk of running with `LORE_AUTH_MODE=none` on a non-loopback
+address. Without this, Lore refuses to start on any bind address other than
+`127.0.0.1`, `localhost`, or `::1` when auth is disabled.
 
 Optional workspace mounts:
 

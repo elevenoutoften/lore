@@ -129,6 +129,17 @@ path segment to contain letters, numbers, `.`, `_`, or `-`.
 Page content is limited to 10,000,000 characters. Markdown rendering is
 sanitized before browser delivery.
 
+## Insecure Bind Guard
+
+When `LORE_AUTH_MODE=none`, Lore refuses to bind to a non-loopback address
+(everything except `127.0.0.1`, `localhost`, and `::1`) unless the operator
+explicitly acknowledges the risk by setting `LORE_ALLOW_INSECURE_BIND=true`.
+
+This prevents accidentally deploying an unauthenticated API on a public interface.
+If you run Lore behind a trusted reverse proxy or an auth gate, set
+`LORE_ALLOW_INSECURE_BIND=true` and ensure your deployment boundary enforces
+authentication.
+
 ## CSP and Rendering
 
 Lore stores Markdown as the source of truth and renders browser HTML through the
