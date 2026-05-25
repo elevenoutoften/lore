@@ -11,6 +11,8 @@ from ..context_graph import build_context_graph, explain_context, query_neighbor
 from ..distillation import distill_daily, get_daily_captures, get_pending_days, promote_daily_note
 from ..procedure_candidate import find_repeated_captures, propose_procedure_candidate
 from ..code_ingest.ingest_service import ingest_service_code
+from ..code_ingest.validate import IngestValidationError, validate_service_id, validate_source_dir
+from ..config import LoreConfig
 from ..frontmatter import frontmatter_scalar, update_frontmatter
 from ..frontmatter_spec import get_frontmatter_spec
 from ..provenance import get_capture_provenance, get_page_provenance
@@ -947,6 +949,7 @@ def call_tool(
     vector_store: Any | None = None,
     code_inventories: dict[str, Any] | None = None,
     *,
+    config: Any | None = None,
     ledger_db: Any | None = None,
     patch_planner: Any | None = None,
     consolidation_worker: Any | None = None,
@@ -1379,6 +1382,18 @@ This page was auto-created as a stub. Replace with actual content.
     if name == "lore_ingest_service":
         service_id = require_string(arguments.get("service_id"), "service_id")
         source_dir = require_string(arguments.get("source_dir"), "source_dir")
+        # Validate service_id
+        try:
+            validate_service_id(service_id)
+        except IngestValidationError as e:
+            raise JsonRpcError(-32602, str(e))
+        # Validate source_dir against configured roots and limits
+        cfg: LoreConfig | None = config
+        if cfg is not None:
+            try:
+                source_dir = str(validate_source_dir(source_dir, cfg))
+            except IngestValidationError as e:
+                raise JsonRpcError(-32602, str(e))
         inventory = ingest_service_code(service_id, source_dir)
         payload = inventory.model_dump()
         inventories = code_inventories if code_inventories is not None else CODE_INVENTORIES

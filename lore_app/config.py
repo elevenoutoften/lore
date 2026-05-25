@@ -73,6 +73,12 @@ class LoreConfig:
         self.trusted_headers: bool = os.environ.get("LORE_TRUSTED_HEADERS", "").lower() in ("true", "1", "yes")
         self.trusted_proxy_auth: bool = os.environ.get("LORE_TRUSTED_PROXY_AUTH", "").lower() in ("true", "1", "yes")
         self.csp_policy: str = os.environ.get("LORE_CSP_POLICY", "")
+        self.code_ingest_roots: list[Path] = self._parse_roots(
+            os.environ.get("LORE_CODE_INGEST_ROOTS", "")
+        )
+        self.code_ingest_max_files: int = int(os.environ.get("LORE_CODE_INGEST_MAX_FILES", "500"))
+        self.code_ingest_max_depth: int = int(os.environ.get("LORE_CODE_INGEST_MAX_DEPTH", "10"))
+        self.code_ingest_max_total_bytes: int = int(os.environ.get("LORE_CODE_INGEST_MAX_TOTAL_BYTES", str(50 * 1024 * 1024)))  # 50 MiB
         self.workspaces: dict[str, WorkspaceConfig] = parse_workspaces(os.environ.get("LORE_WORKSPACES"))
         if self.auth_mode not in VALID_AUTH_MODES:
             raise ValueError(
@@ -100,8 +106,24 @@ class LoreConfig:
             "trusted_proxy_auth": self.trusted_proxy_auth,
             "allow_insecure_bind": self.allow_insecure_bind,
             "csp_policy": self.csp_policy,
+            "code_ingest_roots": [str(r) for r in self.code_ingest_roots],
+            "code_ingest_max_files": self.code_ingest_max_files,
+            "code_ingest_max_depth": self.code_ingest_max_depth,
+            "code_ingest_max_total_bytes": self.code_ingest_max_total_bytes,
             "workspaces": {name: workspace.to_dict() for name, workspace in self.workspaces.items()},
         }
+
+    @staticmethod
+    def _parse_roots(raw: str) -> list[Path]:
+        """Parse colon/semicolon-separated rooted paths."""
+        if not raw:
+            return []
+        paths = []
+        for part in raw.replace(";", ":").split(":"):
+            part = part.strip()
+            if part:
+                paths.append(Path(part).resolve())
+        return paths
 
 
 def parse_workspaces(raw_value: str | None) -> dict[str, WorkspaceConfig]:

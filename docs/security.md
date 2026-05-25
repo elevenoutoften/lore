@@ -146,3 +146,15 @@ Lore stores Markdown as the source of truth and renders browser HTML through the
 Markdown renderer and sanitizer. Internal Markdown links and wikilinks are
 resolved to Lore routes; missing internal pages are marked so maintainers can
 repair them.
+
+## Code Ingest
+
+The `/api/code-ingest` endpoint is disabled by default. To enable it, set
+`LORE_CODE_INGEST_ROOTS` to a colon-separated list of directory roots that
+the ingester is allowed to walk:
+
+    LORE_CODE_INGEST_ROOTS=/data/pages:/opt/services
+
+Any `source_dir` that is not a subdirectory of a configured root (after
+resolving symlinks) is rejected with a 400 error. File count, depth, and
+total size limits prevent resource exhaustion.

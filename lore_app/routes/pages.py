@@ -11,7 +11,9 @@ from fastapi.templating import Jinja2Templates
 from ..audit import AuditLog
 from ..capture import list_captures
 from ..code_ingest.ingest_service import ingest_service_code
-from ..deps import get_audit_log, get_code_inventories, get_graph_cache, get_metrics, get_repo, get_search_index, get_templates, get_vector_store
+from ..code_ingest.validate import IngestValidationError, validate_service_id, validate_source_dir
+from ..config import LoreConfig
+from ..deps import get_audit_log, get_code_inventories, get_config, get_graph_cache, get_metrics, get_repo, get_search_index, get_templates, get_vector_store
 from ..link_graph import LinkGraphCache, page_links
 from ..markdown_render import render_page_markdown
 from ..observability import MetricsCollector
@@ -139,11 +141,25 @@ def api_code_references(code_path: str, repo: LoreRepository = Depends(get_repo)
 
 @router.post("/api/code-ingest/{service_id:path}")
 def api_ingest_service(
+    request: Request,
     service_id: str,
     source_dir: str = Query(...),
     code_inventories: dict[str, Any] = Depends(get_code_inventories),
+    config: LoreConfig = Depends(get_config),
 ):
-    inventory = ingest_service_code(service_id, source_dir)
+    # Validate service_id
+    try:
+        validate_service_id(service_id)
+    except IngestValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Validate source_dir against configured roots and limits
+    try:
+        validated_dir = validate_source_dir(source_dir, config)
+    except IngestValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    inventory = ingest_service_code(service_id, validated_dir)
     payload = inventory.model_dump()
     code_inventories[service_id] = payload
     return payload

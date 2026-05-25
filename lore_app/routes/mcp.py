@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, Response
 from ..deps import (
     get_audit_log,
     get_code_inventories,
+    get_config,
     get_consolidation_worker,
     get_graph_cache,
     get_ledger_db,
@@ -23,6 +24,7 @@ from ..ledger import LedgerDB
 from ..link_graph import LinkGraphCache
 from ..mcp import WRITE_TOOL_NAMES, exception_response, handle_mcp_message
 from ..observability import MetricsCollector
+from ..config import LoreConfig
 from ..patch_planner import PatchPlanner
 from ..rag.vector_store import VectorStore
 from ..repository import LoreRepository
@@ -41,6 +43,7 @@ async def mcp(
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
     vector_store: VectorStore = Depends(get_vector_store),
     code_inventories: dict = Depends(get_code_inventories),
+    config: LoreConfig = Depends(get_config),
     ledger_db: LedgerDB = Depends(get_ledger_db),
     patch_planner: PatchPlanner = Depends(get_patch_planner),
     consolidation_worker: ConsolidationWorker = Depends(get_consolidation_worker),
@@ -67,6 +70,7 @@ async def mcp(
             graph_cache,
             vector_store,
             code_inventories,
+            config=config,
             ledger_db=ledger_db,
             patch_planner=patch_planner,
             consolidation_worker=consolidation_worker,
