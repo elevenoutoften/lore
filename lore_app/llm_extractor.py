@@ -2,7 +2,7 @@
 
 This module normalizes provider JSON into the same extraction schemas used by
 the deterministic extractor. Callers decide whether to fall back when this
-module returns ``None``.
+module raises.
 """
 from __future__ import annotations
 
@@ -64,9 +64,10 @@ def llm_extract_capture(
         return _validate_llm_output(result, page_id, title)
     except (LLMError, LLMJsonError) as exc:
         logger.warning("LLM extraction failed for %s: %s", page_id, exc)
+        raise
     except ValueError as exc:
         logger.warning("LLM output validation failed for %s: %s", page_id, exc)
-    return None
+        raise
 
 
 def _validate_llm_output(raw: dict[str, Any], page_id: str, title: str = "") -> dict[str, list]:

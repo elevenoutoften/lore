@@ -73,6 +73,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Force re-extraction of already-extracted captures",
     )
 
+    p_extraction = sub.add_parser("extraction", help="Extraction maintenance commands")
+    extraction_sub = p_extraction.add_subparsers(dest="extraction_command")
+    p_extraction_retry = extraction_sub.add_parser("retry", help="Retry unresolved extraction dead-letters")
+    p_extraction_retry.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Maximum unresolved dead-letters to retry (default: 10)",
+    )
+
     sub.add_parser("status", help="Show consolidation status")
 
     sub.add_parser("info", help="Show vault info")
@@ -96,6 +106,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_verify(args.input)
     if args.command == "consolidate":
         return cmd_consolidate(args)
+    if args.command == "extraction":
+        if args.extraction_command == "retry":
+            return cmd_extraction_retry(args)
+        parser.error("extraction requires a subcommand")
     if args.command == "status":
         return cmd_status(args)
     if args.command == "info":
@@ -324,6 +338,38 @@ def cmd_status(args: argparse.Namespace) -> int:
         "stuck_runs": len(ledger_status.get("stuck_runs", [])),
     }
     print(json.dumps(status, indent=2, default=str))
+    return 0
+
+
+def cmd_extraction_retry(args: argparse.Namespace) -> int:
+    from .config import LoreConfig
+    from .extraction import extract_from_captures
+    from .ledger import LedgerDB
+    from .repository import LoreRepository
+
+    config = LoreConfig()
+    repo = LoreRepository(config.content_dir)
+    ledger = LedgerDB(config.ledger_db)
+    ledger.initialize()
+
+    retried = 0
+    resolved = 0
+    deadletters = ledger.list_deadletters(status="unresolved", limit=args.limit)
+    for deadletter in deadletters:
+        retried += 1
+        try:
+            result = extract_from_captures(
+                repo,
+                capture_ids=[str(deadletter["capture_id"])],
+                dry_run=True,
+                ledger_db=ledger,
+            )
+        except Exception:
+            continue
+        if result.source_capture_ids and ledger.resolve_deadletter(str(deadletter["deadletter_id"])):
+            resolved += 1
+
+    print(json.dumps({"retried": retried, "resolved": resolved}, indent=2))
     return 0
 
 

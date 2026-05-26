@@ -124,6 +124,18 @@ class LedgerDB:
 
     # Columns added by migrations beyond the original schema.
     _MIGRATION_COLUMNS = {
+        "extraction_deadletters": [
+            ("deadletter_id", "TEXT PRIMARY KEY"),
+            ("capture_id", "TEXT NOT NULL DEFAULT ''"),
+            ("provider", "TEXT NOT NULL DEFAULT ''"),
+            ("failure_kind", "TEXT NOT NULL DEFAULT 'llm_error'"),
+            ("failure_detail", "TEXT"),
+            ("payload", "TEXT"),
+            ("batch_id", "TEXT"),
+            ("status", "TEXT NOT NULL DEFAULT 'unresolved'"),
+            ("resolved_at", "TEXT"),
+            ("created_at", "TEXT NOT NULL DEFAULT ''"),
+        ],
         "extraction_candidates": [
             ("normalized_subject", "TEXT DEFAULT NULL"),
             ("normalized_predicate", "TEXT DEFAULT NULL"),
@@ -248,6 +260,19 @@ class LedgerDB:
                 success BOOLEAN NOT NULL DEFAULT 1,
                 error TEXT,
                 FOREIGN KEY (batch_id) REFERENCES extraction_batches(batch_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS extraction_deadletters (
+                deadletter_id TEXT PRIMARY KEY,
+                capture_id TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                failure_kind TEXT NOT NULL,
+                failure_detail TEXT,
+                payload TEXT,
+                batch_id TEXT,
+                status TEXT NOT NULL DEFAULT 'unresolved',
+                resolved_at TEXT,
+                created_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS patch_plans (
@@ -899,6 +924,80 @@ class LedgerDB:
             (capture_id,),
         ).fetchone()
         return row is not None
+
+    @retry_on_locked()
+    def store_deadletter(
+        self,
+        capture_id: str,
+        provider: str,
+        failure_kind: str,
+        failure_detail: str | None,
+        payload: str | None,
+        batch_id: str | None,
+    ) -> str:
+        deadletter_id = str(uuid.uuid4())
+        with self._lock:
+            self.connection.execute(
+                """
+                INSERT INTO extraction_deadletters (
+                    deadletter_id, capture_id, provider, failure_kind, failure_detail,
+                    payload, batch_id, status, resolved_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'unresolved', NULL, ?)
+                """,
+                (
+                    deadletter_id,
+                    capture_id,
+                    provider,
+                    failure_kind,
+                    failure_detail,
+                    payload,
+                    batch_id,
+                    utc_now(),
+                ),
+            )
+            self.connection.commit()
+            self._bump_generation()
+        return deadletter_id
+
+    def list_deadletters(
+        self,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(1, min(limit, 500)))
+        rows = self.connection.execute(
+            f"""
+            SELECT *
+            FROM extraction_deadletters
+            {where}
+            ORDER BY created_at ASC, deadletter_id
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    @retry_on_locked()
+    def resolve_deadletter(self, deadletter_id: str) -> bool:
+        with self._lock:
+            cursor = self.connection.execute(
+                """
+                UPDATE extraction_deadletters
+                SET status = 'resolved', resolved_at = ?
+                WHERE deadletter_id = ? AND status != 'resolved'
+                """,
+                (utc_now(), deadletter_id),
+            )
+            self.connection.commit()
+            if cursor.rowcount > 0:
+                self._bump_generation()
+            return cursor.rowcount > 0
 
     @retry_on_locked()
     def reset_extraction(self, capture_ids: list[str] | None = None) -> int:

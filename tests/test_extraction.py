@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import pytest
 from pydantic import ValidationError
 from unittest import mock
 
+from lore_app.cli import main
 from lore_app.extraction import compute_extraction_hash, extract_from_captures, get_unprocessed_captures
 from lore_app.ledger import LedgerDB
 from lore_app.llm_provider import FallbackLLMClient, LLMError
@@ -330,6 +332,93 @@ The [[services/auth]] module handles authentication.
     assert result.source_capture_ids == ["inbox/fallback-capture"]
     assert any(entity.target_page_hint == "services/auth" for entity in result.entities)
     assert result.claims
+
+
+def test_extraction_failure_inserts_deadletter(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    capture_id = add_capture(repo)
+    ledger = make_ledger(tmp_path)
+    mock_client = mock.MagicMock(spec=FallbackLLMClient)
+
+    with (
+        mock.patch("lore_app.llm_extractor.llm_extract_capture", side_effect=LLMError("Provider unavailable")),
+        mock.patch("lore_app.extraction._extract_capture", side_effect=RuntimeError("fallback failed")),
+    ):
+        result = extract_from_captures(
+            repo,
+            capture_ids=[capture_id],
+            dry_run=True,
+            llm_client=mock_client,
+            ledger_db=ledger,
+        )
+
+    deadletters = ledger.list_deadletters(status="unresolved")
+    assert result.source_capture_ids == [capture_id]
+    assert len(deadletters) == 1
+    assert deadletters[0]["capture_id"] == capture_id
+    assert deadletters[0]["provider"] == "fallback"
+    assert deadletters[0]["failure_kind"] == "fallback_exhausted"
+    assert "Provider unavailable" in str(deadletters[0]["failure_detail"])
+    payload = json.loads(str(deadletters[0]["payload"]))
+    assert payload["capture_id"] == capture_id
+
+
+def test_retry_resolves_deadletter(tmp_path, monkeypatch, capsys):
+    repo = LoreRepository(tmp_path / "pages")
+    capture_id = add_capture(repo)
+    ledger = make_ledger(tmp_path)
+    ledger.store_deadletter(
+        capture_id=capture_id,
+        provider="fallback",
+        failure_kind="fallback_exhausted",
+        failure_detail="llm=Provider unavailable; fallback=fallback failed",
+        payload=json.dumps({"capture_id": capture_id}),
+        batch_id="batch-deadletter",
+    )
+
+    monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
+    monkeypatch.setenv("LORE_SEARCH_DB", str(tmp_path / "search.db"))
+    monkeypatch.setenv("LORE_LEDGER_DB", str(tmp_path / "ledger.db"))
+    monkeypatch.setenv("LORE_VECTOR_DB", str(tmp_path / "vectors.db"))
+    monkeypatch.setenv("LORE_API_KEYS_DB", str(tmp_path / "api_keys.db"))
+
+    assert main(["extraction", "retry", "--limit", "10"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    deadletters = ledger.list_deadletters(status="resolved")
+    assert output == {"retried": 1, "resolved": 1}
+    assert len(deadletters) == 1
+    assert deadletters[0]["capture_id"] == capture_id
+    assert deadletters[0]["status"] == "resolved"
+    assert deadletters[0]["resolved_at"] is not None
+
+
+def test_resolved_deadletter_not_retried(tmp_path, monkeypatch, capsys):
+    repo = LoreRepository(tmp_path / "pages")
+    capture_id = add_capture(repo)
+    ledger = make_ledger(tmp_path)
+    deadletter_id = ledger.store_deadletter(
+        capture_id=capture_id,
+        provider="fallback",
+        failure_kind="fallback_exhausted",
+        failure_detail="previous failure",
+        payload=json.dumps({"capture_id": capture_id}),
+        batch_id="batch-deadletter",
+    )
+    assert ledger.resolve_deadletter(deadletter_id) is True
+
+    monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
+    monkeypatch.setenv("LORE_SEARCH_DB", str(tmp_path / "search.db"))
+    monkeypatch.setenv("LORE_LEDGER_DB", str(tmp_path / "ledger.db"))
+    monkeypatch.setenv("LORE_VECTOR_DB", str(tmp_path / "vectors.db"))
+    monkeypatch.setenv("LORE_API_KEYS_DB", str(tmp_path / "api_keys.db"))
+
+    assert main(["extraction", "retry", "--limit", "10"]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output == {"retried": 0, "resolved": 0}
+    assert ledger.list_deadletters(status="unresolved") == []
+    assert len(ledger.list_deadletters(status="resolved")) == 1
 
 
 def test_provider_none_forces_deterministic(client):

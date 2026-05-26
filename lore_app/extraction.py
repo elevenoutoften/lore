@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import uuid
 from datetime import datetime, timezone
@@ -9,6 +10,7 @@ from typing import Any
 from .capture import CAPTURE_INTAKE_SUMMARY
 from .config import LoreConfig
 from .ledger import LedgerDB
+from .llm_provider import LLMError
 from .repository import LoreRepository, optional_string, string_list
 from .schemas import (
     ExtractedClaim,
@@ -81,18 +83,39 @@ def extract_from_captures(
     for capture in selected:
         source_capture_ids.append(capture.id)
         llm_result = None
+        llm_failure: Exception | None = None
         if llm_client is not None:
             from .llm_extractor import llm_extract_capture
 
-            llm_result = llm_extract_capture(capture, llm_client, repo=repo)
+            try:
+                llm_result = llm_extract_capture(capture, llm_client, repo=repo)
+            except (LLMError, ValueError) as exc:
+                llm_failure = exc
 
-        if llm_result is not None:
-            capture_entities = llm_result.get("entities", [])
-            capture_claims = llm_result.get("claims", [])
-            capture_edges = llm_result.get("edges", [])
-            capture_invalidations = llm_result.get("invalidations", [])
-        else:
-            capture_entities, capture_claims, capture_edges, capture_invalidations = _extract_capture(repo, capture)
+        try:
+            if llm_result is not None:
+                capture_entities = llm_result.get("entities", [])
+                capture_claims = llm_result.get("claims", [])
+                capture_edges = llm_result.get("edges", [])
+                capture_invalidations = llm_result.get("invalidations", [])
+            else:
+                capture_entities, capture_claims, capture_edges, capture_invalidations = _extract_capture(repo, capture)
+        except Exception as fallback_exc:
+            if llm_failure is not None:
+                ledger.store_deadletter(
+                    capture_id=capture.id,
+                    provider=_deadletter_provider(llm_client, fallback_failed=True),
+                    failure_kind=_deadletter_failure_kind(llm_failure, fallback_exc),
+                    failure_detail=_deadletter_failure_detail(llm_failure, fallback_exc),
+                    payload=_deadletter_payload(capture),
+                    batch_id=batch_id,
+                )
+                continue
+            raise
+
+        if llm_failure is not None and llm_result is None:
+            # Deterministic fallback succeeded, so continue without writing a dead-letter.
+            pass
 
         for entity in capture_entities:
             key = (entity.name.casefold(), entity.target_page_hint)
@@ -267,6 +290,45 @@ def _extract_capture(
 
     invalidations = _extract_invalidations(repo, capture, suggested_target, claim_object)
     return entities, claims, edges, invalidations
+
+
+def _deadletter_provider(llm_client: Any | None, *, fallback_failed: bool) -> str:
+    if fallback_failed:
+        return "fallback"
+    model = getattr(getattr(llm_client, "primary", None), "config", None)
+    provider = getattr(model, "model", None)
+    if provider:
+        return str(provider)
+    return llm_client.__class__.__name__ if llm_client is not None else "unknown"
+
+
+def _deadletter_failure_kind(llm_failure: Exception, fallback_exc: Exception | None) -> str:
+    if fallback_exc is not None:
+        return "fallback_exhausted"
+    if isinstance(llm_failure, ValueError):
+        return "schema_error"
+    message = str(llm_failure).casefold()
+    if "timeout" in message:
+        return "timeout"
+    return "llm_error"
+
+
+def _deadletter_failure_detail(llm_failure: Exception, fallback_exc: Exception | None) -> str:
+    if fallback_exc is None:
+        return str(llm_failure)
+    return f"llm={llm_failure}; fallback={fallback_exc}"
+
+
+def _deadletter_payload(capture: PageDetail) -> str:
+    return json.dumps(
+        {
+            "capture_id": capture.id,
+            "title": capture.title,
+            "frontmatter": capture.frontmatter,
+            "body": capture.body,
+        },
+        ensure_ascii=False,
+    )
 
 
 def _is_plausible_page_id(text: str) -> bool:
