@@ -99,12 +99,15 @@ def build_context_graph(repo: LoreRepository, ledger: LedgerDB | None = None) ->
                 id=detail.id,
                 type=node_type,
                 label=detail.title or detail.id,
-                metadata={
-                    "kind": kind,
-                    "visibility": optional_string(fm.get("visibility")) or detail.visibility,
-                    "status": optional_string(fm.get("status")),
-                    "tags": string_list(fm.get("tags")),
-                },
+                metadata=_compact_metadata(
+                    {
+                        "kind": kind,
+                        "visibility": optional_string(fm.get("visibility")) or detail.visibility,
+                        "status": optional_string(fm.get("status")),
+                        "tags": string_list(fm.get("tags")),
+                        "observed_at": optional_string(fm.get("observed_at")),
+                    }
+                ),
             )
         )
 
@@ -394,6 +397,10 @@ def _add_ledger_nodes(
                     "confidence": candidate.get("confidence"),
                     "strength": candidate.get("strength"),
                     "lane": candidate.get("lane"),
+                    "actor": candidate.get("actor"),
+                    "observed_at": candidate.get("observed_at"),
+                    "valid_from": candidate.get("valid_from"),
+                    "valid_until": candidate.get("valid_until"),
                 },
             )
         )

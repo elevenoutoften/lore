@@ -179,6 +179,62 @@ def test_context_graph_includes_entity_and_claim_nodes(client):
     assert _node(graph, f"candidate:{candidate_ids['entity_id']}").type == "entity"
 
 
+def test_candidate_nodes_include_bi_temporal_and_actor(client):
+    repo = client.app.state.repository
+    ledger = client.app.state.ledger_db
+
+    repo.upsert_page("services/lore", "---\ntitle: Lore\nkind: service\n---\nLore service description.")
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="test-bi-temp",
+            processed_at="2026-05-27T00:00:00+00:00",
+            source_capture_ids=["inbox/test-bitemp"],
+            claims=[
+                ExtractedClaim(
+                    subject="services/lore",
+                    predicate="provides",
+                    object="knowledge management",
+                    confidence="high",
+                    actor="agent:test-bot",
+                    source_page_ids=["services/lore"],
+                    observed_at="2026-05-27T12:00:00+00:00",
+                    valid_from="2026-05-27T00:00:00+00:00",
+                    valid_until="2026-12-31T23:59:59+00:00",
+                )
+            ],
+        )
+    )
+    candidate = next(
+        item for item in ledger.get_candidates(candidate_type="claim", status="candidate", limit=50)
+        if item["batch_id"] == "test-bi-temp"
+    )
+
+    graph = build_context_graph(repo, ledger)
+    node = _node(graph, f"candidate:{candidate['candidate_id']}")
+
+    assert node is not None
+    assert node.metadata.get("actor") == "agent:test-bot"
+    assert node.metadata.get("observed_at") == "2026-05-27T12:00:00+00:00"
+    assert node.metadata.get("valid_from") == "2026-05-27T00:00:00+00:00"
+    assert node.metadata.get("valid_until") == "2026-12-31T23:59:59+00:00"
+
+
+def test_page_nodes_include_observed_at_from_frontmatter(client):
+    repo = client.app.state.repository
+    ledger = client.app.state.ledger_db
+
+    repo.upsert_page(
+        "services/observed-service",
+        "---\ntitle: Observed Service\nkind: service\nobserved_at: 2026-05-27T10:00:00+00:00\n---\nService description.",
+    )
+
+    graph = build_context_graph(repo, ledger)
+    node = _node(graph, "services/observed-service")
+
+    assert node is not None
+    assert node.metadata["observed_at"] == "2026-05-27T10:00:00+00:00"
+
+
 def test_context_graph_includes_plan_and_trace_nodes(client):
     repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
 
