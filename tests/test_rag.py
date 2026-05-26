@@ -38,6 +38,92 @@ def test_vector_store_searches_sparse_tfidf(tmp_path):
     assert results[0]["score"] > 0
 
 
+def test_upsert_page_chunks_batch_insertion(tmp_path):
+    store = VectorStore(tmp_path / "vectors.db")
+    store.upsert_page_chunks(
+        "a",
+        [
+            {"chunk_id": "a#0", "page_id": "a", "chunk_index": 0, "content": "gateway service"},
+            {"chunk_id": "a#1", "page_id": "a", "chunk_index": 1, "content": "GPU rendering pipeline"},
+        ],
+    )
+
+    results = store.search("GPU gateway", limit=2)
+
+    assert results
+    assert {result["chunk_id"] for result in results} == {"a#0", "a#1"}
+
+
+def test_incremental_doc_freq_after_page_update(tmp_path):
+    store = VectorStore(tmp_path / "vectors.db")
+    store.upsert_page_chunks(
+        "a",
+        [{"chunk_id": "a#0", "page_id": "a", "chunk_index": 0, "content": "gateway service"}],
+    )
+    store.upsert_page_chunks(
+        "b",
+        [{"chunk_id": "b#0", "page_id": "b", "chunk_index": 0, "content": "gateway protocol"}],
+    )
+
+    assert store._conn.execute(
+        "SELECT df FROM doc_freq WHERE token = ?",
+        ("gateway",),
+    ).fetchone() == (2,)
+
+    store.upsert_page_chunks(
+        "a",
+        [{"chunk_id": "a#0", "page_id": "a", "chunk_index": 0, "content": "rendering pipeline"}],
+    )
+
+    assert store._conn.execute(
+        "SELECT df FROM doc_freq WHERE token = ?",
+        ("gateway",),
+    ).fetchone() == (1,)
+
+
+def test_search_uses_single_join_query(tmp_path):
+    store = VectorStore(tmp_path / "vectors.db")
+    store.upsert_page_chunks(
+        "a",
+        [
+            {"chunk_id": f"a#{i}", "page_id": "a", "chunk_index": i, "content": f"chunk {i} alpha beta gamma"}
+            for i in range(20)
+        ],
+    )
+    store.upsert_page_chunks(
+        "b",
+        [
+            {"chunk_id": f"b#{i}", "page_id": "b", "chunk_index": i, "content": f"chunk {i} alpha delta epsilon"}
+            for i in range(20)
+        ],
+    )
+
+    statements: list[str] = []
+    store._conn.set_trace_callback(statements.append)
+    try:
+        results = store.search("alpha", limit=5)
+    finally:
+        store._conn.set_trace_callback(None)
+
+    select_count = sum(1 for statement in statements if statement.lstrip().upper().startswith("SELECT"))
+    assert select_count <= 3, f"Search used {select_count} SELECT statements: {statements!r}"
+    assert results
+
+
+def test_remove_page_updates_doc_freq_incrementally(tmp_path):
+    store = VectorStore(tmp_path / "vectors.db")
+    store.upsert_page_chunks(
+        "a",
+        [{"chunk_id": "a#0", "page_id": "a", "chunk_index": 0, "content": "hello world"}],
+    )
+
+    assert store.remove_page("a") == 1
+
+    assert store._conn.execute(
+        "SELECT COUNT(*) FROM doc_freq WHERE token IN ('hello', 'world')"
+    ).fetchone() == (0,)
+
+
 def test_rag_retrieve_and_evaluate_endpoints(client):
     client.post("/api/search/reindex")
 

@@ -402,7 +402,6 @@ def api_delete_page(
     metrics.decrement_index_size()
     search_idx.remove_page(page_id)
     vector_store.remove_page(page_id)
-    vector_store.rebuild_doc_freq()
     graph_cache.invalidate()
     context_graph_cache.invalidate()
     record_audit(

@@ -1784,15 +1784,8 @@ def invalidate_graph_cache(graph_cache: Any | None) -> None:
 def index_vector_page(vector_store: Any | None, page: Any) -> None:
     if vector_store is None:
         return
-    vector_store.remove_page(page.id)
-    for chunk in chunk_page(page.id, page.content, page.body):
-        vector_store.upsert_chunk(
-            chunk["chunk_id"],
-            chunk["page_id"],
-            chunk["chunk_index"],
-            chunk["content"],
-        )
-    vector_store.rebuild_doc_freq()
+    chunks = list(chunk_page(page.id, page.content, page.body))
+    vector_store.upsert_page_chunks(page.id, chunks)
 
 
 def enrich_rag_results(repo: LoreRepository, payload: dict[str, Any]) -> dict[str, Any]:

@@ -146,7 +146,7 @@ def test_apply_reindexes_target_page_and_capture(ctx):
     assert len(plans) == 1
 
     ctx.search_index.upsert_page_from_detail.reset_mock()
-    ctx.vector_store.upsert_chunk.reset_mock()
+    ctx.vector_store.upsert_page_chunks.reset_mock()
     ctx.graph_cache.invalidate.reset_mock()
 
     ctx.planner.apply_plan(plans[0].plan_id)
@@ -155,7 +155,7 @@ def test_apply_reindexes_target_page_and_capture(ctx):
     # the target page and the accepted capture
     assert ctx.search_index.upsert_page_from_detail.call_count >= 1
     # vector_store should have been called (via index_vectors_for_page)
-    assert ctx.vector_store.upsert_chunk.call_count >= 0  # may be 0 if no chunks
+    assert ctx.vector_store.upsert_page_chunks.call_count >= 0  # may be 0 if no chunks
     # graph_cache should be invalidated (once for target, once per capture)
     assert ctx.graph_cache.invalidate.call_count >= 1
 

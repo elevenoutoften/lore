@@ -160,15 +160,8 @@ def current_git_ref() -> str | None:
 
 
 def index_vectors_for_page(vector_store: VectorStore, page: PageDetail) -> None:
-    vector_store.remove_page(page.id)
-    for chunk in chunk_page(page.id, page.content, page.body):
-        vector_store.upsert_chunk(
-            chunk["chunk_id"],
-            chunk["page_id"],
-            chunk["chunk_index"],
-            chunk["content"],
-        )
-    vector_store.rebuild_doc_freq()
+    chunks = list(chunk_page(page.id, page.content, page.body))
+    vector_store.upsert_page_chunks(page.id, chunks)
 
 
 def rebuild_vector_index(repo: LoreRepository, vector_store: VectorStore) -> int:
@@ -178,15 +171,9 @@ def rebuild_vector_index(repo: LoreRepository, vector_store: VectorStore) -> int
         page = repo.read_page(summary.id)
         if page is None:
             continue
-        for chunk in chunk_page(page.id, page.content, page.body):
-            vector_store.upsert_chunk(
-                chunk["chunk_id"],
-                chunk["page_id"],
-                chunk["chunk_index"],
-                chunk["content"],
-            )
+        chunks = list(chunk_page(page.id, page.content, page.body))
+        vector_store.upsert_page_chunks(page.id, chunks)
         count += 1
-    vector_store.rebuild_doc_freq()
     return count
 
 
