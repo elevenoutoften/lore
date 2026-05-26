@@ -143,6 +143,36 @@ def test_rag_retrieve_and_evaluate_endpoints(client):
     assert evaluation.json()["mean_recall"] == 1.0
 
 
+def test_rag_expanded_result_includes_provenance_fields(client):
+    repo = client.app.state.repository
+    repo.upsert_page(
+        "services/prov-rag",
+        """---
+title: Prov RAG
+kind: service
+visibility: internal
+observed_at: '2026-06-01T00:00:00+00:00'
+actor: agent:rag-bot
+source_paths:
+  - docs/rag-prov.md
+---
+
+RAG content with provenance fields.
+""",
+    )
+    client.post("/api/search/reindex")
+
+    response = client.post("/api/rag/retrieve", json={"query": "provenance", "limit": 5})
+    assert response.status_code == 200
+    results = response.json()["results"]
+    found = [r for r in results if r["page_id"] == "services/prov-rag"]
+    assert len(found) >= 1
+    result = found[0]
+    assert result.get("observed_at") == "2026-06-01T00:00:00+00:00"
+    assert result.get("actor") == "agent:rag-bot"
+    assert "docs/rag-prov.md" in result.get("source_refs", [])
+
+
 def test_rag_debug_ui(client):
     client.post("/api/search/reindex")
 

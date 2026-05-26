@@ -43,7 +43,7 @@ def api_rag_retrieve(
         include_traces=payload.include_traces,
         include_decisions=payload.include_decisions,
     )
-    return enrich_expanded_results(repo, result)
+    return enrich_expanded_results(repo, result, ledger)
 
 
 @router.post("/api/rag/retrieve-expanded", response_model=RagExpandedResponse)
@@ -72,7 +72,7 @@ def api_rag_retrieve_expanded(
         include_traces=payload.include_traces,
         include_decisions=payload.include_decisions,
     )
-    return enrich_expanded_results(repo, result)
+    return enrich_expanded_results(repo, result, ledger)
 
 
 @router.post("/api/rag/evaluate", response_model=RagEvaluateResult)

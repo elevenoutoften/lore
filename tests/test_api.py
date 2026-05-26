@@ -51,6 +51,41 @@ def test_search_scores_content_and_metadata(client):
     assert payload["hits"][0]["matches"]
 
 
+def test_search_hit_includes_provenance_fields(client):
+    repo = client.app.state.repository
+    repo.upsert_page(
+        "services/prov-search",
+        """---
+title: Prov Search
+kind: service
+visibility: internal
+observed_at: '2026-05-27T10:00:00+00:00'
+actor: agent:test-bot
+lane: project
+source_paths:
+  - docs/prov.md
+source_urls:
+  - https://example.com/prov
+---
+
+Prov search content with provenance.
+""",
+    )
+    client.post("/api/search/reindex")
+
+    response = client.get("/api/search", params={"q": "provenance"})
+    assert response.status_code == 200
+    hits = response.json()["hits"]
+    found = [h for h in hits if h["page"]["id"] == "services/prov-search"]
+    assert len(found) >= 1
+    hit = found[0]
+    assert hit.get("observed_at") == "2026-05-27T10:00:00+00:00"
+    assert hit.get("actor") == "agent:test-bot"
+    assert hit.get("lane") == "project"
+    assert "docs/prov.md" in hit.get("source_refs", [])
+    assert "https://example.com/prov" in hit.get("source_refs", [])
+
+
 def test_upsert_and_delete_page(client):
     markdown = """---
 title: Lore

@@ -210,25 +210,28 @@ class LoreRepository:
         kind: str | None = None,
         visibility: str | None = None,
         limit: int = 20,
+        ledger: Any | None = None,
     ) -> SearchResponse:
         cleaned_query = " ".join(query.split())
         terms = [term.casefold() for term in re.findall(r"[A-Za-z0-9._-]+", cleaned_query)]
         if not terms:
             return SearchResponse(query=cleaned_query, hits=[])
+        ledger_candidates_by_page = build_candidate_page_index(ledger)
 
         if self._search_index is not None and self._search_index_has_pages():
             hits: list[SearchHit] = []
             for hit in self._search_index.search(cleaned_query, kind=kind, limit=limit):
-                summary = self._get_summary_from_cache(hit["page_id"])
-                if summary is None:
+                page = self.read_page(str(hit["page_id"]))
+                if page is None:
                     continue
-                if visibility and summary.visibility != visibility:
+                if visibility and page.visibility != visibility:
                     continue
                 hits.append(
-                    SearchHit(
-                        page=summary,
+                    build_search_hit(
+                        page,
                         score=int(hit["score"]),
                         matches=list(hit.get("matched_fields") or []),
+                        ledger_candidates_by_page=ledger_candidates_by_page,
                     )
                 )
 
@@ -247,7 +250,14 @@ class LoreRepository:
             if score <= 0:
                 continue
 
-            hits.append(SearchHit(page=summary, score=score, matches=extract_matches(page.body, terms)))
+            hits.append(
+                build_search_hit(
+                    page.detail(),
+                    score=score,
+                    matches=extract_matches(page.body, terms),
+                    ledger_candidates_by_page=ledger_candidates_by_page,
+                )
+            )
 
         hits.sort(key=lambda hit: (-hit.score, hit.page.id))
         return SearchResponse(query=cleaned_query, hits=hits[:limit])
@@ -307,6 +317,68 @@ class LoreRepository:
             return False
         row = self._search_index._conn.execute("SELECT 1 FROM pages LIMIT 1").fetchone()
         return row is not None
+
+
+def build_candidate_page_index(ledger: Any | None, *, limit: int = 500) -> dict[str, list[dict[str, Any]]]:
+    if ledger is None:
+        return {}
+    try:
+        candidates = ledger.get_candidates(limit=limit)
+    except Exception:
+        return {}
+    indexed: dict[str, list[dict[str, Any]]] = {}
+    for candidate in candidates:
+        for page_id in string_list(candidate.get("source_page_ids")):
+            indexed.setdefault(page_id, []).append(candidate)
+    return indexed
+
+
+def page_source_refs(frontmatter: dict[str, Any]) -> list[str]:
+    provenance = frontmatter.get("provenance")
+    provenance_source_paths = string_list(provenance.get("source_paths")) if isinstance(provenance, dict) else []
+    refs = (
+        string_list(frontmatter.get("source_paths"))
+        + string_list(frontmatter.get("source_urls"))
+        + provenance_source_paths
+    )
+    deduped: list[str] = []
+    for ref in refs:
+        if ref and ref not in deduped:
+            deduped.append(ref)
+    return deduped
+
+
+def page_result_provenance(
+    page: PageDetail,
+    *,
+    ledger_candidates_by_page: dict[str, list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
+    frontmatter = page.frontmatter
+    candidates = (ledger_candidates_by_page or {}).get(page.id, [])
+    candidate = candidates[0] if candidates else None
+    return {
+        "observed_at": optional_string(frontmatter.get("observed_at")),
+        "valid_from": optional_string(candidate.get("valid_from")) if candidate else None,
+        "valid_until": optional_string(candidate.get("valid_until")) if candidate else None,
+        "actor": optional_string(frontmatter.get("actor")),
+        "lane": optional_string(candidate.get("lane")) if candidate else optional_string(frontmatter.get("lane")),
+        "source_refs": page_source_refs(frontmatter),
+    }
+
+
+def build_search_hit(
+    page: PageDetail,
+    *,
+    score: int,
+    matches: list[str],
+    ledger_candidates_by_page: dict[str, list[dict[str, Any]]] | None = None,
+) -> SearchHit:
+    return SearchHit(
+        page=PageSummary(**page.model_dump(include=set(PageSummary.model_fields))),
+        score=score,
+        matches=matches,
+        **page_result_provenance(page, ledger_candidates_by_page=ledger_candidates_by_page),
+    )
 
 
 def normalize_page_id(raw_page_id: str) -> str:

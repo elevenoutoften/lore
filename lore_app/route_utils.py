@@ -14,7 +14,7 @@ from .link_graph import LinkGraphCache
 from .rag.chunker import chunk_page
 from .rag.hybrid_retrieval import hybrid_retrieve
 from .rag.vector_store import VectorStore
-from .repository import InvalidPageId, LoreRepository
+from .repository import InvalidPageId, LoreRepository, build_candidate_page_index, page_result_provenance
 from .schemas import LinkEdge, PageDetail, PageLinks, PageSummary
 from .search_index import LoreSearchIndex
 from .security import sanitize_content, sanitize_page_id
@@ -208,14 +208,16 @@ def enrich_rag_results(repo: LoreRepository, result: dict[str, Any]) -> dict[str
     return enriched
 
 
-def enrich_expanded_results(repo: LoreRepository, result: dict[str, Any]) -> dict[str, Any]:
+def enrich_expanded_results(repo: LoreRepository, result: dict[str, Any], ledger: Any | None = None) -> dict[str, Any]:
     enriched = dict(result)
     rows = []
+    ledger_candidates_by_page = build_candidate_page_index(ledger)
     for item in result.get("results", []):
         row = dict(item)
         page = repo.read_page(str(row.get("page_id") or ""))
         if page is not None:
             row["title"] = page.title
+            row.update(page_result_provenance(page, ledger_candidates_by_page=ledger_candidates_by_page))
         rows.append(row)
     enriched["results"] = rows
     enriched["total"] = len(rows)

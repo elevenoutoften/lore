@@ -614,6 +614,12 @@ class SearchHit(BaseModel):
     page: PageSummary
     score: int
     matches: list[str] = Field(default_factory=list)
+    observed_at: str | None = Field(default=None, description="When the fact was observed (capture time).")
+    valid_from: str | None = Field(default=None, description="When the fact became true in the world.")
+    valid_until: str | None = Field(default=None, description="When the fact ceased to be true.")
+    actor: str | None = Field(default=None, description="Agent that created this content.")
+    lane: str | None = Field(default=None, description="Retrieval lane (project, ops, research).")
+    source_refs: list[str] = Field(default_factory=list, description="Source page/capture IDs referenced by this content.")
 
 
 class SearchResponse(BaseModel):
@@ -668,6 +674,12 @@ class RagExpandedResult(BaseModel):
     epistemic_status: str | None = None
     matched_entities: list[str] = Field(default_factory=list, description="Entity IDs/names reached during graph expansion.")
     relevant_because: str = Field(default="", description="Human-readable summary of why this result is relevant.")
+    observed_at: str | None = Field(default=None)
+    valid_from: str | None = Field(default=None)
+    valid_until: str | None = Field(default=None)
+    actor: str | None = Field(default=None)
+    lane: str | None = Field(default=None)
+    source_refs: list[str] = Field(default_factory=list)
 
 
 class RagExpandedResponse(BaseModel):

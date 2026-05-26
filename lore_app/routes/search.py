@@ -5,7 +5,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from ..context_graph import ContextGraphCache
-from ..deps import get_context_graph_cache, get_graph_cache, get_repo, get_search_index, get_templates, get_vector_store
+from ..deps import get_context_graph_cache, get_graph_cache, get_ledger_db, get_repo, get_search_index, get_templates, get_vector_store
+from ..ledger import LedgerDB
 from ..link_graph import LinkGraphCache
 from ..repository import LoreRepository
 from ..route_utils import rebuild_vector_index, template_context
@@ -47,8 +48,9 @@ def api_search(
     visibility: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=50),
     repo: LoreRepository = Depends(get_repo),
+    ledger: LedgerDB = Depends(get_ledger_db),
 ):
-    return repo.search(q, kind=kind, visibility=visibility, limit=limit)
+    return repo.search(q, kind=kind, visibility=visibility, limit=limit, ledger=ledger)
 
 
 @router.post("/api/search/reindex")
