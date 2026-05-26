@@ -18,7 +18,7 @@ For local development from this repository:
 python -m venv .venv
 . .venv/bin/activate
 pip install -e ".[test]"
-LORE_CONTENT_DIR=./sample-vault uvicorn lore_app.main:app --reload --port 8078
+LORE_CONTENT_DIR=./sample-vault uvicorn lore_app.asgi:app --reload --port 8078
 ```
 
 Run with Docker:

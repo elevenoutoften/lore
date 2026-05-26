@@ -74,7 +74,7 @@ Environment=LORE_VECTOR_DB=/var/lib/lore/vectors.db
 Environment=LORE_API_KEYS_DB=/var/lib/lore/api_keys.db
 Environment=LORE_AUTH_MODE=bearer
 Environment=LORE_AUTH_SECRET=your-secret-here
-ExecStart=/opt/lore/.venv/bin/uvicorn lore_app.main:app --host 0.0.0.0 --port 8000
+ExecStart=/opt/lore/.venv/bin/uvicorn lore_app.asgi:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 
 [Install]

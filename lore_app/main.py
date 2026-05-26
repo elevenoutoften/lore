@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import secrets
 import time
 from pathlib import Path
@@ -26,7 +25,7 @@ from .rag.vector_store import VectorStore
 from .repository import LoreRepository
 from .route_utils import actor_from_request, client_rate_limit_key, is_rate_limited_write, retrieve_context, workspace_lore_config
 from .routes import admin_router, api_keys_router, captures_router, consolidation_router, context_graph_router, distillation_router, extraction_router, graph_router, heartbeat_router, ledger_router, lint_router, mcp_router, memory_router, metadata_router, pages_router, policies_router, precedents_router, procedures_router, provenance_router, rag_router, search_router, trace_router
-from .routes.admin import package_name, package_version
+from .routes.admin import package_version
 from .search_index import LoreSearchIndex
 from .security import RateLimiter
 from .audit import AuditLog
@@ -39,23 +38,10 @@ def default_content_dir() -> Path:
 
 
 def create_app(
-    config: LoreConfig | str | Path | None = None,
-    search_db: str | Path | None = None,
-    *,
+    config: LoreConfig | None = None,
     mount_workspaces: bool = True,
 ) -> FastAPI:
-    if isinstance(config, LoreConfig):
-        lore_config = config
-    else:
-        lore_config = LoreConfig()
-        if config is not None:
-            lore_config.content_dir = Path(config)
-        if search_db is not None:
-            lore_config.search_db = Path(search_db)
-            if "LORE_LEDGER_DB" not in os.environ:
-                lore_config.ledger_db = Path(search_db).with_name("ledger.db")
-            if "LORE_API_KEYS_DB" not in os.environ:
-                lore_config.api_keys_db = Path(search_db).with_name("api_keys.db")
+    lore_config = config or LoreConfig()
 
     if lore_config.auth_mode not in VALID_AUTH_MODES:
         raise ValueError(
@@ -227,5 +213,3 @@ def create_app(
     app.include_router(pages_router)
 
     return app
-
-app = create_app()

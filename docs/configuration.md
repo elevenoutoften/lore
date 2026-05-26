@@ -10,9 +10,9 @@ Lore reads configuration from environment variables through
 | `LORE_APP_NAME` | `Lore` | FastAPI application title and UI name. |
 | `LORE_APP_DESCRIPTION` | `Markdown-backed knowledge wiki for teams and agents.` | API and UI description. |
 | `LORE_CONTENT_DIR` | `./data/pages` | Markdown page root. |
-| `LORE_SEARCH_DB` | `/data/db/search.db` | SQLite search index path. |
-| `LORE_VECTOR_DB` | `/data/db/vectors.db` | Local vector/retrieval index path. |
-| `LORE_API_KEYS_DB` | `/data/db/api_keys.db` | SQLite database for Lore-owned agent API keys. |
+| `LORE_SEARCH_DB` | `./data/db/search.db` | SQLite search index path. |
+| `LORE_VECTOR_DB` | `./data/db/vectors.db` | Local vector/retrieval index path. |
+| `LORE_API_KEYS_DB` | `./data/db/api_keys.db` | SQLite database for Lore-owned agent API keys. |
 | `LORE_HOST` | `0.0.0.0` | Host used by service launchers. |
 | `LORE_PORT` | `8000` | Port used by service launchers. |
 | `LORE_AUTH_MODE` | `none` | Auth mode: `none`, `bearer`, `basic`, or `api_key`. |
@@ -36,20 +36,20 @@ lore info
 No auth:
 
 ```bash
-LORE_AUTH_MODE=none uvicorn lore_app.main:app
+LORE_AUTH_MODE=none uvicorn lore_app.asgi:app
 ```
 
 Bearer auth:
 
 ```bash
-LORE_AUTH_MODE=bearer LORE_AUTH_SECRET="$LORE_TOKEN" uvicorn lore_app.main:app
+LORE_AUTH_MODE=bearer LORE_AUTH_SECRET="$LORE_TOKEN" uvicorn lore_app.asgi:app
 curl -H "Authorization: Bearer $LORE_TOKEN" http://localhost:8078/api/pages
 ```
 
 Basic auth uses `LORE_AUTH_SECRET` as the complete decoded credential string:
 
 ```bash
-LORE_AUTH_MODE=basic LORE_AUTH_SECRET="admin:change-me" uvicorn lore_app.main:app
+LORE_AUTH_MODE=basic LORE_AUTH_SECRET="admin:change-me" uvicorn lore_app.asgi:app
 curl -u admin:change-me http://localhost:8078/api/pages
 ```
 
@@ -58,7 +58,7 @@ curl -u admin:change-me http://localhost:8078/api/pages
 Lore API key auth:
 
 ```bash
-LORE_AUTH_MODE=api_key LORE_API_KEYS_DB=./data/api_keys.db uvicorn lore_app.main:app
+LORE_AUTH_MODE=api_key LORE_API_KEYS_DB=./data/api_keys.db uvicorn lore_app.asgi:app
 curl -H "Authorization: Bearer $LORE_API_KEY" http://localhost:8078/api/pages
 ```
 
@@ -92,12 +92,15 @@ export LORE_WORKSPACES='{
     "content_dir": "/srv/lore/team-b/pages"
   }
 }'
-uvicorn lore_app.main:app --host 0.0.0.0 --port 8078
+uvicorn lore_app.asgi:app --host 0.0.0.0 --port 8078
 ```
 
 The default vault stays at `/`. Workspace `team-a` is available at `/team-a`.
 Unset workspace fields inherit the base `LORE_CONTENT_DIR`, `LORE_SEARCH_DB`, or
 `LORE_VECTOR_DB`.
+
+Use `lore_app.asgi:app` as the uvicorn entry point. `lore_app.main` remains
+import-safe and only exposes the application factory.
 
 ## Backup and Restore
 

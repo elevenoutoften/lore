@@ -24,7 +24,7 @@ ExecStart=/usr/bin/docker run --rm --name axis-lore \
     -e LORE_AUTH_MODE=${LORE_AUTH_MODE} \
     -e LORE_AUTH_SECRET=${LORE_AUTH_SECRET} \
     axis-lore:latest \
-    python -m uvicorn lore_app.main:app --host 0.0.0.0 --port ${LORE_PORT}
+    python -m uvicorn lore_app.asgi:app --host 0.0.0.0 --port ${LORE_PORT}
 ExecStop=/usr/bin/docker stop -t 10 axis-lore
 Restart=on-failure
 RestartSec=5s

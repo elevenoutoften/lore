@@ -16,6 +16,7 @@ if str(SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVICE_ROOT))
 
 from lore_app.main import create_app  # noqa: E402
+from lore_app.config import LoreConfig  # noqa: E402
 from lore_app.security import RateLimiter  # noqa: E402
 
 
@@ -65,7 +66,14 @@ def main() -> int:
         content_dir = root / "pages"
         content_dir.mkdir()
         search_db = root / "search.db"
-        app = create_app(content_dir, search_db)
+        config = LoreConfig()
+        config.content_dir = content_dir
+        config.search_db = search_db
+        config.vector_db = root / "vectors.db"
+        config.ledger_db = root / "ledger.db"
+        config.api_keys_db = root / "api_keys.db"
+        config.host = "127.0.0.1"
+        app = create_app(config)
         app.state.write_rate_limiter = RateLimiter(max_requests=10_000, window_seconds=60)
 
         with TestClient(app) as client:

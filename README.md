@@ -20,7 +20,7 @@ python -m venv .venv
 . .venv/bin/activate
 pip install -e ".[test]"
 pytest
-LORE_CONTENT_DIR=../../lore uvicorn lore_app.main:app --reload --port 8078
+LORE_CONTENT_DIR=../../lore uvicorn lore_app.asgi:app --reload --port 8078
 ```
 
 The public deployment runs behind a reverse proxy (e.g. Caddy). Browser
@@ -290,7 +290,7 @@ Initialize a local content directory from the sample data:
 
 ```bash
 scripts/init-demo-vault.sh /tmp/lore-demo-pages
-LORE_CONTENT_DIR=/tmp/lore-demo-pages uvicorn lore_app.main:app --reload --port 8078
+LORE_CONTENT_DIR=/tmp/lore-demo-pages uvicorn lore_app.asgi:app --reload --port 8078
 ```
 
 From the repo root, use:

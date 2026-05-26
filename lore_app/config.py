@@ -50,16 +50,17 @@ class LoreConfig:
     """Centralized configuration with env-var overrides."""
 
     def __init__(self) -> None:
+        default_db_dir = Path("./data/db")
         self.app_name: str = os.environ.get("LORE_APP_NAME", "Lore")
         self.app_description: str = os.environ.get(
             "LORE_APP_DESCRIPTION",
             "Markdown-backed knowledge wiki for teams and agents.",
         )
         self.content_dir: Path = Path(os.environ.get("LORE_CONTENT_DIR", "./data/pages"))
-        self.search_db: Path = Path(os.environ.get("LORE_SEARCH_DB", "/data/db/search.db"))
-        self.vector_db: Path = Path(os.environ.get("LORE_VECTOR_DB", "/data/db/vectors.db"))
-        self.ledger_db: Path = Path(os.environ.get("LORE_LEDGER_DB", "/data/db/ledger.db"))
-        self.api_keys_db: Path = Path(os.environ.get("LORE_API_KEYS_DB", "/data/db/api_keys.db"))
+        self.search_db: Path = Path(os.environ.get("LORE_SEARCH_DB", str(default_db_dir / "search.db")))
+        self.vector_db: Path = Path(os.environ.get("LORE_VECTOR_DB", str(default_db_dir / "vectors.db")))
+        self.ledger_db: Path = Path(os.environ.get("LORE_LEDGER_DB", str(default_db_dir / "ledger.db")))
+        self.api_keys_db: Path = Path(os.environ.get("LORE_API_KEYS_DB", str(default_db_dir / "api_keys.db")))
         self.host: str = os.environ.get("LORE_HOST", "0.0.0.0")
         self.port: int = int(os.environ.get("LORE_PORT", "8000"))
         self.auth_mode: str = os.environ.get("LORE_AUTH_MODE", "none")

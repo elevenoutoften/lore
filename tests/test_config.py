@@ -34,9 +34,9 @@ def test_config_defaults(monkeypatch):
     config = LoreConfig()
     assert config.app_name == "Lore"
     assert config.content_dir.as_posix() == "data/pages"
-    assert config.search_db.as_posix() == "/data/db/search.db"
-    assert config.vector_db.as_posix() == "/data/db/vectors.db"
-    assert config.api_keys_db.as_posix() == "/data/db/api_keys.db"
+    assert config.search_db.as_posix() == "data/db/search.db"
+    assert config.vector_db.as_posix() == "data/db/vectors.db"
+    assert config.api_keys_db.as_posix() == "data/db/api_keys.db"
     assert config.port == 8000
     assert config.auth_mode == "none"
     assert config.brand_title == "LORE"
@@ -152,8 +152,10 @@ def test_import_main_does_not_bypass_insecure_bind_guard(monkeypatch, tmp_path):
     monkeypatch.setenv("LORE_API_KEYS_DB", str(tmp_path / "api_keys.db"))
     import lore_app.main as _main_mod
 
+    importlib.reload(_main_mod)
+
     with pytest.raises(ValueError, match="SECURITY"):
-        importlib.reload(_main_mod)
+        _main_mod.create_app()
 
 
 def test_insecure_bind_allowed_with_override(monkeypatch, tmp_path):
