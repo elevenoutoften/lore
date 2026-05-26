@@ -80,6 +80,28 @@ def test_get_trace_round_trips_all_fields(tmp_path):
     assert response.json() == created
 
 
+def test_trace_create_with_lane(tmp_path):
+    with make_client(tmp_path) as client:
+        response = client.post(
+            "/api/traces",
+            json={
+                "actor": "agent:test",
+                "reason_summary": "Test trace with lane",
+                "lane": "project",
+            },
+        )
+
+        assert response.status_code == 201, response.text
+        data = response.json()
+        assert data.get("lane") == "project"
+
+        trace_id = data["trace_id"]
+        get_resp = client.get(f"/api/traces/{trace_id}")
+
+    assert get_resp.status_code == 200, get_resp.text
+    assert get_resp.json().get("lane") == "project"
+
+
 def test_list_traces_filters_by_actor_status_and_task_id(tmp_path):
     with make_client(tmp_path) as client:
         matching = client.post("/api/traces", json=trace_payload()).json()

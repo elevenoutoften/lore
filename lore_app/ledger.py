@@ -169,6 +169,7 @@ class LedgerDB:
             ("parent_trace_id", "TEXT DEFAULT NULL"),
             ("actor", "TEXT NOT NULL DEFAULT ''"),
             ("reason_summary", "TEXT NOT NULL DEFAULT ''"),
+            ("lane", "TEXT DEFAULT NULL"),
             ("status", "TEXT NOT NULL DEFAULT 'active'"),
             ("context_refs", "TEXT NOT NULL DEFAULT '[]'"),
             ("tool_refs", "TEXT NOT NULL DEFAULT '[]'"),
@@ -287,6 +288,7 @@ class LedgerDB:
                 parent_trace_id TEXT DEFAULT NULL,
                 actor TEXT NOT NULL DEFAULT '',
                 reason_summary TEXT NOT NULL DEFAULT '',
+                lane TEXT DEFAULT NULL,
                 status TEXT NOT NULL DEFAULT 'active',
                 context_refs TEXT NOT NULL DEFAULT '[]',
                 tool_refs TEXT NOT NULL DEFAULT '[]',
@@ -1251,16 +1253,17 @@ class LedgerDB:
             self.connection.execute(
                 """
                 INSERT OR REPLACE INTO reasoning_traces (
-                    trace_id, parent_trace_id, actor, reason_summary, status,
+                    trace_id, parent_trace_id, actor, reason_summary, lane, status,
                     context_refs, tool_refs, constraints, policy_refs, alternatives,
                     provenance, epistemic_status, outcome, related_ids, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload["trace_id"],
                     payload["parent_trace_id"],
                     payload["actor"],
                     payload["reason_summary"],
+                    payload["lane"],
                     payload["status"],
                     json.dumps(payload["context_refs"]),
                     json.dumps(payload["tool_refs"]),

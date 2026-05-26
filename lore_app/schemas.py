@@ -473,6 +473,7 @@ class TraceCreateRequest(BaseModel):
     parent_trace_id: str | None = None
     actor: str = Field(min_length=1, max_length=120)
     reason_summary: str = Field(min_length=1, max_length=5000)
+    lane: str | None = Field(default=None, description="Retrieval lane (project, ops, research).")
     status: Literal["active", "completed", "abandoned"] = "active"
     context_refs: list[ContextRef] = Field(default_factory=list)
     tool_refs: list[ToolRef] = Field(default_factory=list)
@@ -518,6 +519,7 @@ class TraceEntry(BaseModel):
     parent_trace_id: str | None = None
     actor: str
     reason_summary: str
+    lane: str | None = Field(default=None, description="Retrieval lane (project, ops, research).")
     status: str = "active"
     context_refs: list[ContextRef] = Field(default_factory=list)
     tool_refs: list[ToolRef] = Field(default_factory=list)
