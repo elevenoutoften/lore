@@ -80,6 +80,17 @@ class LoreConfig:
         self.code_ingest_max_files: int = int(os.environ.get("LORE_CODE_INGEST_MAX_FILES", "500"))
         self.code_ingest_max_depth: int = int(os.environ.get("LORE_CODE_INGEST_MAX_DEPTH", "10"))
         self.code_ingest_max_total_bytes: int = int(os.environ.get("LORE_CODE_INGEST_MAX_TOTAL_BYTES", str(50 * 1024 * 1024)))  # 50 MiB
+        self.llm_provider: str = os.environ.get("LORE_LLM_PROVIDER", "openrouter")
+        self.llm_model: str = os.environ.get("LORE_LLM_MODEL", "qwen3.6-plus")
+        self.llm_base_url: str = os.environ.get(
+            "LORE_LLM_BASE_URL",
+            "https://openrouter.ai/api/v1",
+        )
+        self.llm_api_key: str | None = os.environ.get("LORE_LLM_API_KEY")
+        self.llm_max_tokens: int = int(os.environ.get("LORE_LLM_MAX_TOKENS", "4096"))
+        self.llm_temperature: float = float(os.environ.get("LORE_LLM_TEMPERATURE", "0.3"))
+        self.llm_escalation_model: str = os.environ.get("LORE_LLM_ESCALATION_MODEL", "glm-5.1")
+        self.llm_escalation_api_key: str | None = os.environ.get("LORE_LLM_ESCALATION_API_KEY")
         self.workspaces: dict[str, WorkspaceConfig] = parse_workspaces(os.environ.get("LORE_WORKSPACES"))
         if self.auth_mode not in VALID_AUTH_MODES:
             raise ValueError(
@@ -111,6 +122,14 @@ class LoreConfig:
             "code_ingest_max_files": self.code_ingest_max_files,
             "code_ingest_max_depth": self.code_ingest_max_depth,
             "code_ingest_max_total_bytes": self.code_ingest_max_total_bytes,
+            "llm_provider": self.llm_provider,
+            "llm_model": self.llm_model,
+            "llm_base_url": self.llm_base_url,
+            "llm_api_key_configured": self.llm_api_key is not None,
+            "llm_max_tokens": self.llm_max_tokens,
+            "llm_temperature": self.llm_temperature,
+            "llm_escalation_model": self.llm_escalation_model,
+            "llm_escalation_api_key_configured": self.llm_escalation_api_key is not None,
             "workspaces": {name: workspace.to_dict() for name, workspace in self.workspaces.items()},
         }
 
