@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
+from unittest import mock
 
 from lore_app.extraction import compute_extraction_hash, extract_from_captures, get_unprocessed_captures
 from lore_app.ledger import LedgerDB
+from lore_app.llm_provider import FallbackLLMClient, LLMError
 from lore_app.repository import LoreRepository
 from lore_app.schemas import (
     ExtractedClaim,
@@ -263,6 +265,95 @@ def test_rule_based_extraction_preserves_provenance(tmp_path):
     assert "inbox/2026-05-10/lore-ledger" in claim.source_page_ids
     assert any(edge.target_entity == "services/workflow-engine" for edge in result.edges)
     assert result.invalidations[0].old_fact == "Lore only stores captures as Markdown."
+
+
+def test_llm_extraction_with_mock_client(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    repo.upsert_page(
+        "inbox/test-capture",
+        """---
+title: Test Capture
+kind: capture
+visibility: internal
+status: draft
+---
+The API Gateway routes requests to backends.
+""",
+    )
+    mock_client = mock.MagicMock(spec=FallbackLLMClient)
+    mock_client.extract_json.return_value = {
+        "entities": [
+            {"subject": "services/api", "name": "API Gateway", "entity_type": "service"},
+        ],
+        "claims": [
+            {
+                "subject": "services/api",
+                "predicate": "routes",
+                "object": "requests to backends",
+                "confidence": "high",
+                "source_page_ids": ["inbox/test-capture"],
+            },
+        ],
+        "edges": [
+            {"source": "services/api", "target": "services/backend", "edge_type": "depends_on"},
+        ],
+        "invalidations": [],
+    }
+
+    result = extract_from_captures(repo, dry_run=True, llm_client=mock_client, ledger_db=make_ledger(tmp_path))
+
+    assert result.source_capture_ids == ["inbox/test-capture"]
+    assert result.entities[0].target_page_hint == "services/api"
+    assert result.claims[0].subject == "services/api"
+    assert result.edges[0].relationship_type == "depends_on"
+    assert mock_client.extract_json.call_count == 1
+
+
+def test_deterministic_fallback_on_llm_failure(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    repo.upsert_page(
+        "inbox/fallback-capture",
+        """---
+title: Fallback Capture
+kind: capture
+visibility: internal
+status: draft
+---
+The [[services/auth]] module handles authentication.
+""",
+    )
+    mock_client = mock.MagicMock(spec=FallbackLLMClient)
+    mock_client.extract_json.side_effect = LLMError("Provider unavailable")
+
+    result = extract_from_captures(repo, dry_run=True, llm_client=mock_client, ledger_db=make_ledger(tmp_path))
+
+    assert result.source_capture_ids == ["inbox/fallback-capture"]
+    assert any(entity.target_page_hint == "services/auth" for entity in result.entities)
+    assert result.claims
+
+
+def test_provider_none_forces_deterministic(client):
+    client.app.state.llm_client = mock.MagicMock(spec=FallbackLLMClient)
+
+    response = client.post(
+        "/api/capture",
+        json={
+            "title": "Provider none capture",
+            "observation": "Provider none references [[services/workflow-engine]].",
+            "suggested_target_page": "services/lore",
+        },
+    )
+    assert response.status_code == 201, response.text
+    capture_id = response.json()["page"]["id"]
+
+    extract = client.post(
+        "/api/extraction/run",
+        json={"capture_ids": [capture_id], "dry_run": True, "provider": "none"},
+    )
+
+    assert extract.status_code == 200, extract.text
+    assert client.app.state.llm_client.extract_json.call_count == 0
+    assert extract.json()["claims"][0]["subject"] == "services/lore"
 
 
 def test_extraction_api_endpoints(client):

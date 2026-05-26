@@ -54,13 +54,14 @@ def extract_from_captures(
     dry_run: bool = True,
     *,
     ledger_db: LedgerDB | None = None,
+    llm_client: Any | None = None,
 ) -> ExtractionResult:
     """
-    Run deterministic Phase 1 extraction on captures.
+    Run extraction on captures.
 
-    This is intentionally rule based. The LLM integration point is the isolated
-    per-capture extraction function, which can later be replaced by a provider
-    implementation that returns the same schema objects.
+    If an LLM client is supplied, each capture is attempted with the LLM-backed
+    extractor first. Failed or invalid LLM output falls back to the deterministic
+    extractor for that capture.
     """
 
     ledger = _ledger(ledger_db)
@@ -79,7 +80,20 @@ def extract_from_captures(
 
     for capture in selected:
         source_capture_ids.append(capture.id)
-        capture_entities, capture_claims, capture_edges, capture_invalidations = _extract_capture(repo, capture)
+        llm_result = None
+        if llm_client is not None:
+            from .llm_extractor import llm_extract_capture
+
+            llm_result = llm_extract_capture(capture, llm_client, repo=repo)
+
+        if llm_result is not None:
+            capture_entities = llm_result.get("entities", [])
+            capture_claims = llm_result.get("claims", [])
+            capture_edges = llm_result.get("edges", [])
+            capture_invalidations = llm_result.get("invalidations", [])
+        else:
+            capture_entities, capture_claims, capture_edges, capture_invalidations = _extract_capture(repo, capture)
+
         for entity in capture_entities:
             key = (entity.name.casefold(), entity.target_page_hint)
             if key not in seen_entities:

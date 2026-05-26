@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from ..deps import get_ledger_db, get_repo
 from ..extraction import extract_from_captures, get_unprocessed_captures
@@ -20,15 +20,20 @@ router = APIRouter()
 @router.post("/api/extraction/run", response_model=ExtractionResult)
 def api_run_extraction(
     payload: ExtractionRequest,
+    request: Request,
     repo: LoreRepository = Depends(get_repo),
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ):
+    llm_client = getattr(request.app.state, "llm_client", None)
+    if payload.provider in ("none", "deterministic"):
+        llm_client = None
     return extract_from_captures(
         repo,
         capture_ids=payload.capture_ids,
         batch_size=payload.batch_size,
         dry_run=payload.dry_run,
         ledger_db=ledger_db,
+        llm_client=llm_client,
     )
 
 
