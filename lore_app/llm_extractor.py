@@ -6,6 +6,7 @@ module raises.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any
 
@@ -29,6 +30,7 @@ Each claim has: subject (page ID), predicate, object, confidence (high/medium/lo
 Each edge has: source (page ID), target (page ID), edge_type (mentions/depends_on/contradicts/supports/supersedes).
 Each invalidation has: target_claim (page ID or claim text), reason, source_page_ids.
 Only extract what is explicitly stated. Do not infer unstated relationships."""
+EXTRACTION_PROMPT_HASH = hashlib.sha256(EXTRACTION_SYSTEM_PROMPT.encode()).hexdigest()[:16]
 
 
 def llm_extract_capture(
@@ -61,7 +63,15 @@ def llm_extract_capture(
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
             user_prompt=user_prompt,
         )
-        return _validate_llm_output(result, page_id, title)
+        metadata = result.pop("_lore_meta", {}) if isinstance(result, dict) else {}
+        validated = _validate_llm_output(result, page_id, title)
+        model_version = _resolve_model_version(llm_client, metadata)
+        token_usage = _resolve_token_usage(metadata)
+        for claim in validated["claims"]:
+            claim.model_version = model_version
+            claim.prompt_hash = EXTRACTION_PROMPT_HASH
+            claim.token_usage = token_usage
+        return validated
     except (LLMError, LLMJsonError) as exc:
         logger.warning("LLM extraction failed for %s: %s", page_id, exc)
         raise
@@ -226,3 +236,32 @@ def _entity_name(page_id: str | None) -> str | None:
     if not page_id:
         return None
     return page_id.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").title()
+
+
+def _resolve_model_version(llm_client: FallbackLLMClient, metadata: dict[str, Any]) -> str | None:
+    model_version = _clean_string(metadata.get("model"))
+    if model_version:
+        return model_version
+    config = getattr(getattr(llm_client, "primary", None), "config", None)
+    configured_model = getattr(config, "model", None)
+    if configured_model:
+        return str(configured_model)
+    model_name = getattr(getattr(llm_client, "primary", None), "model_name", None)
+    return str(model_name) if model_name else None
+
+
+def _resolve_token_usage(metadata: dict[str, Any]) -> dict[str, int] | None:
+    usage = metadata.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    prompt_tokens = usage.get("prompt_tokens")
+    completion_tokens = usage.get("completion_tokens")
+    if prompt_tokens is None or completion_tokens is None:
+        return None
+    try:
+        return {
+            "prompt": int(prompt_tokens),
+            "completion": int(completion_tokens),
+        }
+    except (TypeError, ValueError):
+        return None

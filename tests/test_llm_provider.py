@@ -86,7 +86,9 @@ class TestLLMClient:
         monkeypatch.setattr(client._client, "post", mock.MagicMock(return_value=mock_response))
 
         result = client.extract_json("You are a extractor.", "Extract from: foo")
-        assert result == {"entities": [], "claims": []}
+        assert result["entities"] == []
+        assert result["claims"] == []
+        assert result["_lore_meta"] == {"usage": {}, "model": "test-model"}
         client.close()
 
     def test_extract_json_invalid_json(self, monkeypatch):

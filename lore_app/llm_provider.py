@@ -108,11 +108,17 @@ class LLMClient:
 
                 if response_format and response_format.get("type") == "json_object":
                     try:
-                        return json.loads(content)
+                        parsed = json.loads(content)
                     except json.JSONDecodeError as exc:
                         raise LLMJsonError(
                             f"LLM returned invalid JSON: {exc}\nContent: {content[:200]}"
                         ) from exc
+                    if isinstance(parsed, dict):
+                        parsed["_lore_meta"] = {
+                            "usage": data.get("usage", {}),
+                            "model": data.get("model") or payload["model"],
+                        }
+                    return parsed
 
                 return {
                     "content": content,

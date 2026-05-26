@@ -884,6 +884,9 @@ class ExtractedClaim(BaseModel):
     evidence: str | None = None
     source_page_ids: list[str] = Field(default_factory=list)
     epistemic_status: EpistemicStatus | None = None
+    model_version: str | None = None
+    prompt_hash: str | None = None
+    token_usage: dict[str, int] | None = None
 
 
 class ExtractedEdge(BaseModel):
@@ -1205,6 +1208,9 @@ class ExtractedCandidateResponse(BaseModel):
     source_capture_ids: list[str] = Field(default_factory=list, description="Capture IDs that contributed to this candidate.")
     source_page_ids: list[str] = Field(default_factory=list, description="Lore page IDs that contributed to this candidate.")
     evidence: str | None = Field(default=None, description="Supporting evidence text extracted from the claim content.")
+    model_version: str | None = None
+    prompt_hash: str | None = None
+    token_usage: dict[str, int] | None = None
     content: dict[str, Any] | None = Field(default=None, description="The full parsed content JSON.")
     created_at: str
     updated_at: str

@@ -98,6 +98,9 @@ def extract_from_captures(
                 capture_claims = llm_result.get("claims", [])
                 capture_edges = llm_result.get("edges", [])
                 capture_invalidations = llm_result.get("invalidations", [])
+                llm_observed_at = datetime.now(timezone.utc).isoformat()
+                for claim in capture_claims:
+                    claim.observed_at = llm_observed_at
             else:
                 capture_entities, capture_claims, capture_edges, capture_invalidations = _extract_capture(repo, capture)
         except Exception as fallback_exc:

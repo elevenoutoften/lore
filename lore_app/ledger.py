@@ -144,6 +144,9 @@ class LedgerDB:
             ("superseded_by", "TEXT DEFAULT NULL"),
             ("invalidation_reason", "TEXT DEFAULT NULL"),
             ("epistemic_status", "TEXT DEFAULT NULL"),
+            ("model_version", "TEXT DEFAULT NULL"),
+            ("prompt_hash", "TEXT DEFAULT NULL"),
+            ("token_usage", "TEXT DEFAULT NULL"),
         ],
         "patch_plans": [
             ("batch_id", "TEXT DEFAULT NULL"),
@@ -511,8 +514,8 @@ class LedgerDB:
                             candidate_id, batch_id, candidate_type, status, confidence, epistemic_status,
                             actor, lane, content_json, dedupe_hash, source_capture_ids,
                             source_page_ids, observed_at, valid_from, valid_until,
-                            strength, created_at, updated_at
-                        ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            strength, model_version, prompt_hash, token_usage, created_at, updated_at
+                        ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             str(uuid.uuid4()),
@@ -530,6 +533,9 @@ class LedgerDB:
                             metadata.get("valid_from"),
                             metadata.get("valid_until"),
                             metadata.get("strength", 0.5),
+                            metadata.get("model_version"),
+                            metadata.get("prompt_hash"),
+                            json.dumps(metadata["token_usage"]) if metadata.get("token_usage") is not None else None,
                             now,
                             now,
                         ),
@@ -616,6 +622,9 @@ class LedgerDB:
                     UPDATE extraction_candidates
                     SET strength = ?, confidence = ?, epistemic_status = ?, source_capture_ids = ?,
                         source_page_ids = ?, valid_from = ?, valid_until = ?,
+                        model_version = COALESCE(?, model_version),
+                        prompt_hash = COALESCE(?, prompt_hash),
+                        token_usage = COALESCE(?, token_usage),
                         updated_at = ?
                     WHERE candidate_id = ?
                     """,
@@ -627,6 +636,9 @@ class LedgerDB:
                         json.dumps(merged_pages),
                         existing_valid_from,
                         existing_valid_until,
+                        metadata.get("model_version"),
+                        metadata.get("prompt_hash"),
+                        json.dumps(metadata["token_usage"]) if metadata.get("token_usage") is not None else None,
                         now,
                         existing_id,
                     ),
@@ -656,8 +668,8 @@ class LedgerDB:
                     actor, lane, content_json, dedupe_hash, source_capture_ids,
                     source_page_ids, observed_at, valid_from, valid_until,
                     strength, normalized_subject, normalized_predicate, normalized_object,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    model_version, prompt_hash, token_usage, created_at, updated_at
+                ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     candidate_id,
@@ -678,6 +690,9 @@ class LedgerDB:
                     normalized_subject,
                     normalized_predicate,
                     normalized_object,
+                    metadata.get("model_version"),
+                    metadata.get("prompt_hash"),
+                    json.dumps(metadata["token_usage"]) if metadata.get("token_usage") is not None else None,
                     now,
                     now,
                 ),
@@ -1481,6 +1496,9 @@ def _candidate_metadata(candidate: Any) -> dict[str, Any]:
             "observed_at": candidate.observed_at,
             "valid_from": candidate.valid_from,
             "valid_until": candidate.valid_until,
+            "model_version": candidate.model_version,
+            "prompt_hash": candidate.prompt_hash,
+            "token_usage": candidate.token_usage,
         }
     if isinstance(candidate, ExtractedEdge):
         return {"strength": candidate.strength}
@@ -1499,7 +1517,7 @@ def _candidate_source_page_ids(candidate: Any) -> list[str]:
 
 def _decode_row(row: sqlite3.Row) -> dict[str, Any]:
     decoded = dict(row)
-    for key in ("content_json", "source_capture_ids", "source_page_ids", "candidate_ids", "policies_applied"):
+    for key in ("content_json", "source_capture_ids", "source_page_ids", "candidate_ids", "policies_applied", "token_usage"):
         if key not in decoded:
             continue
         try:

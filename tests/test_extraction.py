@@ -311,6 +311,68 @@ The API Gateway routes requests to backends.
     assert mock_client.extract_json.call_count == 1
 
 
+def test_llm_provenance_on_extracted_claims(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    repo.upsert_page(
+        "inbox/test-llm-provenance",
+        """---
+title: Test LLM Provenance
+kind: capture
+visibility: internal
+status: draft
+observed_at: 2026-05-10T00:00:00+00:00
+---
+The API Gateway routes requests to backends.
+""",
+    )
+    mock_client = mock.MagicMock(spec=FallbackLLMClient)
+    mock_client.primary = mock.MagicMock()
+    mock_client.primary.config.model = "qwen3.6-plus"
+    mock_client.extract_json.return_value = {
+        "entities": [],
+        "claims": [
+            {
+                "subject": "services/api",
+                "predicate": "routes",
+                "object": "requests to backends",
+                "confidence": "high",
+                "source_page_ids": ["inbox/test-llm-provenance"],
+                "observed_at": "2025-01-01T00:00:00+00:00",
+            },
+        ],
+        "edges": [],
+        "invalidations": [],
+        "_lore_meta": {
+            "model": "qwen3.6-plus",
+            "usage": {"prompt_tokens": 42, "completion_tokens": 13},
+        },
+    }
+
+    result = extract_from_captures(repo, dry_run=True, llm_client=mock_client, ledger_db=make_ledger(tmp_path))
+
+    claim = result.claims[0]
+    assert claim.model_version == "qwen3.6-plus"
+    assert claim.prompt_hash is not None
+    assert len(claim.prompt_hash) == 16
+    assert claim.token_usage == {"prompt": 42, "completion": 13}
+    assert claim.observed_at is not None
+    assert claim.observed_at != "2026-05-10T00:00:00+00:00"
+    assert claim.observed_at != "2025-01-01T00:00:00+00:00"
+
+
+def test_deterministic_claims_have_no_provenance(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    capture_id = add_capture(repo)
+    ledger = make_ledger(tmp_path)
+
+    result = extract_from_captures(repo, capture_ids=[capture_id], dry_run=True, ledger_db=ledger)
+
+    claim = result.claims[0]
+    assert claim.model_version is None
+    assert claim.prompt_hash is None
+    assert claim.token_usage is None
+
+
 def test_deterministic_fallback_on_llm_failure(tmp_path):
     repo = LoreRepository(tmp_path / "pages")
     repo.upsert_page(
