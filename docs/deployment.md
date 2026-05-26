@@ -38,6 +38,20 @@ Verify:
 curl -sS http://localhost:8078/healthz
 ```
 
+### GitHub Container Registry
+
+Pre-built images are published to GHCR on tagged releases:
+
+```bash
+docker pull ghcr.io/elevenoutoften/lore:0.3.0-beta.1
+docker run -d -p 8000:8000 \
+  -e LORE_AUTH_MODE=bearer \
+  -e LORE_BEARER_TOKEN=your-token \
+  -v lore-pages:/data/pages \
+  -v lore-db:/data/db \
+  ghcr.io/elevenoutoften/lore:0.3.0-beta.1
+```
+
 ## Systemd
 
 The repository includes a systemd guide at

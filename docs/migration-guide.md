@@ -61,11 +61,14 @@ Create GitHub Actions workflows for the standalone repository:
   chosen for the standalone project.
 - [ ] Build workflow creates Python package artifacts and validates Docker image
   builds.
-- [ ] Publish workflow uploads the `lore-app` package to PyPI on tagged releases.
-- [ ] Docker publish workflow uploads the `lore-app` image to Docker Hub or the
-  selected registry.
-- [ ] Required repository secrets are documented and configured for PyPI,
-  registry publishing, and any signing process.
+- [x] Publish workflow creates a GitHub Release with wheel and sdist artifacts
+  on `v*` tags.
+- [x] Docker publish workflow uploads the Lore image to GitHub Container
+  Registry (`ghcr.io/elevenoutoften/lore`) on tagged releases.
+- [ ] PyPI publishing remains deferred until package registry release policy and
+  credentials are finalized.
+- [x] No repository publish secrets are required for GitHub Release or GHCR;
+  Actions use the built-in `GITHUB_TOKEN`.
 
 Recommended release workflow gates:
 
@@ -95,8 +98,11 @@ Prepare and publish the first beta:
 
 - [ ] Confirm the beta release checklist is complete.
 - [ ] Tag the release as `v1.0.0-beta.1`.
-- [ ] Publish `lore-app` to PyPI.
-- [ ] Publish the `lore-app` Docker image.
+- [x] Publish a GitHub Release with generated release notes and attached Python
+  artifacts.
+- [x] Publish the Lore Docker image to `ghcr.io/elevenoutoften/lore`.
+- [ ] Publish `lore-app` to PyPI after deferred package registry work is
+  completed.
 - [ ] Publish SDK packages if they are versioned independently.
 - [ ] Create release notes with install commands, upgrade guidance, known
   limitations, and rollback guidance.
@@ -109,7 +115,7 @@ Prepare and publish the first beta:
 | --- | --- | --- | --- |
 | Code extraction changes behavior | Low | Lore is self-contained and no code changes are required for extraction. | Run the full test and eval suites before and after extraction. |
 | Lost or noisy history | Low | Subtree extraction should preserve relevant history but may include imperfect commit boundaries. | Inspect the split branch before pushing and keep the ExampleProject repository as source history. |
-| CI/CD secrets missing or incorrect | Medium | New PyPI and registry credentials are required. | Document secrets, use protected environments, and test publish to a staging registry when available. |
+| CI/CD secrets missing or incorrect | Low | GitHub Release and GHCR publishing use the built-in `GITHUB_TOKEN`; only future PyPI work will need extra credentials. | Keep publish permissions minimal and add PyPI credentials only when package publishing is enabled. |
 | Docker context assumptions break | Medium | Existing Dockerfile may assume the monorepo layout. | Build from a clean standalone checkout and adjust paths before release. |
 | Documentation links break | Medium | Some links may reference ExampleProject-relative paths. | Run a docs link check before publishing. |
 | Downstream users depend on old path | Low | Existing users may reference `services/lore/` in scripts. | Provide migration notes and keep ExampleProject integration as a subtree, submodule, or pinned dependency. |
@@ -122,8 +128,8 @@ If the standalone migration needs to be reversed or paused:
   repository passes release checks.
 - Reattach Lore to ExampleProject as a Git submodule or Git subtree if shared
   development still needs to happen from the monorepo.
-- Pin ExampleProject deployments to a known good PyPI version of `lore-app` once package
-  publishing is stable.
+- Pin ExampleProject deployments to a known good GitHub Release artifact or GHCR
+  image until PyPI publishing is enabled.
 - Keep the pre-migration ExampleProject commit available as the fallback deployment
   source.
 - If a beta artifact is bad, yank or mark it deprecated in the package registry,

@@ -176,3 +176,12 @@ verified against the release candidate build, not only local development code.
   that are unexpected for the release.
 - [ ] Performance benchmarks are within release thresholds for page CRUD, search,
   link graph generation, RAG retrieval, and startup time.
+
+## Publishing
+
+- [ ] Tag the release: `git tag -a v0.3.0-beta.1 -m "Beta 1 release" && git push origin v0.3.0-beta.1`
+- [ ] Verify the `publish` GitHub Action runs and completes successfully
+- [ ] Verify GitHub Release is created at https://github.com/elevenoutoften/lore/releases with wheel + sdist assets
+- [ ] Verify Docker image appears at `ghcr.io/elevenoutoften/lore` with the version tag
+- [ ] Verify `pre-release` flag is set for beta/alpha/rc tags
+- [ ] (Future: PyPI publish when configured)
