@@ -78,9 +78,9 @@ def create_app(
             "enforces authentication."
         )
 
-    repo = LoreRepository(lore_config.content_dir)
-    repo.ensure_root()
     search_idx = LoreSearchIndex(lore_config.search_db)
+    repo = LoreRepository(lore_config.content_dir, search_index=search_idx)
+    repo.ensure_root()
     vector_store = VectorStore(lore_config.vector_db)
     lint_config = LintConfig(Path(lore_config.content_dir) / ".lore-lint.json")
     graph_cache = LinkGraphCache()

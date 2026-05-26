@@ -23,13 +23,8 @@ from ..audit import AuditLog
 from ..consolidation_worker import ConsolidationWorker
 from ..ledger import LedgerDB
 from ..link_graph import LinkGraphCache
-from ..mcp import (
-    WRITE_TOOL_NAMES,
-    JsonRpcError,
-    error_response,
-    exception_response,
-    handle_mcp_message,
-)
+from ..mcp import dispatch as mcp_dispatch
+from ..mcp.tools import WRITE_TOOL_NAMES
 from ..observability import MetricsCollector
 from ..config import LoreConfig
 from ..patch_planner import PatchPlanner
@@ -62,7 +57,7 @@ async def mcp(
     try:
         payload = await request.json()
     except json.JSONDecodeError:
-        return JSONResponse(exception_response(None, "Request body must be valid JSON."), status_code=400)
+        return JSONResponse(mcp_dispatch.exception_response(None, "Request body must be valid JSON."), status_code=400)
 
     request_id = payload.get("id") if isinstance(payload, dict) else None
     write_call_count = mcp_write_call_count(payload)
@@ -72,7 +67,7 @@ async def mcp(
             if not request.app.state.write_rate_limiter.check(key):
                 return JSONResponse({"detail": "Rate limit exceeded."}, status_code=429)
     try:
-        response_payload = handle_mcp_message(
+        response_payload = mcp_dispatch.handle_mcp_message(
             repo,
             payload,
             search_idx,
@@ -86,12 +81,12 @@ async def mcp(
             audit_log=audit_log,
             metrics=metrics,
         )
-    except JsonRpcError as exc:
-        return JSONResponse(error_response(request_id, exc), status_code=200)
+    except mcp_dispatch.JsonRpcError as exc:
+        return JSONResponse(mcp_dispatch.error_response(request_id, exc), status_code=200)
     except Exception as exc:
         logger.exception("Unexpected error in MCP handler")
         return JSONResponse(
-            exception_response(request_id, "internal error; see server logs"),
+            mcp_dispatch.exception_response(request_id, "internal error; see server logs"),
             status_code=500,
         )
 

@@ -42,10 +42,8 @@ def build_link_graph(repo: LoreRepository) -> LinkGraphResponse:
     edges: list[LinkEdge] = []
     seen: set[tuple[str, str | None, str, str | None, bool, bool]] = set()
 
-    for summary in pages:
-        page = repo.read_page(summary.id)
-        if page is None:
-            continue
+    for page in repo.iter_pages():
+        summary = page_by_id.get(page.id, page)
         rendered = render_page_markdown(page, page_ids)
         for link in rendered.links:
             edge = LinkEdge(
@@ -74,10 +72,7 @@ def build_link_graph(repo: LoreRepository) -> LinkGraphResponse:
 
 def build_source_edges(repo: LoreRepository) -> list[LinkEdge]:
     edges: list[LinkEdge] = []
-    for summary in repo.list_pages():
-        page = repo.read_page(summary.id)
-        if page is None:
-            continue
+    for page in repo.iter_pages():
         for source in string_list(page.frontmatter.get("sources")):
             edges.append(
                 LinkEdge(

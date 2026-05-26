@@ -54,23 +54,19 @@ def build_context_graph(repo: LoreRepository, ledger: LedgerDB | None = None) ->
         edge_keys.add(edge_key)
         edges.append(ContextGraphEdge(source=source, target=target, type=edge_type, label=label, metadata=compact))
 
-    for page in repo.list_pages():
-        detail = repo.read_page(page.id)
-        if detail is None:
-            continue
-
+    for detail in repo.iter_pages():
         fm = detail.frontmatter
         provenance = _provenance_dict(fm.get("provenance"))
-        kind = optional_string(fm.get("kind")) or page.kind or "page"
+        kind = optional_string(fm.get("kind")) or detail.kind or "page"
         node_type = ContextNodeType.capture if kind == "capture" else ContextNodeType.page
         add_node(
             ContextGraphNode(
-                id=page.id,
+                id=detail.id,
                 type=node_type,
-                label=page.title or page.id,
+                label=detail.title or detail.id,
                 metadata={
                     "kind": kind,
-                    "visibility": optional_string(fm.get("visibility")) or page.visibility,
+                    "visibility": optional_string(fm.get("visibility")) or detail.visibility,
                     "status": optional_string(fm.get("status")),
                     "tags": string_list(fm.get("tags")),
                 },
@@ -78,7 +74,7 @@ def build_context_graph(repo: LoreRepository, ledger: LedgerDB | None = None) ->
         )
 
         for link in _page_wikilinks(detail.body):
-            add_edge(page.id, link, ContextEdgeType.mentions, "wikilink")
+            add_edge(detail.id, link, ContextEdgeType.mentions, "wikilink")
 
         for source_path in _dedupe(
             string_list(fm.get("source_paths"))
@@ -87,7 +83,7 @@ def build_context_graph(repo: LoreRepository, ledger: LedgerDB | None = None) ->
         ):
             source_id = _source_node_id(source_path)
             ensure_node(source_id, ContextNodeType.source, source_path, path=source_path)
-            add_edge(source_id, page.id, ContextEdgeType.source_of, source_path)
+            add_edge(source_id, detail.id, ContextEdgeType.source_of, source_path)
 
         for source_url in _dedupe(
             string_list(fm.get("source_urls"))
@@ -96,7 +92,7 @@ def build_context_graph(repo: LoreRepository, ledger: LedgerDB | None = None) ->
         ):
             source_id = _source_node_id(source_url)
             ensure_node(source_id, ContextNodeType.source, source_url, url=source_url)
-            add_edge(source_id, page.id, ContextEdgeType.source_of, source_url)
+            add_edge(source_id, detail.id, ContextEdgeType.source_of, source_url)
 
         for task_id in _dedupe(
             string_list(fm.get("task_id"))
@@ -106,39 +102,39 @@ def build_context_graph(repo: LoreRepository, ledger: LedgerDB | None = None) ->
         ):
             task_node_id = f"task:{task_id}"
             ensure_node(task_node_id, ContextNodeType.task, task_id)
-            add_edge(page.id, task_node_id, ContextEdgeType.task_related, task_id)
+            add_edge(detail.id, task_node_id, ContextEdgeType.task_related, task_id)
 
         for trace_id in _dedupe(string_list(fm.get("trace_id")) + string_list(provenance.get("trace_ids"))):
             trace_node_id = f"trace:{trace_id}"
             ensure_node(trace_node_id, ContextNodeType.trace, trace_id, referenced=True)
-            add_edge(page.id, trace_node_id, ContextEdgeType.provenance, trace_id)
+            add_edge(detail.id, trace_node_id, ContextEdgeType.provenance, trace_id)
 
         for policy_id in _dedupe(string_list(fm.get("policies_applied")) + string_list(provenance.get("policy_ids"))):
             policy_node_id = f"policy:{policy_id}"
             ensure_node(policy_node_id, ContextNodeType.policy, policy_id, referenced=True)
-            add_edge(page.id, policy_node_id, ContextEdgeType.used_policy, policy_id)
+            add_edge(detail.id, policy_node_id, ContextEdgeType.used_policy, policy_id)
 
         for related_page_id in _dedupe(string_list(fm.get("related_pages")) + string_list(provenance.get("page_ids"))):
-            add_edge(page.id, related_page_id, ContextEdgeType.provenance, related_page_id)
+            add_edge(detail.id, related_page_id, ContextEdgeType.provenance, related_page_id)
 
         for capture_id in _dedupe(string_list(provenance.get("capture_ids"))):
-            add_edge(page.id, capture_id, ContextEdgeType.provenance, capture_id)
+            add_edge(detail.id, capture_id, ContextEdgeType.provenance, capture_id)
 
         for candidate_id in _dedupe(string_list(provenance.get("candidate_ids"))):
             candidate_node_id = f"candidate:{candidate_id}"
             ensure_node(candidate_node_id, ContextNodeType.entity, candidate_id, referenced=True)
-            add_edge(page.id, candidate_node_id, ContextEdgeType.provenance, candidate_id)
+            add_edge(detail.id, candidate_node_id, ContextEdgeType.provenance, candidate_id)
 
         actor = optional_string(fm.get("actor")) or optional_string(provenance.get("actor"))
         if actor:
             actor_id = f"actor:{actor}"
             ensure_node(actor_id, ContextNodeType.actor, actor)
-            add_edge(actor_id, page.id, ContextEdgeType.authored, actor)
+            add_edge(actor_id, detail.id, ContextEdgeType.authored, actor)
 
         for tool_call in dict_list(fm.get("tool_calls")) + dict_list(provenance.get("tool_calls")):
             tool_id, label = _tool_node(tool_call)
             ensure_node(tool_id, ContextNodeType.tool, label, **tool_call)
-            add_edge(page.id, tool_id, ContextEdgeType.used_tool, label)
+            add_edge(detail.id, tool_id, ContextEdgeType.used_tool, label)
 
     if ledger is not None:
         _add_ledger_nodes(ledger, add_node, ensure_node, add_edge)

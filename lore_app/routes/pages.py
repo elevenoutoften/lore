@@ -114,28 +114,23 @@ def api_list_pages(
     offset: int = Query(default=0, ge=0),
     repo: LoreRepository = Depends(get_repo),
 ):
-    pages = repo.list_pages(kind=kind, visibility=visibility, q=q)
-    response.headers["X-Total-Count"] = str(len(pages))
-    end = offset + limit if limit is not None else None
-    return pages[offset:end]
+    response.headers["X-Total-Count"] = str(len(repo.list_pages(kind=kind, visibility=visibility, q=q)))
+    return repo.list_pages(kind=kind, visibility=visibility, q=q, limit=limit, offset=offset)
 
 
 @router.get("/api/code-references/{code_path:path}")
 def api_code_references(code_path: str, repo: LoreRepository = Depends(get_repo)):
     referencing = []
-    for summary in repo.list_pages():
-        page = repo.read_page(summary.id)
-        if page is None:
-            continue
+    for page in repo.iter_pages():
         if any(code_path in source for source in page.sources):
-            referencing.append({"page": summary.model_dump(), "match_field": "sources"})
+            referencing.append({"page": page.model_dump(exclude={"content", "body", "frontmatter"}), "match_field": "sources"})
             continue
         source_paths = string_list(page.frontmatter.get("source_paths"))
         if any(code_path in source_path for source_path in source_paths):
-            referencing.append({"page": summary.model_dump(), "match_field": "source_paths"})
+            referencing.append({"page": page.model_dump(exclude={"content", "body", "frontmatter"}), "match_field": "source_paths"})
             continue
         if code_path in page.body:
-            referencing.append({"page": summary.model_dump(), "match_field": "body"})
+            referencing.append({"page": page.model_dump(exclude={"content", "body", "frontmatter"}), "match_field": "body"})
     return {"code_path": code_path, "referenced_by": referencing}
 
 
