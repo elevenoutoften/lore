@@ -6,7 +6,10 @@ import hashlib
 from pathlib import Path
 import secrets
 import sqlite3
+import threading
 from uuid import uuid4
+
+from .db_utils import retry_on_locked
 
 
 VALID_API_KEY_ROLES = {"admin", "writer", "reader"}
@@ -41,37 +44,44 @@ class LoreApiKeyStore:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
         self._connection: sqlite3.Connection | None = None
+        self._conn_lock = threading.Lock()
+        self._lock = threading.Lock()
 
     @property
     def connection(self) -> sqlite3.Connection:
-        if self._connection is None:
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            self._connection = sqlite3.connect(self.db_path, check_same_thread=False)
-            self._connection.row_factory = sqlite3.Row
+        with self._conn_lock:
+            if self._connection is None:
+                self.db_path.parent.mkdir(parents=True, exist_ok=True)
+                self._connection = sqlite3.connect(self.db_path, check_same_thread=False)
+                self._connection.row_factory = sqlite3.Row
+                self._connection.execute("PRAGMA busy_timeout = 5000")
+                self._connection.execute("PRAGMA journal_mode = WAL")
+                self._connection.execute("PRAGMA foreign_keys = ON")
         return self._connection
 
     def initialize(self) -> None:
-        self.connection.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS api_keys (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                role TEXT NOT NULL DEFAULT 'writer',
-                key_prefix TEXT NOT NULL,
-                key_hash TEXT NOT NULL UNIQUE,
-                created_at TEXT NOT NULL,
-                revoked_at TEXT DEFAULT NULL
-            );
+        with self._lock:
+            self.connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS api_keys (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    role TEXT NOT NULL DEFAULT 'writer',
+                    key_prefix TEXT NOT NULL,
+                    key_hash TEXT NOT NULL UNIQUE,
+                    created_at TEXT NOT NULL,
+                    revoked_at TEXT DEFAULT NULL
+                );
 
-            CREATE INDEX IF NOT EXISTS idx_lore_api_keys_hash
-                ON api_keys(key_hash);
-            CREATE INDEX IF NOT EXISTS idx_lore_api_keys_revoked
-                ON api_keys(revoked_at);
-            """
-        )
-        self.connection.commit()
-        self._migrate_columns()
+                CREATE INDEX IF NOT EXISTS idx_lore_api_keys_hash
+                    ON api_keys(key_hash);
+                CREATE INDEX IF NOT EXISTS idx_lore_api_keys_revoked
+                    ON api_keys(revoked_at);
+                """
+            )
+            self.connection.commit()
+            self._migrate_columns()
 
     def close(self) -> None:
         if self._connection is not None:
@@ -100,6 +110,7 @@ class LoreApiKeyStore:
         ).fetchone()
         return self._row_to_key(row) if row else None
 
+    @retry_on_locked()
     def verify_token(self, token: str) -> LoreApiKey | None:
         if not token:
             return None
@@ -114,6 +125,7 @@ class LoreApiKeyStore:
         ).fetchone()
         return self._row_to_key(row) if row else None
 
+    @retry_on_locked()
     def create_key(self, *, name: str, description: str = "", role: str = "writer") -> tuple[LoreApiKey, str]:
         clean_name = " ".join(name.split())
         if not clean_name:
@@ -125,40 +137,42 @@ class LoreApiKeyStore:
 
         raw_key = generate_api_key_secret()
         now = utc_now()
-        key_id = self._new_key_id()
-        self.connection.execute(
-            """
-            INSERT INTO api_keys (
-                id, name, description, role, key_prefix, key_hash, created_at, revoked_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-            """,
-            (
-                key_id,
-                clean_name,
-                clean_description,
-                clean_role,
-                raw_key[:16],
-                hash_api_key(raw_key),
-                now,
-            ),
-        )
-        self.connection.commit()
-        created = self.get_key(key_id)
+        with self._lock:
+            key_id = self._new_key_id()
+            self.connection.execute(
+                """
+                INSERT INTO api_keys (
+                    id, name, description, role, key_prefix, key_hash, created_at, revoked_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+                """,
+                (
+                    key_id,
+                    clean_name,
+                    clean_description,
+                    clean_role,
+                    raw_key[:16],
+                    hash_api_key(raw_key),
+                    now,
+                ),
+            )
+            self.connection.commit()
+            created = self.get_key(key_id)
         if created is None:
             raise RuntimeError("Created API key could not be loaded.")
         return created, raw_key
 
     def revoke_key(self, api_key_id: str) -> LoreApiKey | None:
-        existing = self.get_key(api_key_id)
-        if existing is None:
-            return None
-        if existing.revoked_at is None:
-            self.connection.execute(
-                "UPDATE api_keys SET revoked_at = ? WHERE id = ?",
-                (utc_now(), api_key_id),
-            )
-            self.connection.commit()
-        return self.get_key(api_key_id)
+        with self._lock:
+            existing = self.get_key(api_key_id)
+            if existing is None:
+                return None
+            if existing.revoked_at is None:
+                self.connection.execute(
+                    "UPDATE api_keys SET revoked_at = ? WHERE id = ?",
+                    (utc_now(), api_key_id),
+                )
+                self.connection.commit()
+            return self.get_key(api_key_id)
 
     def _migrate_columns(self) -> None:
         existing = {row[1] for row in self.connection.execute("PRAGMA table_info(api_keys)").fetchall()}

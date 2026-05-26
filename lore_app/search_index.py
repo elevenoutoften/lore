@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any
 
+from .db_utils import retry_on_locked
 from .repository import LoreRepository, MarkdownPage
 from .schemas import PageDetail
 
@@ -15,59 +17,62 @@ class LoreSearchIndex:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
-        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout = 5000")
+        self._conn.execute("PRAGMA journal_mode = WAL")
         self._init_tables()
 
     def _init_tables(self) -> None:
-        self._conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS pages (
-                page_id TEXT PRIMARY KEY,
-                title TEXT NOT NULL DEFAULT '',
-                kind TEXT NOT NULL DEFAULT '',
-                visibility TEXT NOT NULL DEFAULT '',
-                status TEXT,
-                summary TEXT,
-                tags TEXT NOT NULL DEFAULT '',
-                body TEXT NOT NULL DEFAULT '',
-                sources TEXT NOT NULL DEFAULT '',
-                updated_at TEXT NOT NULL DEFAULT '',
-                actor TEXT,
-                lane TEXT
-            );
+        with self._lock:
+            self._conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS pages (
+                    page_id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL DEFAULT '',
+                    kind TEXT NOT NULL DEFAULT '',
+                    visibility TEXT NOT NULL DEFAULT '',
+                    status TEXT,
+                    summary TEXT,
+                    tags TEXT NOT NULL DEFAULT '',
+                    body TEXT NOT NULL DEFAULT '',
+                    sources TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL DEFAULT '',
+                    actor TEXT,
+                    lane TEXT
+                );
 
-            CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
-                page_id,
-                title,
-                summary,
-                tags,
-                body,
-                sources,
-                content='pages',
-                content_rowid='rowid'
-            );
+                CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
+                    page_id,
+                    title,
+                    summary,
+                    tags,
+                    body,
+                    sources,
+                    content='pages',
+                    content_rowid='rowid'
+                );
 
-            CREATE TRIGGER IF NOT EXISTS pages_ai AFTER INSERT ON pages BEGIN
-                INSERT INTO pages_fts(rowid, page_id, title, summary, tags, body, sources)
-                VALUES (new.rowid, new.page_id, new.title, new.summary, new.tags, new.body, new.sources);
-            END;
+                CREATE TRIGGER IF NOT EXISTS pages_ai AFTER INSERT ON pages BEGIN
+                    INSERT INTO pages_fts(rowid, page_id, title, summary, tags, body, sources)
+                    VALUES (new.rowid, new.page_id, new.title, new.summary, new.tags, new.body, new.sources);
+                END;
 
-            CREATE TRIGGER IF NOT EXISTS pages_ad AFTER DELETE ON pages BEGIN
-                INSERT INTO pages_fts(pages_fts, rowid, page_id, title, summary, tags, body, sources)
-                VALUES ('delete', old.rowid, old.page_id, old.title, old.summary, old.tags, old.body, old.sources);
-            END;
+                CREATE TRIGGER IF NOT EXISTS pages_ad AFTER DELETE ON pages BEGIN
+                    INSERT INTO pages_fts(pages_fts, rowid, page_id, title, summary, tags, body, sources)
+                    VALUES ('delete', old.rowid, old.page_id, old.title, old.summary, old.tags, old.body, old.sources);
+                END;
 
-            CREATE TRIGGER IF NOT EXISTS pages_au AFTER UPDATE ON pages BEGIN
-                INSERT INTO pages_fts(pages_fts, rowid, page_id, title, summary, tags, body, sources)
-                VALUES ('delete', old.rowid, old.page_id, old.title, old.summary, old.tags, old.body, old.sources);
-                INSERT INTO pages_fts(rowid, page_id, title, summary, tags, body, sources)
-                VALUES (new.rowid, new.page_id, new.title, new.summary, new.tags, new.body, new.sources);
-            END;
-            """
-        )
-        self._conn.commit()
-        self._migrate_columns()
+                CREATE TRIGGER IF NOT EXISTS pages_au AFTER UPDATE ON pages BEGIN
+                    INSERT INTO pages_fts(pages_fts, rowid, page_id, title, summary, tags, body, sources)
+                    VALUES ('delete', old.rowid, old.page_id, old.title, old.summary, old.tags, old.body, old.sources);
+                    INSERT INTO pages_fts(rowid, page_id, title, summary, tags, body, sources)
+                    VALUES (new.rowid, new.page_id, new.title, new.summary, new.tags, new.body, new.sources);
+                END;
+                """
+            )
+            self._conn.commit()
+            self._migrate_columns()
 
     def _migrate_columns(self) -> None:
         """Add actor/lane columns to existing databases that lack them."""
@@ -78,16 +83,18 @@ class LoreSearchIndex:
             self._conn.execute("ALTER TABLE pages ADD COLUMN lane TEXT")
         self._conn.commit()
 
+    @retry_on_locked()
     def rebuild(self, repo: LoreRepository) -> int:
         """Rebuild the index from scratch. Returns number of indexed pages."""
-        self._conn.execute("DELETE FROM pages")
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("DELETE FROM pages")
+            self._conn.commit()
 
-        count = 0
-        for page in repo._scan_pages():
-            self.upsert_page(page)
-            count += 1
-        return count
+            count = 0
+            for page in repo._scan_pages():
+                self.upsert_page(page)
+                count += 1
+            return count
 
     def upsert_page(self, page: MarkdownPage) -> None:
         """Insert or update a single page in the index."""
@@ -320,7 +327,9 @@ class LoreSearchIndex:
         ]
 
     def close(self) -> None:
-        self._conn.close()
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
 
     def list_lanes(self) -> list[dict[str, Any]]:
         """Return available lanes with page counts."""

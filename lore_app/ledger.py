@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -22,6 +23,7 @@ from .schemas import (
     PolicyRule,
     TraceEntry,
 )
+from .db_utils import retry_on_locked
 from .provenance import merge_trace_provenance
 
 CONFIDENCE_ORDER = {"unknown": 0, "low": 1, "medium": 2, "high": 3}
@@ -96,13 +98,19 @@ class LedgerDB:
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path)
         self._connection: sqlite3.Connection | None = None
+        self._conn_lock = threading.Lock()
+        self._lock = threading.RLock()
 
     @property
     def connection(self) -> sqlite3.Connection:
-        if self._connection is None:
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            self._connection = sqlite3.connect(self.db_path, check_same_thread=False)
-            self._connection.row_factory = sqlite3.Row
+        with self._conn_lock:
+            if self._connection is None:
+                self.db_path.parent.mkdir(parents=True, exist_ok=True)
+                self._connection = sqlite3.connect(self.db_path, check_same_thread=False)
+                self._connection.row_factory = sqlite3.Row
+                self._connection.execute("PRAGMA busy_timeout = 5000")
+                self._connection.execute("PRAGMA journal_mode = WAL")
+                self._connection.execute("PRAGMA foreign_keys = ON")
         return self._connection
 
     # Columns added by migrations beyond the original schema.
@@ -183,7 +191,8 @@ class LedgerDB:
     }
 
     def initialize(self) -> None:
-        self.connection.executescript(
+        with self._lock:
+            self.connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS extraction_batches (
                 batch_id TEXT PRIMARY KEY,
@@ -303,27 +312,28 @@ class LedgerDB:
             CREATE INDEX IF NOT EXISTS idx_traces_status ON reasoning_traces(status);
             CREATE INDEX IF NOT EXISTS idx_traces_related_task ON reasoning_traces(related_ids);
             """
-        )
-        self.connection.commit()
-        self._run_migrations()
-        self._seed_policies()
+            )
+            self.connection.commit()
+            self._run_migrations()
+            self._seed_policies()
 
     def _run_migrations(self) -> None:
         """Add columns from _MIGRATION_COLUMNS that don't yet exist."""
-        for table, columns in self._MIGRATION_COLUMNS.items():
-            existing = {
-                row[1]
-                for row in self.connection.execute(f"PRAGMA table_info({table})").fetchall()
-            }
-            for col_name, col_def in columns:
-                if col_name not in existing:
-                    try:
-                        self.connection.execute(
-                            f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}"
-                        )
-                    except sqlite3.OperationalError:
-                        pass  # Column already exists from concurrent migration
-            self.connection.commit()
+        with self._lock:
+            for table, columns in self._MIGRATION_COLUMNS.items():
+                existing = {
+                    row[1]
+                    for row in self.connection.execute(f"PRAGMA table_info({table})").fetchall()
+                }
+                for col_name, col_def in columns:
+                    if col_name not in existing:
+                        try:
+                            self.connection.execute(
+                                f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}"
+                            )
+                        except sqlite3.OperationalError:
+                            pass  # Column already exists from concurrent migration
+                self.connection.commit()
 
     def _seed_policies(self) -> None:
         existing = {
@@ -335,37 +345,38 @@ class LedgerDB:
                 self.store_policy(policy)
 
     def store_policy(self, policy: PolicyRule) -> PolicyRule:
-        now = utc_now()
-        existing = self.connection.execute(
-            "SELECT created_at FROM policies WHERE policy_id = ?",
-            (policy.policy_id,),
-        ).fetchone()
-        created_at = str(existing["created_at"]) if existing is not None and existing["created_at"] else now
-        self.connection.execute(
-            """
-            INSERT OR REPLACE INTO policies (
-                policy_id, name, description, gate, condition_kind, condition_operation,
-                effect_pass, effect_fail, fail_reason_template, version, enabled,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                policy.policy_id,
-                policy.name,
-                policy.description,
-                policy.gate,
-                json.dumps(policy.condition_kind),
-                json.dumps(policy.condition_operation),
-                policy.effect_pass,
-                policy.effect_fail,
-                policy.fail_reason_template,
-                policy.version,
-                int(policy.enabled),
-                created_at,
-                now,
-            ),
-        )
-        self.connection.commit()
+        with self._lock:
+            now = utc_now()
+            existing = self.connection.execute(
+                "SELECT created_at FROM policies WHERE policy_id = ?",
+                (policy.policy_id,),
+            ).fetchone()
+            created_at = str(existing["created_at"]) if existing is not None and existing["created_at"] else now
+            self.connection.execute(
+                """
+                INSERT OR REPLACE INTO policies (
+                    policy_id, name, description, gate, condition_kind, condition_operation,
+                    effect_pass, effect_fail, fail_reason_template, version, enabled,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    policy.policy_id,
+                    policy.name,
+                    policy.description,
+                    policy.gate,
+                    json.dumps(policy.condition_kind),
+                    json.dumps(policy.condition_operation),
+                    policy.effect_pass,
+                    policy.effect_fail,
+                    policy.fail_reason_template,
+                    policy.version,
+                    int(policy.enabled),
+                    created_at,
+                    now,
+                ),
+            )
+            self.connection.commit()
         return policy
 
     def get_policy(self, policy_id: str) -> PolicyRule | None:
@@ -396,23 +407,25 @@ class LedgerDB:
         return [_decode_policy_row(row) for row in rows]
 
     def delete_policy(self, policy_id: str) -> bool:
-        now = utc_now()
-        cursor = self.connection.execute(
-            """
-            UPDATE policies
-            SET enabled = 0, updated_at = ?
-            WHERE policy_id = ?
-            """,
-            (now, policy_id),
-        )
-        self.connection.commit()
-        return cursor.rowcount > 0
+        with self._lock:
+            now = utc_now()
+            cursor = self.connection.execute(
+                """
+                UPDATE policies
+                SET enabled = 0, updated_at = ?
+                WHERE policy_id = ?
+                """,
+                (now, policy_id),
+            )
+            self.connection.commit()
+            return cursor.rowcount > 0
 
+    @retry_on_locked()
     def store_extraction_result(self, result: ExtractionResult) -> None:
         from .extraction import compute_extraction_hash
 
         now = utc_now()
-        with self.connection:
+        with self._lock:
             self.connection.execute(
                 """
                 INSERT OR REPLACE INTO extraction_batches (
@@ -486,6 +499,7 @@ class LedgerDB:
                     """,
                     (result.batch_id, capture_id, result.processed_at),
                 )
+            self.connection.commit()
 
     # ─── Reinforcement ────────────────────────────────────────────────────
 
@@ -638,32 +652,33 @@ class LedgerDB:
         self, old_candidate_id: str, new_candidate_id: str, reason: str
     ) -> ClaimSupersedeResult:
         """Mark old claim as superseded by new claim."""
-        old_row = self.connection.execute(
-            "SELECT status FROM extraction_candidates WHERE candidate_id = ?",
-            (old_candidate_id,),
-        ).fetchone()
-        if old_row is None:
-            raise ValueError(f"Candidate {old_candidate_id} not found")
-        old_status = str(old_row["status"])
+        with self._lock:
+            old_row = self.connection.execute(
+                "SELECT status FROM extraction_candidates WHERE candidate_id = ?",
+                (old_candidate_id,),
+            ).fetchone()
+            if old_row is None:
+                raise ValueError(f"Candidate {old_candidate_id} not found")
+            old_status = str(old_row["status"])
 
-        now = utc_now()
-        self.connection.execute(
-            """
-            UPDATE extraction_candidates
-            SET status = 'superseded', superseded_by = ?, invalidation_reason = ?, updated_at = ?
-            WHERE candidate_id = ?
-            """,
-            (new_candidate_id, reason, now, old_candidate_id),
-        )
-        self.connection.execute(
-            """
-            UPDATE extraction_candidates
-            SET supersedes = ?, updated_at = ?
-            WHERE candidate_id = ?
-            """,
-            (old_candidate_id, now, new_candidate_id),
-        )
-        self.connection.commit()
+            now = utc_now()
+            self.connection.execute(
+                """
+                UPDATE extraction_candidates
+                SET status = 'superseded', superseded_by = ?, invalidation_reason = ?, updated_at = ?
+                WHERE candidate_id = ?
+                """,
+                (new_candidate_id, reason, now, old_candidate_id),
+            )
+            self.connection.execute(
+                """
+                UPDATE extraction_candidates
+                SET supersedes = ?, updated_at = ?
+                WHERE candidate_id = ?
+                """,
+                (old_candidate_id, now, new_candidate_id),
+            )
+            self.connection.commit()
         return ClaimSupersedeResult(
             old_candidate_id=old_candidate_id,
             new_candidate_id=new_candidate_id,
@@ -712,37 +727,38 @@ class LedgerDB:
     def _transition_status(
         self, candidate_id: str, new_status: str, *, reason: str | None = None
     ) -> None:
-        row = self.connection.execute(
-            "SELECT status FROM extraction_candidates WHERE candidate_id = ?",
-            (candidate_id,),
-        ).fetchone()
-        if row is None:
-            raise ValueError(f"Candidate {candidate_id} not found")
-        current = str(row["status"])
-        if new_status not in VALID_TRANSITIONS.get(current, set()):
-            raise ValueError(
-                f"Invalid status transition: {current} → {new_status}"
-            )
-        now = utc_now()
-        if reason:
-            self.connection.execute(
-                """
-                UPDATE extraction_candidates
-                SET status = ?, invalidation_reason = ?, updated_at = ?
-                WHERE candidate_id = ?
-                """,
-                (new_status, reason, now, candidate_id),
-            )
-        else:
-            self.connection.execute(
-                """
-                UPDATE extraction_candidates
-                SET status = ?, updated_at = ?
-                WHERE candidate_id = ?
-                """,
-                (new_status, now, candidate_id),
-            )
-        self.connection.commit()
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT status FROM extraction_candidates WHERE candidate_id = ?",
+                (candidate_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"Candidate {candidate_id} not found")
+            current = str(row["status"])
+            if new_status not in VALID_TRANSITIONS.get(current, set()):
+                raise ValueError(
+                    f"Invalid status transition: {current} → {new_status}"
+                )
+            now = utc_now()
+            if reason:
+                self.connection.execute(
+                    """
+                    UPDATE extraction_candidates
+                    SET status = ?, invalidation_reason = ?, updated_at = ?
+                    WHERE candidate_id = ?
+                    """,
+                    (new_status, reason, now, candidate_id),
+                )
+            else:
+                self.connection.execute(
+                    """
+                    UPDATE extraction_candidates
+                    SET status = ?, updated_at = ?
+                    WHERE candidate_id = ?
+                    """,
+                    (new_status, now, candidate_id),
+                )
+            self.connection.commit()
 
     # ─── Decay ─────────────────────────────────────────────────────────────
 
@@ -854,6 +870,7 @@ class LedgerDB:
         ).fetchone()
         return row is not None
 
+    @retry_on_locked()
     def reset_extraction(self, capture_ids: list[str] | None = None) -> int:
         """Reset extraction state so captures can be re-processed.
 
@@ -864,7 +881,7 @@ class LedgerDB:
         now = utc_now()
         reset_statuses = ("active", "rejected", "superseded", "archived")
         if capture_ids is None:
-            with self.connection:
+            with self._lock:
                 cursor = self.connection.execute("DELETE FROM extraction_log WHERE success = 1")
                 self.connection.execute(
                     """
@@ -878,6 +895,7 @@ class LedgerDB:
                     """,
                     (now, *reset_statuses),
                 )
+                self.connection.commit()
             return int(cursor.rowcount)
 
         normalized_capture_ids = list(dict.fromkeys(capture_id for capture_id in capture_ids if capture_id))
@@ -885,7 +903,7 @@ class LedgerDB:
             return 0
 
         placeholders = ", ".join("?" for _ in normalized_capture_ids)
-        with self.connection:
+        with self._lock:
             cursor = self.connection.execute(
                 f"DELETE FROM extraction_log WHERE success = 1 AND capture_id IN ({placeholders})",
                 normalized_capture_ids,
@@ -918,6 +936,7 @@ class LedgerDB:
                     """,
                     (now, *reset_ids),
                 )
+            self.connection.commit()
         return int(cursor.rowcount)
 
     def get_unprocessed_capture_ids(self, limit: int = 50) -> list[str]:

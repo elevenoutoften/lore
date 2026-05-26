@@ -183,7 +183,9 @@ def create_app(
         return response
 
     @app.on_event("shutdown")
-    def close_ledger_db() -> None:
+    def close_db_connections() -> None:
+        search_idx.close()
+        vector_store.close()
         ledger_db.close()
         api_key_store.close()
 
