@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -118,8 +119,12 @@ class LoreConfig:
         """Parse colon/semicolon-separated rooted paths."""
         if not raw:
             return []
+        if platform.system() == "Windows":
+            parts = raw.split(";")
+        else:
+            parts = raw.replace(";", ":").split(":")
         paths = []
-        for part in raw.replace(";", ":").split(":"):
+        for part in parts:
             part = part.strip()
             if part:
                 paths.append(Path(part).resolve())

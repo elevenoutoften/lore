@@ -80,6 +80,7 @@ async def mcp(
             consolidation_worker=consolidation_worker,
             audit_log=audit_log,
             metrics=metrics,
+            request=request,
         )
     except mcp_dispatch.JsonRpcError as exc:
         return JSONResponse(mcp_dispatch.error_response(request_id, exc), status_code=200)

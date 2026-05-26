@@ -23,6 +23,7 @@ from ..repository import InvalidPageId, LoreRepository, optional_string, string_
 from ..route_utils import backlink_groups, index_vectors_for_page, record_audit, require_page, template_context, update_frontmatter, validate_content, validate_optional_page_id_input, validate_page_id_input
 from ..schemas import MetadataUpdate, PageDetail, PageRendered, PageSummary, PageUpsert, StubRequest
 from ..search_index import LoreSearchIndex
+from .api_keys import require_lore_key_admin
 
 router = APIRouter()
 
@@ -142,6 +143,7 @@ def api_ingest_service(
     source_dir: str = Query(...),
     code_inventories: dict[str, Any] = Depends(get_code_inventories),
     config: LoreConfig = Depends(get_config),
+    _admin: None = Depends(require_lore_key_admin),
 ):
     # Validate service_id
     try:
@@ -166,6 +168,7 @@ def api_get_inventory(
     service_id: str,
     repo: LoreRepository = Depends(get_repo),
     code_inventories: dict[str, Any] = Depends(get_code_inventories),
+    _admin: None = Depends(require_lore_key_admin),
 ):
     if service_id in code_inventories:
         return code_inventories[service_id]

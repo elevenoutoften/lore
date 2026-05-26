@@ -156,9 +156,14 @@ repair them.
 
 ## Code Ingest
 
-The `/api/code-ingest` endpoint is disabled by default. To enable it, set
-`LORE_CODE_INGEST_ROOTS` to a colon-separated list of directory roots that
-the ingester is allowed to walk:
+The `/api/code-ingest` REST endpoints require an admin API key. The MCP
+`lore_ingest_service` tool likewise requires the authenticated MCP request to
+have the `admin` role, except when Lore is running with application auth
+disabled.
+
+Code ingest is disabled by default. To enable it, set `LORE_CODE_INGEST_ROOTS`
+to a colon-separated list of directory roots that the ingester is allowed to
+walk:
 
     LORE_CODE_INGEST_ROOTS=/data/pages:/opt/services
 

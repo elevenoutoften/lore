@@ -955,6 +955,7 @@ def call_tool(
     consolidation_worker: Any | None = None,
     audit_log: Any | None = None,
     metrics: Any | None = None,
+    request: Any | None = None,
 ) -> dict[str, Any]:
     name = require_string(params.get("name"), "name")
     arguments = params.get("arguments") or {}
@@ -1380,6 +1381,9 @@ This page was auto-created as a stub. Replace with actual content.
         return tool_result({"page": updated_page.model_dump()}, f"Updated Lore metadata: {updated_page.id}")
 
     if name == "lore_ingest_service":
+        role = str(getattr(request.state, "lore_role", "") or "").strip() if request else ""
+        if role not in ("admin", ""):
+            raise JsonRpcError(-32602, "Admin access required for code ingest.")
         service_id = require_string(arguments.get("service_id"), "service_id")
         source_dir = require_string(arguments.get("source_dir"), "source_dir")
         # Validate service_id

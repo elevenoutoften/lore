@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
+from fastapi.testclient import TestClient
 
 from lore_app.code_ingest.config_ingest import ingest_caddyfile, ingest_docker_compose, ingest_systemd_units
 from lore_app.code_ingest.fastapi_ingest import ingest_fastapi_routes
@@ -11,6 +10,7 @@ from lore_app.code_ingest.source_refs import resolve_source_ref
 from lore_app.code_ingest.symbol_ingest import ingest_python_symbols
 from lore_app.code_ingest.validate import validate_source_dir, validate_service_id, IngestValidationError
 from lore_app.config import LoreConfig
+from lore_app.main import create_app
 
 
 def test_fastapi_route_ingest(tmp_path):
@@ -155,15 +155,18 @@ def ready():
 """,
         encoding="utf-8",
     )
+    _, admin_key = client.app.state.api_key_store.create_key(name="code-ingest-admin", role="admin")
+    admin_headers = {"Authorization": f"Bearer {admin_key}"}
 
     api_response = client.post(
         "/api/code-ingest/services/workflow-engine",
         params={"source_dir": str(tmp_path)},
+        headers=admin_headers,
     )
     assert api_response.status_code == 200, api_response.text
     assert api_response.json()["routes"][0]["path"] == "/ready"
 
-    inventory_response = client.get("/api/code-ingest/services/workflow-engine/inventory")
+    inventory_response = client.get("/api/code-ingest/services/workflow-engine/inventory", headers=admin_headers)
     assert inventory_response.status_code == 200
     assert inventory_response.json()["service_id"] == "services/workflow-engine"
 
@@ -186,6 +189,94 @@ def ready():
 
 
 # ── L-SEC-10: Validation tests ──────────────────────────────────
+
+
+def test_code_ingest_rest_requires_admin(client, tmp_path):
+    """Code ingest REST endpoints require an admin API key."""
+    (tmp_path / "app.py").write_text("def ready():\n    return True\n", encoding="utf-8")
+    _, admin_key = client.app.state.api_key_store.create_key(name="rest-admin", role="admin")
+    _, writer_key = client.app.state.api_key_store.create_key(name="rest-writer", role="writer")
+    admin_headers = {"Authorization": f"Bearer {admin_key}"}
+    writer_headers = {"Authorization": f"Bearer {writer_key}"}
+
+    unauthenticated = client.post(
+        "/api/code-ingest/services/admin-only",
+        params={"source_dir": str(tmp_path)},
+    )
+    writer_post = client.post(
+        "/api/code-ingest/services/admin-only",
+        params={"source_dir": str(tmp_path)},
+        headers=writer_headers,
+    )
+    writer_inventory = client.get("/api/code-ingest/services/admin-only/inventory", headers=writer_headers)
+    admin_post = client.post(
+        "/api/code-ingest/services/admin-only",
+        params={"source_dir": str(tmp_path)},
+        headers=admin_headers,
+    )
+    admin_inventory = client.get("/api/code-ingest/services/admin-only/inventory", headers=admin_headers)
+
+    assert unauthenticated.status_code == 401
+    assert writer_post.status_code == 403
+    assert writer_inventory.status_code == 403
+    assert admin_post.status_code == 200, admin_post.text
+    assert admin_inventory.status_code == 200
+
+
+def test_code_ingest_mcp_requires_admin_role(content_dir, search_db, tmp_path):
+    """Writer API keys must not call MCP code ingest."""
+    source_dir = tmp_path / "service"
+    source_dir.mkdir()
+    (source_dir / "app.py").write_text("def ready():\n    return True\n", encoding="utf-8")
+
+    config = LoreConfig()
+    config.content_dir = content_dir
+    config.search_db = search_db
+    config.vector_db = search_db.with_name("vectors.db")
+    config.ledger_db = search_db.with_name("ledger.db")
+    config.api_keys_db = search_db.with_name("api_keys.db")
+    config.auth_mode = "api_key"
+    config.code_ingest_roots = [tmp_path]
+    app = create_app(config)
+    _, admin_key = app.state.api_key_store.create_key(name="mcp-admin", role="admin")
+    _, writer_key = app.state.api_key_store.create_key(name="mcp-writer", role="writer")
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "lore_ingest_service",
+            "arguments": {"service_id": "services/mcp-admin-only", "source_dir": str(source_dir)},
+        },
+    }
+
+    with TestClient(app) as api_client:
+        writer_response = api_client.post(
+            "/mcp",
+            json=payload,
+            headers={"Authorization": f"Bearer {writer_key}"},
+        )
+        admin_response = api_client.post(
+            "/mcp",
+            json=payload,
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+
+    assert writer_response.status_code == 200
+    assert writer_response.json()["error"]["message"] == "Admin access required for code ingest."
+    assert admin_response.status_code == 200, admin_response.text
+    assert admin_response.json()["result"]["structuredContent"]["service_id"] == "services/mcp-admin-only"
+
+
+def test_parse_roots_windows_drive_letters(monkeypatch):
+    """Windows root parsing must not split drive letters on colon."""
+    monkeypatch.setattr("lore_app.config.platform.system", lambda: "Windows")
+
+    result = LoreConfig._parse_roots(r"D:\Projects;E:\Code")
+
+    assert len(result) == 2
+    assert str(result[0]).endswith(r"D:\Projects")
+    assert str(result[1]).endswith(r"E:\Code")
 
 
 def test_roots_empty_disables_ingest(tmp_path, monkeypatch):
