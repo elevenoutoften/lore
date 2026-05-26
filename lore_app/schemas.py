@@ -997,6 +997,15 @@ class RiskLevel(str, Enum):
     high = "high"
 
 
+class PatchPlanStatus(str, Enum):
+    ready = "ready"
+    needs_manual_review = "needs_manual_review"
+    pending = "pending"
+    applied = "applied"
+    rejected = "rejected"
+    rolled_back = "rolled_back"
+
+
 class PolicyRule(BaseModel):
     """A policy that gates patch planning decisions."""
 
@@ -1069,8 +1078,9 @@ class PatchPlan(BaseModel):
     risk_level: RiskLevel
     auto_appliable: bool
     policies_applied: list[PolicyDecision] = Field(default_factory=list, description="Policy evaluation results for this plan.")
-    status: str = "pending"
+    status: PatchPlanStatus = PatchPlanStatus.pending
     created_at: str
+    reason: str | None = None
     applied_at: str | None = None
     rejected_at: str | None = None
     rejection_reason: str | None = None

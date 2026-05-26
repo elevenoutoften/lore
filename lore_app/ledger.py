@@ -146,6 +146,7 @@ class LedgerDB:
             ("policies_applied", "TEXT NOT NULL DEFAULT '[]'"),
             ("status", "TEXT NOT NULL DEFAULT 'pending'"),
             ("created_at", "TEXT NOT NULL DEFAULT ''"),
+            ("reason", "TEXT DEFAULT NULL"),
             ("applied_at", "TEXT DEFAULT NULL"),
             ("rejected_at", "TEXT DEFAULT NULL"),
             ("rejection_reason", "TEXT DEFAULT NULL"),
@@ -263,6 +264,7 @@ class LedgerDB:
                 policies_applied TEXT NOT NULL DEFAULT '[]',
                 status TEXT NOT NULL DEFAULT 'pending',
                 created_at TEXT NOT NULL,
+                reason TEXT,
                 applied_at TEXT,
                 rejected_at TEXT,
                 rejection_reason TEXT
@@ -1076,8 +1078,8 @@ class LedgerDB:
                 INSERT OR REPLACE INTO patch_plans (
                     plan_id, batch_id, trace_id, candidate_ids, target_page_id, target_section,
                     operation, content_diff, risk_level, auto_appliable, policies_applied,
-                    status, created_at, applied_at, rejected_at, rejection_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, created_at, reason, applied_at, rejected_at, rejection_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     plan.plan_id,
@@ -1091,8 +1093,9 @@ class LedgerDB:
                     plan.risk_level.value,
                     int(plan.auto_appliable),
                     json.dumps([decision.model_dump(mode="json") for decision in plan.policies_applied]),
-                    plan.status,
+                    plan.status.value,
                     plan.created_at,
+                    plan.reason,
                     plan.applied_at,
                     plan.rejected_at,
                     plan.rejection_reason,

@@ -23,6 +23,7 @@ from .schemas import (
     PatchApplyResult,
     PatchOperation,
     PatchPlan,
+    PatchPlanStatus,
     PatchPreview,
     PolicyDecision,
     RiskLevel,
@@ -41,6 +42,13 @@ def _content_hash(content: str) -> str:
 class _CandidateBundle:
     row: dict[str, Any]
     claim: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class _RenderedPatch:
+    content: str
+    status: PatchPlanStatus = PatchPlanStatus.ready
+    reason: str | None = None
 
 
 class PatchPlanner:
@@ -219,11 +227,21 @@ class PatchPlanner:
             )
         )
 
+        rendered = self._render_content_result(
+            target_page_id,
+            operation,
+            target_section,
+            bundles,
+            page_content=page.content if page else "",
+        )
+        if rendered.status == PatchPlanStatus.needs_manual_review:
+            auto_appliable = False
         preview = self._preview_for(
             target_page_id,
             operation,
             target_section,
             bundles,
+            rendered=rendered,
             page_content=page.content if page else "",
             policies_applied=policy_decisions,
         )
@@ -238,8 +256,13 @@ class PatchPlanner:
             risk_level=risk_level,
             auto_appliable=auto_appliable,
             policies_applied=policy_decisions,
-            status="pending",
+            status=(
+                PatchPlanStatus.needs_manual_review
+                if rendered.status == PatchPlanStatus.needs_manual_review
+                else PatchPlanStatus.pending
+            ),
             created_at=now,
+            reason=rendered.reason,
         )
         return plan
 
@@ -448,40 +471,45 @@ class PatchPlanner:
         target_section: str | None,
         bundles: list[_CandidateBundle],
         *,
+        rendered: _RenderedPatch | None = None,
         page_content: str,
         policies_applied: list[PolicyDecision] | None = None,
     ) -> PatchPreview:
-        proposed_content = self._render_content(
-            target_page_id,
-            operation,
-            target_section,
-            bundles,
-            page_content=page_content,
-        )
+        if rendered is None:
+            rendered = self._render_content_result(
+                target_page_id,
+                operation,
+                target_section,
+                bundles,
+                page_content=page_content,
+            )
         return PatchPreview(
             plan_id="preview",
             target_page_id=target_page_id,
             operation=operation,
             current_content=page_content,
-            proposed_content=proposed_content,
-            unified_diff=_unified_diff(page_content, proposed_content, target_page_id),
+            proposed_content=rendered.content,
+            unified_diff=_unified_diff(page_content, rendered.content, target_page_id),
             risk_level=self._assess_risk(target_page_id, operation, self._find_contradictions(bundles)),
-            auto_appliable=self._is_auto_appliable(target_page_id, operation, bundles, self._find_contradictions(bundles)),
+            auto_appliable=(
+                rendered.status == PatchPlanStatus.ready
+                and self._is_auto_appliable(target_page_id, operation, bundles, self._find_contradictions(bundles))
+            ),
             policies_applied=policies_applied or [],
         )
 
     def _proposed_content(self, plan: PatchPlan) -> str:
         bundles = self._bundles_for_candidate_ids(plan.candidate_ids)
         current_content = self._current_content(plan.target_page_id)
-        return self._render_content(
+        return self._render_content_result(
             plan.target_page_id,
             plan.operation,
             plan.target_section,
             bundles,
             page_content=current_content,
-        )
+        ).content
 
-    def _render_content(
+    def _render_content_result(
         self,
         target_page_id: str,
         operation: PatchOperation,
@@ -489,9 +517,9 @@ class PatchPlanner:
         bundles: list[_CandidateBundle],
         *,
         page_content: str,
-    ) -> str:
+    ) -> _RenderedPatch:
         if operation == PatchOperation.create_stub_page:
-            return self._build_stub_page(target_page_id, bundles)
+            return _RenderedPatch(content=self._build_stub_page(target_page_id, bundles))
 
         detail = self.repo.read_page(target_page_id)
         if detail is None:
@@ -501,22 +529,46 @@ class PatchPlanner:
 
         paragraphs = [self._candidate_paragraph(bundle) for bundle in bundles]
         if operation in {PatchOperation.insert_new_fact, PatchOperation.append_sourced_paragraph}:
-            return _insert_into_section(content, target_section or "## Facts", "\n\n".join(paragraphs))
+            return _RenderedPatch(
+                content=_insert_into_section(content, target_section or "## Facts", "\n\n".join(paragraphs))
+            )
         if operation == PatchOperation.update_existing_fact:
-            new_content = content
-            for bundle in bundles:
-                replacement = self._candidate_paragraph(bundle)
-                for contradiction in self.ledger.find_contradicting_claims(self._extracted_claim(bundle.claim)):
-                    old_object = optional_string(contradiction.get("content_json", {}).get("object"))
-                    if old_object and old_object in new_content:
-                        new_content = new_content.replace(old_object, replacement, 1)
-            return new_content
+            return self._render_update_existing_fact(content, bundles)
         if operation == PatchOperation.mark_stale:
             stale_marker = (
                 "<!-- stale: auto-consolidation detected a contradiction requiring review -->"
             )
-            return _insert_into_section(content, target_section or "## Review Notes", stale_marker)
-        return content
+            return _RenderedPatch(
+                content=_insert_into_section(content, target_section or "## Review Notes", stale_marker)
+            )
+        return _RenderedPatch(content=content)
+
+    def _render_update_existing_fact(self, content: str, bundles: list[_CandidateBundle]) -> _RenderedPatch:
+        new_content = content
+        for bundle in bundles:
+            replacement = self._candidate_paragraph(bundle)
+            section_title = self._candidate_section_title(bundle)
+            for contradiction in self.ledger.find_contradicting_claims(self._extracted_claim(bundle.claim)):
+                old_object = optional_string(contradiction.get("content_json", {}).get("object"))
+                if not old_object:
+                    continue
+                replacement_result = _replace_old_object_in_section(
+                    new_content,
+                    old_object,
+                    replacement,
+                    section_title=section_title,
+                )
+                if replacement_result.status == PatchPlanStatus.needs_manual_review:
+                    return _RenderedPatch(
+                        content=content,
+                        status=PatchPlanStatus.needs_manual_review,
+                        reason=replacement_result.reason,
+                    )
+                new_content = replacement_result.content
+        return _RenderedPatch(content=new_content)
+
+    def _candidate_section_title(self, bundle: _CandidateBundle) -> str | None:
+        return optional_string(bundle.claim.get("section")) or optional_string(bundle.claim.get("anchor"))
 
     def _build_stub_page(self, target_page_id: str, bundles: list[_CandidateBundle]) -> str:
         first_capture = self._first_capture_detail(bundles)
@@ -759,3 +811,144 @@ def _insert_into_section(content: str, heading: str, block: str) -> str:
     if not content.endswith("\n"):
         content += "\n"
     return content.rstrip() + f"\n\n{heading}\n\n{normalized_block}\n"
+
+
+def _split_frontmatter(content: str) -> tuple[str, str]:
+    if not content.startswith("---\n"):
+        return "", content
+    lines = content.splitlines(keepends=True)
+    if not lines or lines[0] != "---\n":
+        return "", content
+    for index in range(1, len(lines)):
+        if lines[index].strip() == "---":
+            return "".join(lines[: index + 1]), "".join(lines[index + 1 :])
+    return "", content
+
+
+def _split_into_sections(content: str) -> list[tuple[str, str]]:
+    """Split markdown content into (title, body) sections by ## headings."""
+    sections = []
+    current_title = ""
+    current_lines = []
+    for line in content.split("\n"):
+        if line.startswith("## "):
+            if current_lines:
+                sections.append((current_title, "\n".join(current_lines)))
+            current_title = line[3:].strip()
+            current_lines = [line]
+        else:
+            current_lines.append(line)
+    if current_lines:
+        sections.append((current_title, "\n".join(current_lines)))
+    return sections
+
+
+def _normalize_section_title(title: str) -> str:
+    normalized = title.strip()
+    while normalized.startswith("#"):
+        normalized = normalized[1:].strip()
+    return " ".join(normalized.casefold().split())
+
+
+def _split_fenced_code_chunks(content: str) -> list[tuple[bool, str]]:
+    chunks: list[tuple[bool, str]] = []
+    current_lines: list[str] = []
+    in_code_block = False
+
+    def flush() -> None:
+        if current_lines:
+            chunks.append((in_code_block, "".join(current_lines)))
+
+    for line in content.splitlines(keepends=True):
+        if line.lstrip().startswith("```"):
+            flush()
+            current_lines = [line]
+            in_code_block = not in_code_block
+            flush()
+            current_lines = []
+        else:
+            current_lines.append(line)
+    if current_lines:
+        chunks.append((in_code_block, "".join(current_lines)))
+    return chunks
+
+
+def _count_unprotected_occurrences(content: str, needle: str) -> int:
+    count = 0
+    for is_code_block, chunk in _split_fenced_code_chunks(content):
+        if is_code_block or not needle:
+            continue
+        start = 0
+        while True:
+            index = chunk.find(needle, start)
+            if index == -1:
+                break
+            count += 1
+            start = index + len(needle)
+    return count
+
+
+def _replace_first_unprotected(content: str, old: str, new: str) -> tuple[str, bool]:
+    if not old:
+        return content, False
+    updated_chunks: list[str] = []
+    replaced = False
+    for is_code_block, chunk in _split_fenced_code_chunks(content):
+        if not is_code_block and not replaced and old in chunk:
+            chunk = chunk.replace(old, new, 1)
+            replaced = True
+        updated_chunks.append(chunk)
+    return "".join(updated_chunks), replaced
+
+
+def _manual_review_reason(old_object: str) -> str:
+    return f"Ambiguous match: {old_object!r} found in multiple sections or no section anchor available."
+
+
+def _replace_old_object_in_section(
+    content: str,
+    old_object: str,
+    replacement: str,
+    *,
+    section_title: str | None,
+) -> _RenderedPatch:
+    if not section_title:
+        return _RenderedPatch(
+            content=content,
+            status=PatchPlanStatus.needs_manual_review,
+            reason=_manual_review_reason(old_object),
+        )
+
+    frontmatter, body = _split_frontmatter(content)
+    sections = _split_into_sections(body)
+    normalized_title = _normalize_section_title(section_title)
+    section_indices = [
+        index for index, (title, _) in enumerate(sections) if _normalize_section_title(title) == normalized_title
+    ]
+    if len(section_indices) != 1:
+        return _RenderedPatch(
+            content=content,
+            status=PatchPlanStatus.needs_manual_review,
+            reason=_manual_review_reason(old_object),
+        )
+
+    target_index = section_indices[0]
+    target_title, target_body = sections[target_index]
+    if _count_unprotected_occurrences(target_body, old_object) < 1:
+        return _RenderedPatch(
+            content=content,
+            status=PatchPlanStatus.needs_manual_review,
+            reason=_manual_review_reason(old_object),
+        )
+
+    updated_section, replaced = _replace_first_unprotected(target_body, old_object, replacement)
+    if not replaced:
+        return _RenderedPatch(
+            content=content,
+            status=PatchPlanStatus.needs_manual_review,
+            reason=_manual_review_reason(old_object),
+        )
+
+    sections[target_index] = (target_title, updated_section)
+    updated_body = "\n".join(section_body for _, section_body in sections)
+    return _RenderedPatch(content=f"{frontmatter}{updated_body}")

@@ -529,3 +529,122 @@ Current decision state.
         rejected_list = client.get("/api/consolidation/plans", params={"status": "rejected"})
         assert rejected_list.status_code == 200, rejected_list.text
         assert any(plan["plan_id"] == reject_plan["plan_id"] for plan in rejected_list.json()["plans"])
+
+
+def test_update_existing_fact_targets_correct_section(tmp_path, monkeypatch):
+    """Replacement only affects the targeted section, not other sections."""
+    from lore_app.patch_planner import _replace_old_object_in_section
+    from lore_app.schemas import PatchPlanStatus
+
+    content = """---
+title: Test
+kind: service
+---
+
+# Test
+
+## Facts
+
+Docker Compose is the deployment tool.
+
+## Details
+
+Docker Compose was originally used for local dev.
+"""
+
+    result = _replace_old_object_in_section(
+        content,
+        "Docker Compose",
+        "systemd units are the deployment tool",
+        section_title="Facts",
+    )
+    assert result.status == PatchPlanStatus.ready
+    # Should replace in "## Facts" section only
+    assert "systemd units are the deployment tool" in result.content
+    # Should NOT change the "## Details" section
+    assert "Docker Compose was originally used for local dev" in result.content
+
+
+def test_update_existing_fact_ambiguous_match_needs_manual_review(tmp_path, monkeypatch):
+    """Ambiguous or no-section-anchor matches produce needs_manual_review status."""
+    from lore_app.patch_planner import _replace_old_object_in_section
+    from lore_app.schemas import PatchPlanStatus
+
+    content = """---
+title: Test
+---
+
+# Test
+
+## Facts
+
+Docker Compose is the tool.
+
+## Details
+
+Docker Compose is also mentioned here.
+"""
+
+    # No section title provided → needs_manual_review
+    result = _replace_old_object_in_section(
+        content,
+        "Docker Compose",
+        "systemd units",
+        section_title=None,
+    )
+    assert result.status == PatchPlanStatus.needs_manual_review
+    assert result.reason is not None
+    assert "Ambiguous" in result.reason
+
+    # Non-existent section title → needs_manual_review
+    result2 = _replace_old_object_in_section(
+        content,
+        "Docker Compose",
+        "systemd units",
+        section_title="Nonexistent",
+    )
+    assert result2.status == PatchPlanStatus.needs_manual_review
+
+
+def test_update_existing_fact_protects_frontmatter_and_code_blocks(tmp_path, monkeypatch):
+    """Frontmatter and code blocks are protected from replacement."""
+    from lore_app.patch_planner import _replace_old_object_in_section
+    from lore_app.schemas import PatchPlanStatus
+
+    content = """---
+title: Docker Compose Service
+summary: Docker Compose runs the service
+---
+
+# Docker Compose Service
+
+## Facts
+
+Docker Compose is the deployment tool.
+
+## Code
+
+```yaml
+# Docker Compose configuration
+version: "3"
+services:
+  app:
+    image: Docker Compose app
+```
+"""
+
+    result = _replace_old_object_in_section(
+        content,
+        "Docker Compose",
+        "systemd units",
+        section_title="Facts",
+    )
+    assert result.status == PatchPlanStatus.ready
+    # Should replace in Facts section
+    assert "systemd units" in result.content
+    # Should NOT change frontmatter
+    assert "title: Docker Compose Service" in result.content
+    assert "summary: Docker Compose runs the service" in result.content
+    # Should NOT change code block
+    assert "Docker Compose configuration" in result.content
+    assert "Docker Compose app" in result.content
