@@ -353,6 +353,7 @@ class LedgerDB:
             if policy.policy_id not in existing:
                 self.store_policy(policy)
 
+    @retry_on_locked()
     def store_policy(self, policy: PolicyRule) -> PolicyRule:
         with self._lock:
             now = utc_now()
@@ -416,6 +417,7 @@ class LedgerDB:
         ).fetchall()
         return [_decode_policy_row(row) for row in rows]
 
+    @retry_on_locked()
     def delete_policy(self, policy_id: str) -> bool:
         with self._lock:
             now = utc_now()
@@ -516,6 +518,7 @@ class LedgerDB:
 
     # ─── Reinforcement ────────────────────────────────────────────────────
 
+    @retry_on_locked()
     def reinforce_or_insert_candidate(
         self,
         *,
@@ -533,136 +536,138 @@ class LedgerDB:
         Repeated claims with the same dedupe_hash strengthen the existing row
         instead of creating a duplicate.
         """
-        if now is None:
-            now = utc_now()
+        with self._lock:
+            if now is None:
+                now = utc_now()
 
-        # Check for existing compatible claim
-        existing = self.connection.execute(
-            """
-            SELECT candidate_id, strength, confidence, epistemic_status, source_capture_ids,
-                   source_page_ids, valid_from, valid_until
-            FROM extraction_candidates
-            WHERE dedupe_hash = ? AND candidate_type = 'claim'
-              AND status IN ('candidate', 'active')
-            ORDER BY updated_at DESC
-            LIMIT 1
-            """,
-            (dedupe_hash,),
-        ).fetchone()
+            # Check for existing compatible claim
+            existing = self.connection.execute(
+                """
+                SELECT candidate_id, strength, confidence, epistemic_status, source_capture_ids,
+                       source_page_ids, valid_from, valid_until
+                FROM extraction_candidates
+                WHERE dedupe_hash = ? AND candidate_type = 'claim'
+                  AND status IN ('candidate', 'active')
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (dedupe_hash,),
+            ).fetchone()
 
-        if existing is not None:
-            # Reinforce existing claim
-            existing_id = str(existing["candidate_id"])
-            prev_strength = float(existing["strength"])
-            new_strength = min(prev_strength + 0.05, 1.0)
+            if existing is not None:
+                # Reinforce existing claim
+                existing_id = str(existing["candidate_id"])
+                prev_strength = float(existing["strength"])
+                new_strength = min(prev_strength + 0.05, 1.0)
 
-            # Merge source IDs
-            existing_captures = json.loads(str(existing["source_capture_ids"]))
-            existing_pages = json.loads(str(existing["source_page_ids"]))
-            merged_captures = list(dict.fromkeys(existing_captures + source_capture_ids))
-            merged_pages = list(dict.fromkeys(existing_pages + source_page_ids))
+                # Merge source IDs
+                existing_captures = json.loads(str(existing["source_capture_ids"]))
+                existing_pages = json.loads(str(existing["source_page_ids"]))
+                merged_captures = list(dict.fromkeys(existing_captures + source_capture_ids))
+                merged_pages = list(dict.fromkeys(existing_pages + source_page_ids))
 
-            # Keep higher confidence
-            existing_confidence = str(existing["confidence"]) if existing["confidence"] else "unknown"
-            new_confidence = metadata.get("confidence", "unknown")
-            best_confidence = (
-                new_confidence
-                if CONFIDENCE_ORDER.get(new_confidence, 0) > CONFIDENCE_ORDER.get(existing_confidence, 0)
-                else existing_confidence
-            )
-            best_epistemic_status = metadata.get("epistemic_status") or (
-                str(existing["epistemic_status"]) if existing["epistemic_status"] else None
-            )
+                # Keep higher confidence
+                existing_confidence = str(existing["confidence"]) if existing["confidence"] else "unknown"
+                new_confidence = metadata.get("confidence", "unknown")
+                best_confidence = (
+                    new_confidence
+                    if CONFIDENCE_ORDER.get(new_confidence, 0) > CONFIDENCE_ORDER.get(existing_confidence, 0)
+                    else existing_confidence
+                )
+                best_epistemic_status = metadata.get("epistemic_status") or (
+                    str(existing["epistemic_status"]) if existing["epistemic_status"] else None
+                )
 
-            # Keep more specific temporal bounds
-            existing_valid_from = str(existing["valid_from"]) if existing["valid_from"] else metadata.get("valid_from")
-            existing_valid_until = str(existing["valid_until"]) if existing["valid_until"] else metadata.get("valid_until")
+                # Keep more specific temporal bounds
+                existing_valid_from = str(existing["valid_from"]) if existing["valid_from"] else metadata.get("valid_from")
+                existing_valid_until = str(existing["valid_until"]) if existing["valid_until"] else metadata.get("valid_until")
+
+                self.connection.execute(
+                    """
+                    UPDATE extraction_candidates
+                    SET strength = ?, confidence = ?, epistemic_status = ?, source_capture_ids = ?,
+                        source_page_ids = ?, valid_from = ?, valid_until = ?,
+                        updated_at = ?
+                    WHERE candidate_id = ?
+                    """,
+                    (
+                        new_strength,
+                        best_confidence,
+                        best_epistemic_status,
+                        json.dumps(merged_captures),
+                        json.dumps(merged_pages),
+                        existing_valid_from,
+                        existing_valid_until,
+                        now,
+                        existing_id,
+                    ),
+                )
+                self.connection.commit()
+                self._bump_generation()
+
+                return ClaimReinforcementResult(
+                    candidate_id=existing_id,
+                    action="reinforced",
+                    previous_strength=prev_strength,
+                    new_strength=new_strength,
+                    merged_source_capture_ids=merged_captures,
+                    merged_source_page_ids=merged_pages,
+                )
+
+            # No match -- insert new claim candidate
+            candidate_id = str(uuid.uuid4())
+            normalized_subject = _normalize(candidate.subject)
+            normalized_predicate = _normalize(candidate.predicate)
+            normalized_object = _normalize(candidate.object)
 
             self.connection.execute(
                 """
-                UPDATE extraction_candidates
-                SET strength = ?, confidence = ?, epistemic_status = ?, source_capture_ids = ?,
-                    source_page_ids = ?, valid_from = ?, valid_until = ?,
-                    updated_at = ?
-                WHERE candidate_id = ?
+                INSERT INTO extraction_candidates (
+                    candidate_id, batch_id, candidate_type, status, confidence, epistemic_status,
+                    actor, lane, content_json, dedupe_hash, source_capture_ids,
+                    source_page_ids, observed_at, valid_from, valid_until,
+                    strength, normalized_subject, normalized_predicate, normalized_object,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    new_strength,
-                    best_confidence,
-                    best_epistemic_status,
-                    json.dumps(merged_captures),
-                    json.dumps(merged_pages),
-                    existing_valid_from,
-                    existing_valid_until,
+                    candidate_id,
+                    batch_id,
+                    candidate_type,
+                    metadata.get("confidence"),
+                    metadata.get("epistemic_status"),
+                    metadata.get("actor"),
+                    metadata.get("lane"),
+                    candidate.model_dump_json(),
+                    dedupe_hash,
+                    json.dumps(source_capture_ids),
+                    json.dumps(source_page_ids),
+                    metadata.get("observed_at"),
+                    metadata.get("valid_from"),
+                    metadata.get("valid_until"),
+                    metadata.get("strength", 0.5),
+                    normalized_subject,
+                    normalized_predicate,
+                    normalized_object,
                     now,
-                    existing_id,
+                    now,
                 ),
             )
             self.connection.commit()
             self._bump_generation()
 
             return ClaimReinforcementResult(
-                candidate_id=existing_id,
-                action="reinforced",
-                previous_strength=prev_strength,
-                new_strength=new_strength,
-                merged_source_capture_ids=merged_captures,
-                merged_source_page_ids=merged_pages,
+                candidate_id=candidate_id,
+                action="inserted",
+                previous_strength=None,
+                new_strength=metadata.get("strength", 0.5),
+                merged_source_capture_ids=source_capture_ids,
+                merged_source_page_ids=source_page_ids,
             )
-
-        # No match — insert new claim candidate
-        candidate_id = str(uuid.uuid4())
-        normalized_subject = _normalize(candidate.subject)
-        normalized_predicate = _normalize(candidate.predicate)
-        normalized_object = _normalize(candidate.object)
-
-        self.connection.execute(
-            """
-            INSERT INTO extraction_candidates (
-                candidate_id, batch_id, candidate_type, status, confidence, epistemic_status,
-                actor, lane, content_json, dedupe_hash, source_capture_ids,
-                source_page_ids, observed_at, valid_from, valid_until,
-                strength, normalized_subject, normalized_predicate, normalized_object,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                candidate_id,
-                batch_id,
-                candidate_type,
-                metadata.get("confidence"),
-                metadata.get("epistemic_status"),
-                metadata.get("actor"),
-                metadata.get("lane"),
-                candidate.model_dump_json(),
-                dedupe_hash,
-                json.dumps(source_capture_ids),
-                json.dumps(source_page_ids),
-                metadata.get("observed_at"),
-                metadata.get("valid_from"),
-                metadata.get("valid_until"),
-                metadata.get("strength", 0.5),
-                normalized_subject,
-                normalized_predicate,
-                normalized_object,
-                now,
-                now,
-            ),
-        )
-        self.connection.commit()
-        self._bump_generation()
-
-        return ClaimReinforcementResult(
-            candidate_id=candidate_id,
-            action="inserted",
-            previous_strength=None,
-            new_strength=metadata.get("strength", 0.5),
-            merged_source_capture_ids=source_capture_ids,
-            merged_source_page_ids=source_page_ids,
-        )
 
     # ─── Invalidation ─────────────────────────────────────────────────────
 
+    @retry_on_locked()
     def supersede_candidate(
         self, old_candidate_id: str, new_candidate_id: str, reason: str
     ) -> ClaimSupersedeResult:
@@ -740,6 +745,7 @@ class LedgerDB:
         """Transition active → archived."""
         self._transition_status(candidate_id, "archived")
 
+    @retry_on_locked()
     def _transition_status(
         self, candidate_id: str, new_status: str, *, reason: str | None = None
     ) -> None:
@@ -779,60 +785,62 @@ class LedgerDB:
 
     # ─── Decay ─────────────────────────────────────────────────────────────
 
+    @retry_on_locked()
     def apply_decay(self, days_since_access: int | None = None) -> DecayResult:
         """Apply time-based decay to claim strength.
 
         Decay formula: strength *= 0.995^days
         Floor: 0.01 (never zero — that would be deletion)
         """
-        rows = self.connection.execute(
-            """
-            SELECT candidate_id, strength, last_accessed_at
-            FROM extraction_candidates
-            WHERE status IN ('candidate', 'active')
-              AND last_accessed_at IS NOT NULL
-            """
-        ).fetchall()
-
-        if not rows:
-            return DecayResult(decayed_count=0, min_strength=0.0, max_strength=0.0)
-
-        now = datetime.now(timezone.utc)
-        decayed_count = 0
-        min_strength = 1.0
-        max_strength = 0.0
-
-        for row in rows:
-            accessed = datetime.fromisoformat(str(row["last_accessed_at"]))
-            if accessed.tzinfo is None:
-                accessed = accessed.replace(tzinfo=timezone.utc)
-            if days_since_access is not None:
-                days = days_since_access
-            else:
-                days = max(0, (now - accessed).days)
-
-            old_strength = float(row["strength"])
-            new_strength = max(0.01, old_strength * (0.995 ** days))
-
-            self.connection.execute(
+        with self._lock:
+            rows = self.connection.execute(
                 """
-                UPDATE extraction_candidates
-                SET strength = ?, updated_at = ?
-                WHERE candidate_id = ?
-                """,
-                (new_strength, now.isoformat(), str(row["candidate_id"])),
-            )
-            decayed_count += 1
-            min_strength = min(min_strength, new_strength)
-            max_strength = max(max_strength, new_strength)
+                SELECT candidate_id, strength, last_accessed_at
+                FROM extraction_candidates
+                WHERE status IN ('candidate', 'active')
+                  AND last_accessed_at IS NOT NULL
+                """
+            ).fetchall()
 
-        self.connection.commit()
-        self._bump_generation()
-        return DecayResult(
-            decayed_count=decayed_count,
-            min_strength=round(min_strength, 4),
-            max_strength=round(max_strength, 4),
-        )
+            if not rows:
+                return DecayResult(decayed_count=0, min_strength=0.0, max_strength=0.0)
+
+            now = datetime.now(timezone.utc)
+            decayed_count = 0
+            min_strength = 1.0
+            max_strength = 0.0
+
+            for row in rows:
+                accessed = datetime.fromisoformat(str(row["last_accessed_at"]))
+                if accessed.tzinfo is None:
+                    accessed = accessed.replace(tzinfo=timezone.utc)
+                if days_since_access is not None:
+                    days = days_since_access
+                else:
+                    days = max(0, (now - accessed).days)
+
+                old_strength = float(row["strength"])
+                new_strength = max(0.01, old_strength * (0.995 ** days))
+
+                self.connection.execute(
+                    """
+                    UPDATE extraction_candidates
+                    SET strength = ?, updated_at = ?
+                    WHERE candidate_id = ?
+                    """,
+                    (new_strength, now.isoformat(), str(row["candidate_id"])),
+                )
+                decayed_count += 1
+                min_strength = min(min_strength, new_strength)
+                max_strength = max(max_strength, new_strength)
+
+            self.connection.commit()
+            self._bump_generation()
+            return DecayResult(
+                decayed_count=decayed_count,
+                min_strength=round(min_strength, 4),
+                max_strength=round(max_strength, 4),
+            )
 
     # ─── Active claim queries ──────────────────────────────────────────────
 
@@ -1042,36 +1050,38 @@ class LedgerDB:
             last_run_at=str(last_row["created_at"]) if last_row else None,
         )
 
+    @retry_on_locked()
     def store_patch_plan(self, plan: PatchPlan, batch_id: str | None = None) -> None:
-        self.connection.execute(
-            """
-            INSERT OR REPLACE INTO patch_plans (
-                plan_id, batch_id, trace_id, candidate_ids, target_page_id, target_section,
-                operation, content_diff, risk_level, auto_appliable, policies_applied,
-                status, created_at, applied_at, rejected_at, rejection_reason
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                plan.plan_id,
-                batch_id,
-                plan.trace_id,
-                json.dumps(plan.candidate_ids),
-                plan.target_page_id,
-                plan.target_section,
-                plan.operation.value,
-                plan.content_diff,
-                plan.risk_level.value,
-                int(plan.auto_appliable),
-                json.dumps([decision.model_dump(mode="json") for decision in plan.policies_applied]),
-                plan.status,
-                plan.created_at,
-                plan.applied_at,
-                plan.rejected_at,
-                plan.rejection_reason,
-            ),
-        )
-        self.connection.commit()
-        self._bump_generation()
+        with self._lock:
+            self.connection.execute(
+                """
+                INSERT OR REPLACE INTO patch_plans (
+                    plan_id, batch_id, trace_id, candidate_ids, target_page_id, target_section,
+                    operation, content_diff, risk_level, auto_appliable, policies_applied,
+                    status, created_at, applied_at, rejected_at, rejection_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    plan.plan_id,
+                    batch_id,
+                    plan.trace_id,
+                    json.dumps(plan.candidate_ids),
+                    plan.target_page_id,
+                    plan.target_section,
+                    plan.operation.value,
+                    plan.content_diff,
+                    plan.risk_level.value,
+                    int(plan.auto_appliable),
+                    json.dumps([decision.model_dump(mode="json") for decision in plan.policies_applied]),
+                    plan.status,
+                    plan.created_at,
+                    plan.applied_at,
+                    plan.rejected_at,
+                    plan.rejection_reason,
+                ),
+            )
+            self.connection.commit()
+            self._bump_generation()
 
     def get_patch_plan(self, plan_id: str) -> dict[str, Any] | None:
         row = self.connection.execute(
@@ -1108,60 +1118,64 @@ class LedgerDB:
         ).fetchall()
         return [_decode_row(row) for row in rows]
 
+    @retry_on_locked()
     def update_plan_status(self, plan_id: str, status: str, **kwargs: Any) -> None:
-        allowed_fields = {"applied_at", "rejected_at", "rejection_reason", "content_diff"}
-        updates = {"status": status}
-        for key, value in kwargs.items():
-            if key in allowed_fields:
-                updates[key] = value
-        if len(updates) == 1 and self.get_patch_plan(plan_id) is None:
-            raise ValueError(f"Patch plan {plan_id} not found")
-        assignments = ", ".join(f"{column} = ?" for column in updates)
-        params = list(updates.values()) + [plan_id]
-        cursor = self.connection.execute(
-            f"UPDATE patch_plans SET {assignments} WHERE plan_id = ?",
-            params,
-        )
-        if cursor.rowcount == 0:
-            raise ValueError(f"Patch plan {plan_id} not found")
-        self.connection.commit()
-        self._bump_generation()
+        with self._lock:
+            allowed_fields = {"applied_at", "rejected_at", "rejection_reason", "content_diff"}
+            updates = {"status": status}
+            for key, value in kwargs.items():
+                if key in allowed_fields:
+                    updates[key] = value
+            if len(updates) == 1 and self.get_patch_plan(plan_id) is None:
+                raise ValueError(f"Patch plan {plan_id} not found")
+            assignments = ", ".join(f"{column} = ?" for column in updates)
+            params = list(updates.values()) + [plan_id]
+            cursor = self.connection.execute(
+                f"UPDATE patch_plans SET {assignments} WHERE plan_id = ?",
+                params,
+            )
+            if cursor.rowcount == 0:
+                raise ValueError(f"Patch plan {plan_id} not found")
+            self.connection.commit()
+            self._bump_generation()
 
+    @retry_on_locked()
     def store_consolidation_run(
         self,
         result: ConsolidationRunResult,
         status: str = "completed",
     ) -> None:
-        now = utc_now()
-        self.connection.execute(
-            """
-            INSERT OR REPLACE INTO consolidation_runs (
-                run_id, batch_id, started_at, completed_at, captures_processed,
-                candidates_extracted, plans_generated, auto_applied,
-                review_required, errors, dry_run, status
-            ) VALUES (?, ?, COALESCE(
-                (SELECT started_at FROM consolidation_runs WHERE run_id = ?),
-                ?
-            ), ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                result.batch_id,
-                result.batch_id,
-                result.batch_id,
-                now,
-                now if status != "running" else None,
-                result.captures_processed,
-                result.candidates_extracted,
-                result.plans_generated,
-                result.auto_applied,
-                result.review_required,
-                json.dumps(result.errors),
-                int(result.dry_run),
-                status,
-            ),
-        )
-        self.connection.commit()
-        self._bump_generation()
+        with self._lock:
+            now = utc_now()
+            self.connection.execute(
+                """
+                INSERT OR REPLACE INTO consolidation_runs (
+                    run_id, batch_id, started_at, completed_at, captures_processed,
+                    candidates_extracted, plans_generated, auto_applied,
+                    review_required, errors, dry_run, status
+                ) VALUES (?, ?, COALESCE(
+                    (SELECT started_at FROM consolidation_runs WHERE run_id = ?),
+                    ?
+                ), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    result.batch_id,
+                    result.batch_id,
+                    result.batch_id,
+                    now,
+                    now if status != "running" else None,
+                    result.captures_processed,
+                    result.candidates_extracted,
+                    result.plans_generated,
+                    result.auto_applied,
+                    result.review_required,
+                    json.dumps(result.errors),
+                    int(result.dry_run),
+                    status,
+                ),
+            )
+            self.connection.commit()
+            self._bump_generation()
 
     def get_consolidation_status(self) -> dict[str, Any]:
         last_run = self.connection.execute(
@@ -1195,57 +1209,59 @@ class LedgerDB:
             "stuck_runs": [_decode_consolidation_run(row) for row in stuck_rows],
         }
 
+    @retry_on_locked()
     def store_trace(self, trace: TraceEntry) -> TraceEntry:
         """Insert or update a reasoning trace. Returns the stored trace."""
-        now = utc_now()
-        trace_id = trace.trace_id or f"trace-{uuid.uuid4().hex[:12]}"
-        existing = self.connection.execute(
-            "SELECT created_at FROM reasoning_traces WHERE trace_id = ?",
-            (trace_id,),
-        ).fetchone()
-        created_at = trace.created_at or (
-            str(existing["created_at"]) if existing is not None and existing["created_at"] else now
-        )
-        updated_at = trace.updated_at or now
-        stored = trace.model_copy(
-            update={
-                "trace_id": trace_id,
-                "provenance": merge_trace_provenance(trace),
-                "created_at": created_at,
-                "updated_at": updated_at,
-            }
-        )
-        payload = stored.model_dump(mode="json")
-        self.connection.execute(
-            """
-            INSERT OR REPLACE INTO reasoning_traces (
-                trace_id, parent_trace_id, actor, reason_summary, status,
-                context_refs, tool_refs, constraints, policy_refs, alternatives,
-                provenance, epistemic_status, outcome, related_ids, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                payload["trace_id"],
-                payload["parent_trace_id"],
-                payload["actor"],
-                payload["reason_summary"],
-                payload["status"],
-                json.dumps(payload["context_refs"]),
-                json.dumps(payload["tool_refs"]),
-                json.dumps(payload["constraints"]),
-                json.dumps(payload["policy_refs"]),
-                json.dumps(payload["alternatives"]),
-                json.dumps(payload["provenance"] or {}),
-                payload["epistemic_status"],
-                payload["outcome"],
-                json.dumps(payload["related_ids"]),
-                payload["created_at"],
-                payload["updated_at"],
-            ),
-        )
-        self.connection.commit()
-        self._bump_generation()
-        return stored
+        with self._lock:
+            now = utc_now()
+            trace_id = trace.trace_id or f"trace-{uuid.uuid4().hex[:12]}"
+            existing = self.connection.execute(
+                "SELECT created_at FROM reasoning_traces WHERE trace_id = ?",
+                (trace_id,),
+            ).fetchone()
+            created_at = trace.created_at or (
+                str(existing["created_at"]) if existing is not None and existing["created_at"] else now
+            )
+            updated_at = trace.updated_at or now
+            stored = trace.model_copy(
+                update={
+                    "trace_id": trace_id,
+                    "provenance": merge_trace_provenance(trace),
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                }
+            )
+            payload = stored.model_dump(mode="json")
+            self.connection.execute(
+                """
+                INSERT OR REPLACE INTO reasoning_traces (
+                    trace_id, parent_trace_id, actor, reason_summary, status,
+                    context_refs, tool_refs, constraints, policy_refs, alternatives,
+                    provenance, epistemic_status, outcome, related_ids, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["trace_id"],
+                    payload["parent_trace_id"],
+                    payload["actor"],
+                    payload["reason_summary"],
+                    payload["status"],
+                    json.dumps(payload["context_refs"]),
+                    json.dumps(payload["tool_refs"]),
+                    json.dumps(payload["constraints"]),
+                    json.dumps(payload["policy_refs"]),
+                    json.dumps(payload["alternatives"]),
+                    json.dumps(payload["provenance"] or {}),
+                    payload["epistemic_status"],
+                    payload["outcome"],
+                    json.dumps(payload["related_ids"]),
+                    payload["created_at"],
+                    payload["updated_at"],
+                ),
+            )
+            self.connection.commit()
+            self._bump_generation()
+            return stored
 
     def get_trace(self, trace_id: str) -> TraceEntry | None:
         """Get a trace by ID."""

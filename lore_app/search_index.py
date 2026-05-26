@@ -17,7 +17,7 @@ class LoreSearchIndex:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.execute("PRAGMA busy_timeout = 5000")
         self._conn.execute("PRAGMA journal_mode = WAL")
@@ -96,83 +96,89 @@ class LoreSearchIndex:
                 count += 1
             return count
 
+    @retry_on_locked()
     def upsert_page(self, page: MarkdownPage) -> None:
         """Insert or update a single page in the index."""
-        summary = page.summary()
-        tags = " ".join(summary.tags)
-        sources = " ".join(summary.sources)
-        self._conn.execute(
-            """INSERT INTO pages (page_id, title, kind, visibility, status, summary, tags, body, sources, updated_at, actor, lane)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(page_id) DO UPDATE SET
-                   title = excluded.title,
-                   kind = excluded.kind,
-                   visibility = excluded.visibility,
-                   status = excluded.status,
-                   summary = excluded.summary,
-                   tags = excluded.tags,
-                   body = excluded.body,
-                   sources = excluded.sources,
-                   updated_at = excluded.updated_at,
-                   actor = excluded.actor,
-                   lane = excluded.lane""",
-            (
-                summary.id,
-                summary.title,
-                summary.kind,
-                summary.visibility,
-                summary.status,
-                summary.summary or "",
-                tags,
-                searchable_body(page.body),
-                sources,
-                summary.updated_at,
-                page.frontmatter.get("actor"),
-                page.frontmatter.get("lane"),
-            ),
-        )
-        self._conn.commit()
+        with self._lock:
+            summary = page.summary()
+            tags = " ".join(summary.tags)
+            sources = " ".join(summary.sources)
+            self._conn.execute(
+                """INSERT INTO pages (page_id, title, kind, visibility, status, summary, tags, body, sources, updated_at, actor, lane)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(page_id) DO UPDATE SET
+                       title = excluded.title,
+                       kind = excluded.kind,
+                       visibility = excluded.visibility,
+                       status = excluded.status,
+                       summary = excluded.summary,
+                       tags = excluded.tags,
+                       body = excluded.body,
+                       sources = excluded.sources,
+                       updated_at = excluded.updated_at,
+                       actor = excluded.actor,
+                       lane = excluded.lane""",
+                (
+                    summary.id,
+                    summary.title,
+                    summary.kind,
+                    summary.visibility,
+                    summary.status,
+                    summary.summary or "",
+                    tags,
+                    searchable_body(page.body),
+                    sources,
+                    summary.updated_at,
+                    page.frontmatter.get("actor"),
+                    page.frontmatter.get("lane"),
+                ),
+            )
+            self._conn.commit()
 
+    @retry_on_locked()
     def upsert_page_from_detail(self, page: PageDetail) -> None:
         """Upsert from a PageDetail API response."""
-        tags = " ".join(page.tags)
-        sources = " ".join(page.sources)
-        self._conn.execute(
-            """INSERT INTO pages (page_id, title, kind, visibility, status, summary, tags, body, sources, updated_at, actor, lane)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(page_id) DO UPDATE SET
-                   title = excluded.title,
-                   kind = excluded.kind,
-                   visibility = excluded.visibility,
-                   status = excluded.status,
-                   summary = excluded.summary,
-                   tags = excluded.tags,
-                   body = excluded.body,
-                   sources = excluded.sources,
-                   updated_at = excluded.updated_at,
-                   actor = excluded.actor,
-                   lane = excluded.lane""",
-            (
-                page.id,
-                page.title,
-                page.kind,
-                page.visibility,
-                page.status,
-                page.summary or "",
-                tags,
-                searchable_body(page.body),
-                sources,
-                page.updated_at,
-                page.frontmatter.get("actor"),
-                page.frontmatter.get("lane"),
-            ),
-        )
-        self._conn.commit()
+        with self._lock:
+            tags = " ".join(page.tags)
+            sources = " ".join(page.sources)
+            self._conn.execute(
+                """INSERT INTO pages (page_id, title, kind, visibility, status, summary, tags, body, sources, updated_at, actor, lane)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(page_id) DO UPDATE SET
+                       title = excluded.title,
+                       kind = excluded.kind,
+                       visibility = excluded.visibility,
+                       status = excluded.status,
+                       summary = excluded.summary,
+                       tags = excluded.tags,
+                       body = excluded.body,
+                       sources = excluded.sources,
+                       updated_at = excluded.updated_at,
+                       actor = excluded.actor,
+                       lane = excluded.lane""",
+                (
+                    page.id,
+                    page.title,
+                    page.kind,
+                    page.visibility,
+                    page.status,
+                    page.summary or "",
+                    tags,
+                    searchable_body(page.body),
+                    sources,
+                    page.updated_at,
+                    page.frontmatter.get("actor"),
+                    page.frontmatter.get("lane"),
+                ),
+            )
+            self._conn.commit()
 
+    @retry_on_locked()
     def remove_page(self, page_id: str) -> None:
         """Remove a page from the index."""
-        self._conn.execute("DELETE FROM pages WHERE page_id = ?", (page_id,))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("DELETE FROM pages WHERE page_id = ?", (page_id,))
+            self._conn.commit()
 
     def search(self, query: str, *, kind: str | None = None, lane: str | None = None,
                actor: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
