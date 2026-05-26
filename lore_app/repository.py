@@ -4,10 +4,13 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Iterator
 
 from .frontmatter import parse_frontmatter
 from .schemas import CatalogResponse, EpistemicStatus, PageDetail, PageSummary, SearchHit, SearchResponse
+
+if TYPE_CHECKING:
+    from .search_index import LoreSearchIndex
 
 PAGE_SEGMENT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 HEADING_PATTERN = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
@@ -60,9 +63,10 @@ class MarkdownPage:
 
 
 class LoreRepository:
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path, search_index: "LoreSearchIndex | None" = None):
         self.root = Path(root).resolve()
         self._page_cache: list[PageSummary] | None = None
+        self._search_index = search_index
 
     def ensure_root(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -74,6 +78,7 @@ class LoreRepository:
         visibility: str | None = None,
         q: str | None = None,
         limit: int | None = None,
+        offset: int = 0,
     ) -> list[PageSummary]:
         if self._page_cache is None:
             self._page_cache = [page.summary() for page in self._scan_pages()]
@@ -93,7 +98,11 @@ class LoreRepository:
                 or (page.summary and needle in page.summary.casefold())
             ]
         pages.sort(key=lambda page: (page.kind, page.id))
-        return pages[:limit] if limit else pages
+        if offset:
+            pages = pages[offset:]
+        if limit is not None:
+            pages = pages[:limit]
+        return pages
 
     def read_page(self, page_id: str) -> PageDetail | None:
         normalized = normalize_page_id(page_id)
@@ -101,6 +110,28 @@ class LoreRepository:
         if not path.is_file():
             return None
         return self._read_file(path, normalized).detail()
+
+    def read_pages(self, ids: list[str]) -> dict[str, PageDetail]:
+        """Read multiple pages keyed by page ID."""
+        result: dict[str, PageDetail] = {}
+        for page_id in ids:
+            page = self.read_page(page_id)
+            if page is not None:
+                result[page_id] = page
+        return result
+
+    def iter_pages(
+        self,
+        *,
+        kind: str | None = None,
+        visibility: str | None = None,
+        q: str | None = None,
+    ) -> Iterator[PageDetail]:
+        """Yield page details matching the current summary filters."""
+        for summary in self.list_pages(kind=kind, visibility=visibility, q=q):
+            detail = self.read_page(summary.id)
+            if detail is not None:
+                yield detail
 
     def upsert_page(self, page_id: str, content: str) -> PageDetail:
         normalized = normalize_page_id(page_id)
@@ -135,6 +166,25 @@ class LoreRepository:
         if not terms:
             return SearchResponse(query=cleaned_query, hits=[])
 
+        if self._search_index is not None and self._search_index_has_pages():
+            hits: list[SearchHit] = []
+            for hit in self._search_index.search(cleaned_query, kind=kind, limit=limit):
+                summary = self._get_summary_from_cache(hit["page_id"])
+                if summary is None:
+                    continue
+                if visibility and summary.visibility != visibility:
+                    continue
+                hits.append(
+                    SearchHit(
+                        page=summary,
+                        score=int(hit["score"]),
+                        matches=list(hit.get("matched_fields") or []),
+                    )
+                )
+
+            hits.sort(key=lambda hit: (-hit.score, hit.page.id))
+            return SearchResponse(query=cleaned_query, hits=hits[:limit])
+
         hits: list[SearchHit] = []
         for page in self._scan_pages():
             summary = page.summary()
@@ -153,7 +203,7 @@ class LoreRepository:
         return SearchResponse(query=cleaned_query, hits=hits[:limit])
 
     def catalog(self) -> CatalogResponse:
-        pages = [page.summary() for page in self._scan_pages()]
+        pages = self.list_pages()
         return CatalogResponse(
             kinds=sorted({page.kind for page in pages}),
             visibilities=sorted({page.visibility for page in pages}),
@@ -195,6 +245,18 @@ class LoreRepository:
             updated_at=updated_at,
             size=stat.st_size,
         )
+
+    def _get_summary_from_cache(self, page_id: str) -> PageSummary | None:
+        for page in self.list_pages():
+            if page.id == page_id:
+                return page
+        return None
+
+    def _search_index_has_pages(self) -> bool:
+        if self._search_index is None:
+            return False
+        row = self._search_index._conn.execute("SELECT 1 FROM pages LIMIT 1").fetchone()
+        return row is not None
 
 
 def normalize_page_id(raw_page_id: str) -> str:

@@ -22,8 +22,8 @@ curl http://localhost:8078/api/version
 
 ```json
 {
-  "name": "axis-lore",
-  "version": "0.2.0",
+  "name": "lore",
+  "version": "0.3.0b1",
   "python_version": "3.12.5",
   "api_version": "1"
 }

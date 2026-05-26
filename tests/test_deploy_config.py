@@ -41,3 +41,31 @@ def test_release_gate_port_and_version_consistency():
     assert f"version('{package_name}')" in checklist or f'version("{package_name}")' in checklist, (
         f"Checklist version command does not use package name '{package_name}'"
     )
+
+
+def test_python_sdk_has_test_extra():
+    """Regression: pip install -e .[test] must install pytest."""
+    import tomllib
+
+    sdk_pyproject = Path(__file__).resolve().parent.parent / "sdk" / "python" / "pyproject.toml"
+    config = tomllib.loads(sdk_pyproject.read_text())
+    opt_deps = config["project"].get("optional-dependencies", {})
+    assert "test" in opt_deps, "sdk/python/pyproject.toml missing [project.optional-dependencies] test extra"
+    test_deps = opt_deps["test"]
+    assert any("pytest" in dep for dep in test_deps), "test extra must include pytest"
+
+
+def test_typescript_sdk_readme_imports_match_package_name():
+    """Regression: README imports must match the actual package name."""
+    import json
+    import re
+
+    repo_root = Path(__file__).resolve().parent.parent
+    pkg_json = json.loads((repo_root / "sdk" / "typescript" / "package.json").read_text())
+    pkg_name = pkg_json["name"]
+
+    readme = (repo_root / "sdk" / "typescript" / "README.md").read_text()
+    imports = re.findall(r'from\s+"([^"]+)"', readme)
+    sdk_imports = [i for i in imports if not i.startswith(".") and "node:" not in i]
+    for imp in sdk_imports:
+        assert imp == pkg_name, f"README imports '{imp}' but package.json names '{pkg_name}'"

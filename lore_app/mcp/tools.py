@@ -1732,7 +1732,7 @@ This page was auto-created as a stub. Replace with actual content.
         payload = build_review_batch(ledger, planner, batch_id=batch_id)
         return tool_result(payload, summarize_review_batch(payload))
 
-    raise JsonRpcError(-32602, f"Unknown Lore tool: {name}")
+    raise JsonRpcError(-32601, f"Unsupported Lore tool: {name}")
 
 
 def tool_result(structured_content: dict[str, Any], text: str, *, is_error: bool = False) -> dict[str, Any]:

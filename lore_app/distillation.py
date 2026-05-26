@@ -16,15 +16,15 @@ from .schemas import (
 
 
 def _date_from_frontmatter(page: PageDetail) -> date | None:
+    # Capture page IDs embed the intended session date; prefer that over write time.
+    for part in page.id.split("/"):
+        try:
+            return date.fromisoformat(part)
+        except ValueError:
+            continue
+
     captured_at = optional_string(page.frontmatter.get("captured_at"))
     if not captured_at:
-        # Fall back to the date embedded in the page_id path segment.
-        parts = page.id.split("/")
-        for part in parts:
-            try:
-                return date.fromisoformat(part)
-            except ValueError:
-                continue
         return None
     try:
         return date.fromisoformat(captured_at[:10])

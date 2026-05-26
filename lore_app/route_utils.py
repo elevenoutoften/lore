@@ -109,7 +109,7 @@ def validate_optional_content(content: str | None) -> None:
 
 
 def is_rate_limited_write(request: Request) -> bool:
-    """Rate-limit all write methods under /api/ and /mcp, except GET/HEAD/OPTIONS."""
+    """Rate-limit write API routes, excluding MCP which enforces its own limits."""
     path = request.url.path
     method = request.method.upper()
 
@@ -117,8 +117,8 @@ def is_rate_limited_write(request: Request) -> bool:
     if method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return False
 
-    # Rate-limit all mutations under /api/ and /mcp
-    if path.startswith("/api/") or path == "/mcp":
+    # Rate-limit API mutations. MCP has its own call-aware limiter in routes/mcp.py.
+    if path.startswith("/api/"):
         return True
 
     return False
