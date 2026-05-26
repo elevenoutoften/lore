@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .decisions import build_decision_markdown, build_procedure_markdown, export_procedure_skill
+from .context import McpContext
 from .dispatch import (
     PROJECT_NAME,
     PROTOCOL_VERSION,
@@ -13,10 +14,10 @@ from .dispatch import (
     success_response,
 )
 from .resources import page_id_from_resource_uri, resource_for_page, uri_for_page
-from .tools import CODE_INVENTORIES, TOOLS, WRITE_TOOL_NAMES, call_tool
+from .tools import TOOLS, WRITE_TOOL_NAMES, call_tool
 
 __all__ = [
-    "CODE_INVENTORIES",
+    "McpContext",
     "PROJECT_NAME",
     "PROTOCOL_VERSION",
     "TOOLS",

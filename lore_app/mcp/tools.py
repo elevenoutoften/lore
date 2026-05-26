@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable
 
 from pydantic import ValidationError
 
@@ -36,10 +36,10 @@ from ..schemas import (
     TraceEntry,
     TraceListResponse,
 )
+from .context import McpContext
 from .decisions import build_decision_markdown, build_procedure_markdown, export_procedure_skill
 from .dispatch import JsonRpcError
 
-CODE_INVENTORIES: dict[str, dict[str, Any]] = {}
 WRITE_TOOL_NAMES = {
     "lore_capture",
     "lore_apply_patch",
@@ -941,6 +941,948 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 
+
+def _handle_lore_list_pages(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    limit = int(arguments.get("limit") or 50)
+    pages = ctx.repo.list_pages(
+        kind=optional_string(arguments.get("kind")),
+        visibility=optional_string(arguments.get("visibility")),
+        q=optional_string(arguments.get("query")),
+        limit=max(1, min(limit, 100)),
+    )
+    payload = {"pages": [page.model_dump() for page in pages]}
+    return tool_result(payload, summarize_pages(pages))
+
+
+def _handle_lore_read_page(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    page_id = require_string(arguments.get("page_id"), "page_id")
+    page = ctx.repo.read_page(page_id)
+    if page is None:
+        return tool_result({"page_id": page_id}, f"Lore page not found: {page_id}", is_error=True)
+    return tool_result({"page": page.model_dump()}, page.content)
+
+
+def _handle_lore_search(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    query = require_string(arguments.get("query"), "query")
+    limit = int(arguments.get("limit") or 20)
+    limit_val = max(1, min(limit, 50))
+    kind = optional_string(arguments.get("kind"))
+    visibility = optional_string(arguments.get("visibility"))
+    status = optional_string(arguments.get("status"))
+    namespace = optional_string(arguments.get("namespace"))
+    lane = optional_string(arguments.get("lane"))
+    actor = optional_string(arguments.get("actor"))
+
+    if ctx.search_index is not None:
+        fts_hits = ctx.search_index.search(query, kind=kind, lane=lane, actor=actor, limit=50)
+        if fts_hits or ctx.search_index.has_pages():
+            hits = filter_fts_hits(fts_hits, visibility=visibility, status=status, namespace=namespace, lane=lane)[:limit_val]
+            payload = {"query": query, "hits": hits}
+            return tool_result(payload, summarize_fts_search(payload))
+
+    results = ctx.repo.search(query, kind=kind, visibility=visibility, limit=limit_val)
+    payload = results.model_dump()
+    payload["hits"] = filter_repo_hits(payload["hits"], status=status, namespace=namespace)
+    return tool_result(payload, summarize_search(payload))
+
+
+def _handle_lore_list_lanes(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    if ctx.search_index is None:
+        return tool_result({"lanes": []}, "Search index is not available.")
+    lanes = ctx.search_index.list_lanes()
+    return tool_result({"lanes": lanes}, f"Found {len(lanes)} retrieval lane(s).")
+
+
+def _handle_lore_list_actors(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    if ctx.search_index is None:
+        return tool_result({"actors": []}, "Search index is not available.")
+    actors = ctx.search_index.list_actors()
+    return tool_result({"actors": actors}, f"Found {len(actors)} known actor(s).")
+
+
+def _handle_lore_rag_context(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    query = require_string(arguments.get("query"), "query")
+    limit = max(1, min(int(arguments.get("limit") or 5), 50))
+    expand_hops = max(0, min(int(arguments.get("expand_hops", 2)), 4))
+    expand_edge_types = arguments.get("expand_edge_types") or None
+    if expand_edge_types is not None and not isinstance(expand_edge_types, list):
+        raise JsonRpcError(-32602, "expand_edge_types must be an array.")
+    include_claims = bool(arguments.get("include_claims", True))
+    include_traces = bool(arguments.get("include_traces", False))
+    include_decisions = bool(arguments.get("include_decisions", True))
+    if ctx.vector_store is None:
+        return tool_result({"query": query, "results": []}, "RAG vector store is not configured.", is_error=True)
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    graph = build_context_graph(ctx.repo, ledger)
+    payload = enrich_expanded_results(
+        ctx.repo,
+        hybrid_retrieve_expanded(
+            query,
+            ctx.search_index,
+            ctx.vector_store,
+            graph,
+            ledger,
+            limit=limit,
+            expand_hops=expand_hops,
+            expand_edge_types=[str(edge_type) for edge_type in expand_edge_types] if expand_edge_types else None,
+            include_claims=include_claims,
+            include_traces=include_traces,
+            include_decisions=include_decisions,
+        ),
+    )
+    return tool_result(payload, summarize_rag_context(payload))
+
+
+def _handle_lore_rag_context_expanded(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    query = require_string(arguments.get("query"), "query")
+    limit = max(1, min(int(arguments.get("limit") or 5), 50))
+    expand_hops = max(0, min(int(arguments.get("expand_hops", 2)), 4))
+    expand_edge_types = arguments.get("expand_edge_types") or None
+    if expand_edge_types is not None and not isinstance(expand_edge_types, list):
+        raise JsonRpcError(-32602, "expand_edge_types must be an array.")
+    include_claims = bool(arguments.get("include_claims", True))
+    include_traces = bool(arguments.get("include_traces", False))
+    include_decisions = bool(arguments.get("include_decisions", True))
+    if ctx.vector_store is None:
+        return tool_result({"query": query, "results": []}, "RAG vector store is not configured.", is_error=True)
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    graph = build_context_graph(ctx.repo, ledger)
+    payload = enrich_rag_results(
+        ctx.repo,
+        hybrid_retrieve_expanded(
+            query,
+            ctx.search_index,
+            ctx.vector_store,
+            graph,
+            ledger,
+            limit=limit,
+            expand_hops=expand_hops,
+            expand_edge_types=[str(edge_type) for edge_type in expand_edge_types] if expand_edge_types else None,
+            include_claims=include_claims,
+            include_traces=include_traces,
+            include_decisions=include_decisions,
+        ),
+    )
+    return tool_result(payload, summarize_rag_context(payload))
+
+
+def _handle_lore_link_graph(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    graph = build_link_graph(ctx.repo)
+    payload = graph.model_dump()
+    return tool_result(payload, summarize_link_graph(payload))
+
+
+def _handle_lore_context_graph(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    graph = build_context_graph(ctx.repo, ledger)
+    payload = graph.model_dump(mode="json")
+    return tool_result(payload, f"Context graph: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
+
+
+def _handle_lore_graph_analytics(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    graph = build_context_graph(ctx.repo, ledger)
+    result = GraphAnalytics(graph).compute()
+    payload = result.model_dump(mode="json")
+    return tool_result(payload, f"Graph analytics: {result.node_count} nodes, {len(result.communities)} communities")
+
+
+def _handle_lore_context_graph_neighbors(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    node_id = require_string(arguments.get("node_id"), "node_id")
+    direction = arguments.get("direction", "both")
+    edge_types = arguments.get("edge_types", [])
+    node_types = arguments.get("node_types", [])
+    limit = max(1, min(int(arguments.get("limit", 50)), 500))
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    graph = build_context_graph(ctx.repo, ledger)
+    query = ContextGraphNeighborQuery(
+        node_id=node_id,
+        direction=direction,
+        edge_types=edge_types,
+        node_types=node_types,
+        limit=limit,
+    )
+    result = query_neighbors(graph, query)
+    return tool_result(result.model_dump(mode="json"), f"Found {result.total} neighbors for {node_id}")
+
+
+def _handle_lore_context_graph_paths(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    source_id = require_string(arguments.get("source_id"), "source_id")
+    target_id = require_string(arguments.get("target_id"), "target_id")
+    max_depth = max(1, min(int(arguments.get("max_depth", 3)), 6))
+    edge_types = arguments.get("edge_types", [])
+    limit = max(1, min(int(arguments.get("limit", 10)), 50))
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    graph = build_context_graph(ctx.repo, ledger)
+    query = ContextGraphPathQuery(
+        source_id=source_id,
+        target_id=target_id,
+        max_depth=max_depth,
+        edge_types=edge_types,
+        limit=limit,
+    )
+    result = query_paths(graph, query)
+    return tool_result(result.model_dump(mode="json"), f"Found {len(result.paths)} paths from {source_id} to {target_id}")
+
+
+def _handle_lore_explain_context(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    node_id = require_string(arguments.get("node_id"), "node_id")
+    depth = max(1, min(int(arguments.get("depth", 2)), 3))
+    edge_types = arguments.get("edge_types", [])
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    graph = build_context_graph(ctx.repo, ledger)
+    query = ContextExplainQuery(node_id=node_id, depth=depth, edge_types=edge_types)
+    result = explain_context(graph, query)
+    return tool_result(result.model_dump(mode="json"), result.explanation)
+
+
+def _handle_lore_page_links(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    page_id = require_string(arguments.get("page_id"), "page_id")
+    links = page_links(ctx.repo, page_id)
+    if links is None:
+        return tool_result({"page_id": page_id}, f"Lore page not found: {page_id}", is_error=True)
+    payload = links.model_dump()
+    return tool_result(payload, summarize_page_links(payload))
+
+
+def _handle_lore_lint(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    lint = lint_lore(ctx.repo)
+    payload = lint.model_dump()
+    return tool_result(payload, summarize_lint(payload))
+
+
+def _handle_lore_stale_pages(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    stale = lint_stale_queue(ctx.repo)
+    payload = stale.model_dump()
+    return tool_result(payload, summarize_stale_pages(payload))
+
+
+def _handle_lore_contradiction_review(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    review = lint_contradiction_review(ctx.repo)
+    payload = review.model_dump()
+    return tool_result(payload, summarize_contradiction_review(payload))
+
+
+def _handle_lore_frontmatter_spec(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    spec = get_frontmatter_spec()
+    payload = spec.model_dump()
+    return tool_result(payload, f"{len(payload['specs'])} frontmatter kind specs.")
+
+
+def _handle_lore_list_procedures(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    pages = ctx.repo.list_pages(kind="procedure")
+    procedures = []
+    for summary in pages:
+        page = ctx.repo.read_page(summary.id)
+        if page is None:
+            continue
+        procedures.append(
+            {
+                "page": summary.model_dump(),
+                "trigger": optional_string(page.frontmatter.get("trigger")),
+                "steps": string_arguments(page.frontmatter.get("steps")),
+                "preconditions": string_arguments(page.frontmatter.get("preconditions")),
+                "postconditions": string_arguments(page.frontmatter.get("postconditions")),
+                "error_handling": optional_string(page.frontmatter.get("error_handling")),
+            }
+        )
+    payload = {"procedures": procedures}
+    return tool_result(payload, summarize_procedures(payload))
+
+
+def _handle_lore_create_procedure(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    title = require_string(arguments.get("title"), "title")
+    summary = require_string(arguments.get("summary"), "summary")
+    trigger = require_string(arguments.get("trigger"), "trigger")
+    steps = string_arguments(arguments.get("steps"))
+    if not steps:
+        raise JsonRpcError(-32602, "Missing required field: steps")
+    preconditions = string_arguments(arguments.get("preconditions"))
+    postconditions = string_arguments(arguments.get("postconditions"))
+    error_handling = optional_string(arguments.get("error_handling")) or ""
+    author = optional_string(arguments.get("author")) or ""
+    schema_version = optional_string(arguments.get("schema_version")) or "1.0"
+    page_id = unique_page_id(ctx.repo, f"procedures/{slugify(title)}")
+    content = build_procedure_markdown(
+        title=title,
+        summary=summary,
+        trigger=trigger,
+        steps=steps,
+        preconditions=preconditions,
+        postconditions=postconditions,
+        error_handling=error_handling,
+        author=author,
+        schema_version=schema_version,
+    )
+    try:
+        page = ctx.repo.upsert_page(page_id, content)
+    except InvalidPageId as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    if ctx.search_index is not None:
+        ctx.search_index.upsert_page_from_detail(page)
+    index_vector_page(ctx.vector_store, page)
+    invalidate_graph_cache(ctx.graph_cache)
+    return tool_result({"page": page.model_dump()}, f"Created Lore procedure: {page.id}")
+
+
+def _handle_lore_export_procedure(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    page_id = require_string(arguments.get("page_id"), "page_id")
+    page = ctx.repo.read_page(page_id)
+    if page is None or page.kind != "procedure":
+        return tool_result({"page_id": page_id}, f"Lore procedure not found: {page_id}", is_error=True)
+    content = export_procedure_skill(page)
+    return tool_result({"page_id": page.id, "content": content}, content)
+
+
+def _handle_lore_capture(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    try:
+        page = capture_memory(ctx.repo, CaptureRequest(**arguments))
+    except InvalidPageId as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    except ValidationError as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    if ctx.search_index is not None:
+        ctx.search_index.upsert_page_from_detail(page)
+    index_vector_page(ctx.vector_store, page)
+    invalidate_graph_cache(ctx.graph_cache)
+    payload = {"page": page.model_dump()}
+    return tool_result(payload, f"Captured Lore memory: {page.id}")
+
+
+def _handle_lore_list_captures(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    limit = int(arguments.get("limit") or 50)
+    captures = list_captures(
+        ctx.repo,
+        status=optional_string(arguments.get("status")) or "draft",
+        limit=max(1, min(limit, 200)),
+    )
+    payload = captures.model_dump()
+    return tool_result(payload, summarize_captures(payload))
+
+
+def _handle_lore_capture_digest(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    digest = build_capture_digest(ctx.repo)
+    payload = digest.model_dump()
+    lines = [f"Draft: {digest.total_draft}, Review: {digest.total_review}"]
+    if digest.by_date:
+        lines.append("By date:")
+        for group in digest.by_date:
+            lines.append(f"  {group.key}: {group.count}")
+    if digest.by_source_task:
+        lines.append("By source task:")
+        for group in digest.by_source_task:
+            lines.append(f"  {group.key}: {group.count}")
+    if digest.by_suggested_target:
+        lines.append("By suggested target:")
+        for group in digest.by_suggested_target:
+            lines.append(f"  {group.key}: {group.count}")
+    return tool_result(payload, "\n".join(lines))
+
+
+def _handle_lore_transition_capture(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    page_id = require_string(arguments.get("page_id"), "page_id")
+    new_status = require_string(arguments.get("status"), "status")
+    valid = {"draft", "review", "accepted", "rejected", "archived"}
+    if new_status not in valid:
+        raise JsonRpcError(-32602, f"Invalid status. Must be one of: {', '.join(sorted(valid))}")
+    try:
+        page = transition_capture_status(ctx.repo, page_id, new_status)
+    except InvalidPageId as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    except ValueError as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    if ctx.search_index is not None:
+        ctx.search_index.upsert_page_from_detail(page)
+    index_vector_page(ctx.vector_store, page)
+    invalidate_graph_cache(ctx.graph_cache)
+    return tool_result({"page": page.model_dump()}, f"Transitioned capture {page.id} to {new_status}.")
+
+
+def _handle_lore_promote_capture(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    page_id = require_string(arguments.get("page_id"), "page_id")
+    target = optional_string(arguments.get("target_page_id"))
+    content = optional_string(arguments.get("content"))
+    try:
+        page = promote_capture(ctx.repo, page_id, target_page_id=target, content=content)
+    except InvalidPageId as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    except ValueError as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    if ctx.search_index is not None:
+        ctx.search_index.upsert_page_from_detail(page)
+    index_vector_page(ctx.vector_store, page)
+    invalidate_graph_cache(ctx.graph_cache)
+    return tool_result({"page": page.model_dump()}, f"Promoted capture to {page.id}.")
+
+
+def _handle_lore_promotion_audit(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    audit = build_promotion_audit(ctx.repo)
+    payload = audit.model_dump()
+    lines = []
+    for rec in audit.promoted_captures:
+        lines.append(f"{rec.capture_id} -> {rec.target_page_id} ({rec.capture_status})")
+    for page in audit.pages_with_capture_sources:
+        caps = ", ".join(capture.capture_id for capture in page.source_captures)
+        lines.append(f"{page.page_id} sources: {caps}")
+    return tool_result(payload, "\n".join(lines) or "No promotions recorded.")
+
+
+def _handle_lore_create_stub(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    page_id = require_string(arguments.get("page_id"), "page_id")
+    try:
+        existing = ctx.repo.read_page(page_id)
+    except InvalidPageId as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    if existing is not None:
+        return tool_result({"page_id": page_id}, f"Lore page already exists: {page_id}", is_error=True)
+
+    title = optional_string(arguments.get("title")) or page_id.rsplit("/", 1)[-1].replace("-", " ").title()
+    kind = optional_string(arguments.get("kind")) or "page"
+    source_page = optional_string(arguments.get("source_page")) or "stub-creation"
+    stub_content = f"""---
+title: {json.dumps(title)}
+kind: {kind}
+visibility: internal
+summary: "Stub page created from broken link."
+sources:
+  - {source_page}
+status: stub
+---
+
+# {title}
+
+This page was auto-created as a stub. Replace with actual content.
+"""
+    try:
+        page = ctx.repo.upsert_page(page_id, stub_content)
+    except InvalidPageId as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    if ctx.search_index is not None:
+        ctx.search_index.upsert_page_from_detail(page)
+    index_vector_page(ctx.vector_store, page)
+    invalidate_graph_cache(ctx.graph_cache)
+    return tool_result({"page": page.model_dump()}, f"Created Lore stub: {page.id}")
+
+
+def _handle_lore_update_metadata(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    page_id = require_string(arguments.get("page_id"), "page_id")
+    try:
+        page = ctx.repo.read_page(page_id)
+    except InvalidPageId as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    if page is None:
+        return tool_result({"page_id": page_id}, f"Lore page not found: {page_id}", is_error=True)
+    try:
+        payload = MetadataUpdate(**{key: value for key, value in arguments.items() if key != "page_id"})
+    except ValidationError as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    updates = payload.model_dump(exclude_none=True)
+    updated_content = update_frontmatter(page.content, updates)
+    try:
+        updated_page = ctx.repo.upsert_page(page.id, updated_content)
+    except InvalidPageId as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    if ctx.search_index is not None:
+        ctx.search_index.upsert_page_from_detail(updated_page)
+    index_vector_page(ctx.vector_store, updated_page)
+    invalidate_graph_cache(ctx.graph_cache)
+    return tool_result({"page": updated_page.model_dump()}, f"Updated Lore metadata: {updated_page.id}")
+
+
+def _handle_lore_ingest_service(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    role = str(getattr(ctx.request.state, "lore_role", "") or "").strip() if ctx.request else ""
+    if role not in ("admin", ""):
+        raise JsonRpcError(-32602, "Admin access required for code ingest.")
+    service_id = require_string(arguments.get("service_id"), "service_id")
+    source_dir = require_string(arguments.get("source_dir"), "source_dir")
+    # Validate service_id
+    try:
+        validate_service_id(service_id)
+    except IngestValidationError as e:
+        raise JsonRpcError(-32602, str(e))
+    # Validate source_dir against configured roots and limits
+    cfg: LoreConfig | None = ctx.config
+    if cfg is not None:
+        try:
+            source_dir = str(validate_source_dir(source_dir, cfg))
+        except IngestValidationError as e:
+            raise JsonRpcError(-32602, str(e))
+    inventory = ingest_service_code(service_id, source_dir)
+    payload = inventory.model_dump()
+    ctx.code_inventories[service_id] = payload
+    return tool_result(payload, summarize_inventory(payload))
+
+
+def _handle_lore_create_decision(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    title = require_string(arguments.get("title"), "title")
+    summary = require_string(arguments.get("summary"), "summary")
+    context = require_string(arguments.get("context"), "context")
+    decision = require_string(arguments.get("decision"), "decision")
+    consequences = require_string(arguments.get("consequences"), "consequences")
+    deciders = string_arguments(arguments.get("deciders"))
+    status = optional_string(arguments.get("status")) or "proposed"
+    page_id = unique_page_id(ctx.repo, f"decisions/{slugify(title)}")
+    content = build_decision_markdown(
+        title=title,
+        summary=summary,
+        context=context,
+        decision=decision,
+        consequences=consequences,
+        deciders=deciders,
+        status=status,
+    )
+    try:
+        page = ctx.repo.upsert_page(page_id, content)
+    except InvalidPageId as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    if ctx.search_index is not None:
+        ctx.search_index.upsert_page_from_detail(page)
+    index_vector_page(ctx.vector_store, page)
+    invalidate_graph_cache(ctx.graph_cache)
+    return tool_result({"page": page.model_dump()}, f"Created Lore decision: {page.id}")
+
+
+def _handle_lore_create_trace(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    try:
+        payload = TraceCreateRequest(**arguments)
+    except ValidationError as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    trace = TraceEntry(trace_id="", **payload.model_dump())
+    stored = ledger.store_trace(trace)
+    content = stored.model_dump(mode="json")
+    return tool_result(content, f"Created reasoning trace: {stored.trace_id}")
+
+
+def _handle_lore_get_trace(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    trace_id = require_string(arguments.get("trace_id"), "trace_id")
+    trace = ledger.get_trace(trace_id)
+    if trace is None:
+        return tool_result({"trace_id": trace_id}, f"Trace not found: {trace_id}", is_error=True)
+    return tool_result(trace.model_dump(mode="json"), f"Retrieved reasoning trace: {trace.trace_id}")
+
+
+def _handle_lore_get_provenance(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    entity_type = require_string(arguments.get("entity_type"), "entity_type")
+    entity_id = require_string(arguments.get("entity_id"), "entity_id")
+    if entity_type not in {"capture", "trace", "page"}:
+        raise JsonRpcError(-32602, "entity_type must be one of: capture, trace, page")
+    if entity_type == "capture":
+        provenance = get_capture_provenance(ctx.repo, entity_id)
+        if provenance is None:
+            return tool_result({"entity_type": entity_type, "entity_id": entity_id}, f"Capture not found: {entity_id}", is_error=True)
+    elif entity_type == "trace":
+        ledger = require_service(ctx.ledger_db, "ledger database")
+        trace = ledger.get_trace(entity_id)
+        if trace is None:
+            return tool_result({"entity_type": entity_type, "entity_id": entity_id}, f"Trace not found: {entity_id}", is_error=True)
+        provenance = trace.provenance
+    else:
+        provenance = get_page_provenance(ctx.repo, entity_id)
+    payload = {
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "provenance": (provenance.model_dump(mode="json") if provenance is not None else {}),
+    }
+    return tool_result(payload, f"Retrieved provenance for {entity_type}: {entity_id}")
+
+
+def _handle_lore_list_traces(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    limit = max(1, min(int(arguments.get("limit") or 20), 500))
+    filters = {
+        "actor": optional_string(arguments.get("actor")),
+        "status": optional_string(arguments.get("status")),
+        "task_id": optional_string(arguments.get("task_id")),
+    }
+    traces = ledger.list_traces(**filters, limit=limit, offset=0)
+    total = ledger.count_traces(**filters)
+    response = TraceListResponse(traces=traces, total=total, limit=limit, offset=0)
+    payload = response.model_dump(mode="json")
+    return tool_result(payload, summarize_traces(payload))
+
+
+def _handle_lore_list_policies(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    enabled_only = bool(arguments.get("enabled_only", True))
+    policies = ledger.list_policies(
+        gate=optional_string(arguments.get("gate")),
+        enabled_only=enabled_only,
+    )
+    payload = {"count": len(policies), "policies": [policy.model_dump(mode="json") for policy in policies]}
+    return tool_result(payload, f"Found {len(policies)} policy rule(s).")
+
+
+def _handle_lore_find_precedents(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    limit = max(1, min(int(arguments.get("limit", 20)), 100))
+    result = search_precedents(
+        ctx.repo,
+        ledger,
+        PrecedentSearchRequest(
+            entity=optional_string(arguments.get("entity")),
+            situation_type=optional_string(arguments.get("situation_type")),
+            lane=optional_string(arguments.get("lane")),
+            actor=optional_string(arguments.get("actor")),
+            policy=optional_string(arguments.get("policy")),
+            keyword=optional_string(arguments.get("keyword")),
+            task_ref=optional_string(arguments.get("task_ref")),
+            limit=limit,
+        ),
+    )
+    return tool_result(result.model_dump(mode="json"), f"Found {result.total} precedent(s)")
+
+
+def _handle_lore_get_policy(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    policy_id = require_string(arguments.get("policy_id"), "policy_id")
+    policy = ledger.get_policy(policy_id)
+    if policy is None:
+        return tool_result({"policy_id": policy_id}, f"Policy not found: {policy_id}", is_error=True)
+    return tool_result(policy.model_dump(mode="json"), f"Retrieved policy: {policy.policy_id}")
+
+
+def _handle_lore_upsert_page(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    page_id = require_string(arguments.get("page_id"), "page_id")
+    content = require_string(arguments.get("content"), "content")
+    try:
+        page = ctx.repo.upsert_page(page_id, content)
+    except InvalidPageId as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    if ctx.search_index is not None:
+        ctx.search_index.upsert_page_from_detail(page)
+    index_vector_page(ctx.vector_store, page)
+    invalidate_graph_cache(ctx.graph_cache)
+    return tool_result({"page": page.model_dump()}, f"Updated Lore page: {page.id}")
+
+
+def _handle_lore_distill_daily(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    date_arg = optional_string(arguments.get("date"))
+    actor_arg = optional_string(arguments.get("actor"))
+    try:
+        result = distill_daily(ctx.repo, DailyDistillRequest(date=date_arg, actor=actor_arg))
+    except InvalidPageId as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    if ctx.search_index is not None and result.page_id:
+        page = ctx.repo.read_page(result.page_id)
+        if page is not None:
+            ctx.search_index.upsert_page_from_detail(page)
+            index_vector_page(ctx.vector_store, page)
+            invalidate_graph_cache(ctx.graph_cache)
+    payload = result.model_dump()
+    lines = [f"Distilled {result.capture_count} capture(s) for {result.date} -> {result.page_id}"]
+    for cap in result.captures:
+        lines.append(f"  - {cap.page_id}: {cap.title}")
+    return tool_result(payload, "\n".join(lines))
+
+
+def _handle_lore_get_daily(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    date_arg = require_string(arguments.get("date"), "date")
+    try:
+        from datetime import date as _date
+        parsed = _date.fromisoformat(date_arg[:10])
+    except ValueError as exc:
+        raise JsonRpcError(-32602, "date must be ISO format YYYY-MM-DD.") from exc
+    captures = get_daily_captures(ctx.repo, parsed)
+    payload = {"date": date_arg, "captures": [c.model_dump() for c in captures]}
+    lines = [f"{len(captures)} capture(s) for {date_arg}"]
+    for cap in captures:
+        lines.append(f"  - {cap.id}: {cap.title}")
+    return tool_result(payload, "\n".join(lines))
+
+
+def _handle_lore_promote_daily(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    date_arg = require_string(arguments.get("date"), "date")
+    try:
+        from datetime import date as _date
+        parsed = _date.fromisoformat(date_arg[:10])
+    except ValueError as exc:
+        raise JsonRpcError(-32602, "date must be ISO format YYYY-MM-DD.") from exc
+    try:
+        page_id = promote_daily_note(ctx.repo, parsed)
+    except InvalidPageId as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    return tool_result({"page_id": page_id, "status": "promoted"}, f"Promoted daily note: {page_id}")
+
+
+def _handle_lore_heartbeat_review(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    _lint_config = _resolve_lint_config(ctx.repo)
+    result = heartbeat_review(ctx.repo, _lint_config, ctx.graph_cache.get(ctx.repo) if ctx.graph_cache else None)
+    payload = result.model_dump()
+    return tool_result(payload, summarize_heartbeat(payload))
+
+
+def _handle_lore_heartbeat_summary(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    _lint_config = _resolve_lint_config(ctx.repo)
+    result = heartbeat_review(ctx.repo, _lint_config, ctx.graph_cache.get(ctx.repo) if ctx.graph_cache else None)
+    payload = {cat: getattr(result, cat).count for cat in (
+        "stale_pages", "missing_metadata", "contradictions",
+        "low_confidence", "expired_facts", "procedure_issues",
+    )}
+    payload["total_issues"] = result.total_issues
+    payload["generated_at"] = result.generated_at
+    return tool_result(payload, summarize_heartbeat(payload))
+
+
+def _handle_lore_heartbeat_audit(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    _lint_config = _resolve_lint_config(ctx.repo)
+    captures = emit_heartbeat_captures(ctx.repo, _lint_config, ctx.graph_cache.get(ctx.repo) if ctx.graph_cache else None)
+    for capture in captures:
+        if ctx.search_index is not None:
+            ctx.search_index.upsert_page_from_detail(capture)
+        index_vector_page(ctx.vector_store, capture)
+    invalidate_graph_cache(ctx.graph_cache)
+    if ctx.metrics is not None:
+        for _ in captures:
+            ctx.metrics.increment_index_size()
+    if ctx.audit_log is not None:
+        from ..audit import new_audit_entry
+
+        for capture in captures:
+            ctx.audit_log.record(new_audit_entry(
+                actor="mcp:heartbeat_audit",
+                operation="heartbeat_capture",
+                page_id=capture.id,
+                summary=f"Captured {capture.title}",
+                diff_size=len(capture.content.encode("utf-8")),
+            ))
+    payload = {"captures": [capture.model_dump() for capture in captures]}
+    return tool_result(payload, summarize_heartbeat_audit(payload))
+
+
+def _handle_lore_find_repeated_captures(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    groups = find_repeated_captures(ctx.repo)
+    payload = {"groups": [g.model_dump() for g in groups]}
+    return tool_result(payload, summarize_repeated_captures(payload))
+
+
+def _handle_lore_propose_procedure_candidate(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    capture_ids = string_arguments(arguments.get("capture_ids"))
+    if len(capture_ids) < 2:
+        raise JsonRpcError(-32602, "At least 2 capture IDs are required.")
+    title = optional_string(arguments.get("title"))
+    trigger = optional_string(arguments.get("trigger"))
+    lane = optional_string(arguments.get("lane"))
+    try:
+        result = propose_procedure_candidate(
+            ctx.repo, capture_ids, title=title, trigger=trigger, lane=lane,
+        )
+    except InvalidPageId as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    except ValueError as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    if ctx.search_index is not None:
+        ctx.search_index.upsert_page_from_detail(result.page)
+    index_vector_page(ctx.vector_store, result.page)
+    invalidate_graph_cache(ctx.graph_cache)
+    payload = {"page": result.page.model_dump(), "source_captures": [c.model_dump() for c in result.source_captures]}
+    return tool_result(payload, result.message)
+
+
+def _handle_lore_consolidation_status(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    worker = require_service(ctx.consolidation_worker, "consolidation worker")
+    payload = worker.status()
+    return tool_result(payload, summarize_consolidation_status(payload))
+
+
+def _handle_lore_consolidation_run(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    worker = require_service(ctx.consolidation_worker, "consolidation worker")
+    result = worker.run(
+        dry_run=bool(arguments.get("dry_run", True)),
+        batch_size=max(1, min(int(arguments.get("batch_size") or 10), 50)),
+        max_auto_apply=max(0, min(int(arguments.get("max_auto_apply") or 0), 100)),
+        force_reextract=bool(arguments.get("force_reextract", False)),
+    )
+    payload = result.model_dump(mode="json")
+    return tool_result(payload, summarize_consolidation_run(payload))
+
+
+def _handle_lore_consolidation_rollback(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    worker = require_service(ctx.consolidation_worker, "consolidation worker")
+    plan_id = require_string(arguments.get("plan_id"), "plan_id")
+    try:
+        result = worker.rollback(plan_id)
+    except ValueError as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    payload = result.model_dump(mode="json")
+    return tool_result(payload, f"Rolled back plan {payload['plan_id']} on page {payload['page_id']}.")
+
+
+def _handle_lore_list_patch_plans(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    status = optional_string(arguments.get("status"))
+    valid_statuses = {"pending", "applied", "rejected", "rolled_back"}
+    if status and status not in valid_statuses:
+        raise JsonRpcError(-32602, f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}")
+    limit = max(1, min(int(arguments.get("limit") or 100), 500))
+    plans = ledger.list_patch_plans(
+        status=status,
+        target_page_id=optional_string(arguments.get("target_page_id")),
+        limit=limit,
+    )
+    payload = {"count": len(plans), "plans": plans}
+    return tool_result(payload, summarize_patch_plans(payload))
+
+
+def _handle_lore_preview_patch(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    planner = require_service(ctx.patch_planner, "patch planner")
+    plan_id = require_string(arguments.get("plan_id"), "plan_id")
+    try:
+        result = planner.preview_patch(plan_id)
+    except ValueError as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    payload = result.model_dump(mode="json")
+    return tool_result(payload, summarize_patch_preview(payload))
+
+
+def _handle_lore_apply_patch(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    planner = require_service(ctx.patch_planner, "patch planner")
+    plan_id = require_string(arguments.get("plan_id"), "plan_id")
+    try:
+        result = planner.apply_plan(plan_id, force=bool(arguments.get("force", False)))
+    except ValueError as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    payload = result.model_dump(mode="json")
+    return tool_result(
+        payload,
+        f"Applied patch {payload['plan_id']} to {payload['target_page_id']}. Operation: {payload['operation']}.",
+    )
+
+
+def _handle_lore_reject_patch(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    planner = require_service(ctx.patch_planner, "patch planner")
+    plan_id = require_string(arguments.get("plan_id"), "plan_id")
+    reason = optional_string(arguments.get("reason"))
+    try:
+        planner.reject_plan(plan_id, reason=reason)
+    except ValueError as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+    payload = {"plan_id": plan_id, "status": "rejected", "reason": reason}
+    return tool_result(payload, f"Rejected patch plan {plan_id}.")
+
+
+def _handle_lore_review_batch(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    planner = require_service(ctx.patch_planner, "patch planner")
+    batch_id = optional_string(arguments.get("batch_id"))
+    payload = build_review_batch(ledger, planner, batch_id=batch_id)
+    return tool_result(payload, summarize_review_batch(payload))
+
+
+TOOL_HANDLERS: dict[str, Callable[[McpContext], dict[str, Any]]] = {
+    "lore_list_pages": _handle_lore_list_pages,
+    "lore_read_page": _handle_lore_read_page,
+    "lore_search": _handle_lore_search,
+    "lore_list_lanes": _handle_lore_list_lanes,
+    "lore_list_actors": _handle_lore_list_actors,
+    "lore_rag_context": _handle_lore_rag_context,
+    "lore_rag_context_expanded": _handle_lore_rag_context_expanded,
+    "lore_link_graph": _handle_lore_link_graph,
+    "lore_context_graph": _handle_lore_context_graph,
+    "lore_graph_analytics": _handle_lore_graph_analytics,
+    "lore_context_graph_neighbors": _handle_lore_context_graph_neighbors,
+    "lore_context_graph_paths": _handle_lore_context_graph_paths,
+    "lore_explain_context": _handle_lore_explain_context,
+    "lore_page_links": _handle_lore_page_links,
+    "lore_lint": _handle_lore_lint,
+    "lore_stale_pages": _handle_lore_stale_pages,
+    "lore_contradiction_review": _handle_lore_contradiction_review,
+    "lore_frontmatter_spec": _handle_lore_frontmatter_spec,
+    "lore_list_procedures": _handle_lore_list_procedures,
+    "lore_create_procedure": _handle_lore_create_procedure,
+    "lore_export_procedure": _handle_lore_export_procedure,
+    "lore_capture": _handle_lore_capture,
+    "lore_list_captures": _handle_lore_list_captures,
+    "lore_capture_digest": _handle_lore_capture_digest,
+    "lore_transition_capture": _handle_lore_transition_capture,
+    "lore_promote_capture": _handle_lore_promote_capture,
+    "lore_promotion_audit": _handle_lore_promotion_audit,
+    "lore_create_stub": _handle_lore_create_stub,
+    "lore_update_metadata": _handle_lore_update_metadata,
+    "lore_ingest_service": _handle_lore_ingest_service,
+    "lore_create_decision": _handle_lore_create_decision,
+    "lore_create_trace": _handle_lore_create_trace,
+    "lore_get_trace": _handle_lore_get_trace,
+    "lore_get_provenance": _handle_lore_get_provenance,
+    "lore_list_traces": _handle_lore_list_traces,
+    "lore_list_policies": _handle_lore_list_policies,
+    "lore_find_precedents": _handle_lore_find_precedents,
+    "lore_get_policy": _handle_lore_get_policy,
+    "lore_upsert_page": _handle_lore_upsert_page,
+    "lore_distill_daily": _handle_lore_distill_daily,
+    "lore_get_daily": _handle_lore_get_daily,
+    "lore_promote_daily": _handle_lore_promote_daily,
+    "lore_heartbeat_review": _handle_lore_heartbeat_review,
+    "lore_heartbeat_summary": _handle_lore_heartbeat_summary,
+    "lore_heartbeat_audit": _handle_lore_heartbeat_audit,
+    "lore_find_repeated_captures": _handle_lore_find_repeated_captures,
+    "lore_propose_procedure_candidate": _handle_lore_propose_procedure_candidate,
+    "lore_consolidation_status": _handle_lore_consolidation_status,
+    "lore_consolidation_run": _handle_lore_consolidation_run,
+    "lore_consolidation_rollback": _handle_lore_consolidation_rollback,
+    "lore_list_patch_plans": _handle_lore_list_patch_plans,
+    "lore_preview_patch": _handle_lore_preview_patch,
+    "lore_apply_patch": _handle_lore_apply_patch,
+    "lore_reject_patch": _handle_lore_reject_patch,
+    "lore_review_batch": _handle_lore_review_batch,
+}
+
 def call_tool(
     repo: LoreRepository,
     params: dict[str, Any],
@@ -958,785 +1900,25 @@ def call_tool(
     request: Any | None = None,
 ) -> dict[str, Any]:
     name = require_string(params.get("name"), "name")
-    arguments = params.get("arguments") or {}
-    if not isinstance(arguments, dict):
-        raise JsonRpcError(-32602, "Tool arguments must be an object.")
-
-    if name == "lore_list_pages":
-        limit = int(arguments.get("limit") or 50)
-        pages = repo.list_pages(
-            kind=optional_string(arguments.get("kind")),
-            visibility=optional_string(arguments.get("visibility")),
-            q=optional_string(arguments.get("query")),
-            limit=max(1, min(limit, 100)),
-        )
-        payload = {"pages": [page.model_dump() for page in pages]}
-        return tool_result(payload, summarize_pages(pages))
-
-    if name == "lore_read_page":
-        page_id = require_string(arguments.get("page_id"), "page_id")
-        page = repo.read_page(page_id)
-        if page is None:
-            return tool_result({"page_id": page_id}, f"Lore page not found: {page_id}", is_error=True)
-        return tool_result({"page": page.model_dump()}, page.content)
-
-    if name == "lore_search":
-        query = require_string(arguments.get("query"), "query")
-        limit = int(arguments.get("limit") or 20)
-        limit_val = max(1, min(limit, 50))
-        kind = optional_string(arguments.get("kind"))
-        visibility = optional_string(arguments.get("visibility"))
-        status = optional_string(arguments.get("status"))
-        namespace = optional_string(arguments.get("namespace"))
-        lane = optional_string(arguments.get("lane"))
-        actor = optional_string(arguments.get("actor"))
-
-        if search_index is not None:
-            fts_hits = search_index.search(query, kind=kind, lane=lane, actor=actor, limit=50)
-            if fts_hits or search_index_has_pages(search_index):
-                hits = filter_fts_hits(fts_hits, visibility=visibility, status=status, namespace=namespace, lane=lane)[:limit_val]
-                payload = {"query": query, "hits": hits}
-                return tool_result(payload, summarize_fts_search(payload))
-
-        results = repo.search(query, kind=kind, visibility=visibility, limit=limit_val)
-        payload = results.model_dump()
-        payload["hits"] = filter_repo_hits(payload["hits"], status=status, namespace=namespace)
-        return tool_result(payload, summarize_search(payload))
-
-    if name == "lore_list_lanes":
-        if search_index is None:
-            return tool_result({"lanes": []}, "Search index is not available.")
-        lanes = search_index.list_lanes()
-        return tool_result({"lanes": lanes}, f"Found {len(lanes)} retrieval lane(s).")
-
-    if name == "lore_list_actors":
-        if search_index is None:
-            return tool_result({"actors": []}, "Search index is not available.")
-        actors = search_index.list_actors()
-        return tool_result({"actors": actors}, f"Found {len(actors)} known actor(s).")
-
-    if name == "lore_rag_context":
-        query = require_string(arguments.get("query"), "query")
-        limit = max(1, min(int(arguments.get("limit") or 5), 50))
-        expand_hops = max(0, min(int(arguments.get("expand_hops", 2)), 4))
-        expand_edge_types = arguments.get("expand_edge_types") or None
-        if expand_edge_types is not None and not isinstance(expand_edge_types, list):
-            raise JsonRpcError(-32602, "expand_edge_types must be an array.")
-        include_claims = bool(arguments.get("include_claims", True))
-        include_traces = bool(arguments.get("include_traces", False))
-        include_decisions = bool(arguments.get("include_decisions", True))
-        if vector_store is None:
-            return tool_result({"query": query, "results": []}, "RAG vector store is not configured.", is_error=True)
-        ledger = require_service(ledger_db, "ledger database")
-        graph = build_context_graph(repo, ledger)
-        payload = enrich_expanded_results(
-            repo,
-            hybrid_retrieve_expanded(
-                query,
-                search_index,
-                vector_store,
-                graph,
-                ledger,
-                limit=limit,
-                expand_hops=expand_hops,
-                expand_edge_types=[str(edge_type) for edge_type in expand_edge_types] if expand_edge_types else None,
-                include_claims=include_claims,
-                include_traces=include_traces,
-                include_decisions=include_decisions,
-            ),
-        )
-        return tool_result(payload, summarize_rag_context(payload))
-
-    if name == "lore_rag_context_expanded":
-        query = require_string(arguments.get("query"), "query")
-        limit = max(1, min(int(arguments.get("limit") or 5), 50))
-        expand_hops = max(0, min(int(arguments.get("expand_hops", 2)), 4))
-        expand_edge_types = arguments.get("expand_edge_types") or None
-        if expand_edge_types is not None and not isinstance(expand_edge_types, list):
-            raise JsonRpcError(-32602, "expand_edge_types must be an array.")
-        include_claims = bool(arguments.get("include_claims", True))
-        include_traces = bool(arguments.get("include_traces", False))
-        include_decisions = bool(arguments.get("include_decisions", True))
-        if vector_store is None:
-            return tool_result({"query": query, "results": []}, "RAG vector store is not configured.", is_error=True)
-        ledger = require_service(ledger_db, "ledger database")
-        graph = build_context_graph(repo, ledger)
-        payload = enrich_rag_results(
-            repo,
-            hybrid_retrieve_expanded(
-                query,
-                search_index,
-                vector_store,
-                graph,
-                ledger,
-                limit=limit,
-                expand_hops=expand_hops,
-                expand_edge_types=[str(edge_type) for edge_type in expand_edge_types] if expand_edge_types else None,
-                include_claims=include_claims,
-                include_traces=include_traces,
-                include_decisions=include_decisions,
-            ),
-        )
-        return tool_result(payload, summarize_rag_context(payload))
-
-    if name == "lore_link_graph":
-        graph = build_link_graph(repo)
-        payload = graph.model_dump()
-        return tool_result(payload, summarize_link_graph(payload))
-
-    if name == "lore_context_graph":
-        ledger = require_service(ledger_db, "ledger database")
-        graph = build_context_graph(repo, ledger)
-        payload = graph.model_dump(mode="json")
-        return tool_result(payload, f"Context graph: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
-
-    if name == "lore_graph_analytics":
-        ledger = require_service(ledger_db, "ledger database")
-        graph = build_context_graph(repo, ledger)
-        result = GraphAnalytics(graph).compute()
-        payload = result.model_dump(mode="json")
-        return tool_result(payload, f"Graph analytics: {result.node_count} nodes, {len(result.communities)} communities")
-
-    if name == "lore_context_graph_neighbors":
-        node_id = require_string(arguments.get("node_id"), "node_id")
-        direction = arguments.get("direction", "both")
-        edge_types = arguments.get("edge_types", [])
-        node_types = arguments.get("node_types", [])
-        limit = max(1, min(int(arguments.get("limit", 50)), 500))
-        ledger = require_service(ledger_db, "ledger database")
-        graph = build_context_graph(repo, ledger)
-        query = ContextGraphNeighborQuery(
-            node_id=node_id,
-            direction=direction,
-            edge_types=edge_types,
-            node_types=node_types,
-            limit=limit,
-        )
-        result = query_neighbors(graph, query)
-        return tool_result(result.model_dump(mode="json"), f"Found {result.total} neighbors for {node_id}")
-
-    if name == "lore_context_graph_paths":
-        source_id = require_string(arguments.get("source_id"), "source_id")
-        target_id = require_string(arguments.get("target_id"), "target_id")
-        max_depth = max(1, min(int(arguments.get("max_depth", 3)), 6))
-        edge_types = arguments.get("edge_types", [])
-        limit = max(1, min(int(arguments.get("limit", 10)), 50))
-        ledger = require_service(ledger_db, "ledger database")
-        graph = build_context_graph(repo, ledger)
-        query = ContextGraphPathQuery(
-            source_id=source_id,
-            target_id=target_id,
-            max_depth=max_depth,
-            edge_types=edge_types,
-            limit=limit,
-        )
-        result = query_paths(graph, query)
-        return tool_result(result.model_dump(mode="json"), f"Found {len(result.paths)} paths from {source_id} to {target_id}")
-
-    if name == "lore_explain_context":
-        node_id = require_string(arguments.get("node_id"), "node_id")
-        depth = max(1, min(int(arguments.get("depth", 2)), 3))
-        edge_types = arguments.get("edge_types", [])
-        ledger = require_service(ledger_db, "ledger database")
-        graph = build_context_graph(repo, ledger)
-        query = ContextExplainQuery(node_id=node_id, depth=depth, edge_types=edge_types)
-        result = explain_context(graph, query)
-        return tool_result(result.model_dump(mode="json"), result.explanation)
-
-    if name == "lore_page_links":
-        page_id = require_string(arguments.get("page_id"), "page_id")
-        links = page_links(repo, page_id)
-        if links is None:
-            return tool_result({"page_id": page_id}, f"Lore page not found: {page_id}", is_error=True)
-        payload = links.model_dump()
-        return tool_result(payload, summarize_page_links(payload))
-
-    if name == "lore_lint":
-        lint = lint_lore(repo)
-        payload = lint.model_dump()
-        return tool_result(payload, summarize_lint(payload))
-
-    if name == "lore_stale_pages":
-        stale = lint_stale_queue(repo)
-        payload = stale.model_dump()
-        return tool_result(payload, summarize_stale_pages(payload))
-
-    if name == "lore_contradiction_review":
-        review = lint_contradiction_review(repo)
-        payload = review.model_dump()
-        return tool_result(payload, summarize_contradiction_review(payload))
-
-    if name == "lore_frontmatter_spec":
-        spec = get_frontmatter_spec()
-        payload = spec.model_dump()
-        return tool_result(payload, f"{len(payload['specs'])} frontmatter kind specs.")
-
-    if name == "lore_list_procedures":
-        pages = repo.list_pages(kind="procedure")
-        procedures = []
-        for summary in pages:
-            page = repo.read_page(summary.id)
-            if page is None:
-                continue
-            procedures.append(
-                {
-                    "page": summary.model_dump(),
-                    "trigger": optional_string(page.frontmatter.get("trigger")),
-                    "steps": string_arguments(page.frontmatter.get("steps")),
-                    "preconditions": string_arguments(page.frontmatter.get("preconditions")),
-                    "postconditions": string_arguments(page.frontmatter.get("postconditions")),
-                    "error_handling": optional_string(page.frontmatter.get("error_handling")),
-                }
-            )
-        payload = {"procedures": procedures}
-        return tool_result(payload, summarize_procedures(payload))
-
-    if name == "lore_create_procedure":
-        title = require_string(arguments.get("title"), "title")
-        summary = require_string(arguments.get("summary"), "summary")
-        trigger = require_string(arguments.get("trigger"), "trigger")
-        steps = string_arguments(arguments.get("steps"))
-        if not steps:
-            raise JsonRpcError(-32602, "Missing required field: steps")
-        preconditions = string_arguments(arguments.get("preconditions"))
-        postconditions = string_arguments(arguments.get("postconditions"))
-        error_handling = optional_string(arguments.get("error_handling")) or ""
-        author = optional_string(arguments.get("author")) or ""
-        schema_version = optional_string(arguments.get("schema_version")) or "1.0"
-        page_id = unique_page_id(repo, f"procedures/{slugify(title)}")
-        content = build_procedure_markdown(
-            title=title,
-            summary=summary,
-            trigger=trigger,
-            steps=steps,
-            preconditions=preconditions,
-            postconditions=postconditions,
-            error_handling=error_handling,
-            author=author,
-            schema_version=schema_version,
-        )
-        try:
-            page = repo.upsert_page(page_id, content)
-        except InvalidPageId as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        if search_index is not None:
-            search_index.upsert_page_from_detail(page)
-        index_vector_page(vector_store, page)
-        invalidate_graph_cache(graph_cache)
-        return tool_result({"page": page.model_dump()}, f"Created Lore procedure: {page.id}")
-
-    if name == "lore_export_procedure":
-        page_id = require_string(arguments.get("page_id"), "page_id")
-        page = repo.read_page(page_id)
-        if page is None or page.kind != "procedure":
-            return tool_result({"page_id": page_id}, f"Lore procedure not found: {page_id}", is_error=True)
-        content = export_procedure_skill(page)
-        return tool_result({"page_id": page.id, "content": content}, content)
-
-    if name == "lore_capture":
-        try:
-            page = capture_memory(repo, CaptureRequest(**arguments))
-        except InvalidPageId as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        except ValidationError as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        if search_index is not None:
-            search_index.upsert_page_from_detail(page)
-        index_vector_page(vector_store, page)
-        invalidate_graph_cache(graph_cache)
-        payload = {"page": page.model_dump()}
-        return tool_result(payload, f"Captured Lore memory: {page.id}")
-
-    if name == "lore_list_captures":
-        limit = int(arguments.get("limit") or 50)
-        captures = list_captures(
-            repo,
-            status=optional_string(arguments.get("status")) or "draft",
-            limit=max(1, min(limit, 200)),
-        )
-        payload = captures.model_dump()
-        return tool_result(payload, summarize_captures(payload))
-
-    if name == "lore_capture_digest":
-        digest = build_capture_digest(repo)
-        payload = digest.model_dump()
-        lines = [f"Draft: {digest.total_draft}, Review: {digest.total_review}"]
-        if digest.by_date:
-            lines.append("By date:")
-            for group in digest.by_date:
-                lines.append(f"  {group.key}: {group.count}")
-        if digest.by_source_task:
-            lines.append("By source task:")
-            for group in digest.by_source_task:
-                lines.append(f"  {group.key}: {group.count}")
-        if digest.by_suggested_target:
-            lines.append("By suggested target:")
-            for group in digest.by_suggested_target:
-                lines.append(f"  {group.key}: {group.count}")
-        return tool_result(payload, "\n".join(lines))
-
-    if name == "lore_transition_capture":
-        page_id = require_string(arguments.get("page_id"), "page_id")
-        new_status = require_string(arguments.get("status"), "status")
-        valid = {"draft", "review", "accepted", "rejected", "archived"}
-        if new_status not in valid:
-            raise JsonRpcError(-32602, f"Invalid status. Must be one of: {', '.join(sorted(valid))}")
-        try:
-            page = transition_capture_status(repo, page_id, new_status)
-        except InvalidPageId as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        except ValueError as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        if search_index is not None:
-            search_index.upsert_page_from_detail(page)
-        index_vector_page(vector_store, page)
-        invalidate_graph_cache(graph_cache)
-        return tool_result({"page": page.model_dump()}, f"Transitioned capture {page.id} to {new_status}.")
-
-    if name == "lore_promote_capture":
-        page_id = require_string(arguments.get("page_id"), "page_id")
-        target = optional_string(arguments.get("target_page_id"))
-        content = optional_string(arguments.get("content"))
-        try:
-            page = promote_capture(repo, page_id, target_page_id=target, content=content)
-        except InvalidPageId as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        except ValueError as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        if search_index is not None:
-            search_index.upsert_page_from_detail(page)
-        index_vector_page(vector_store, page)
-        invalidate_graph_cache(graph_cache)
-        return tool_result({"page": page.model_dump()}, f"Promoted capture to {page.id}.")
-
-    if name == "lore_promotion_audit":
-        audit = build_promotion_audit(repo)
-        payload = audit.model_dump()
-        lines = []
-        for rec in audit.promoted_captures:
-            lines.append(f"{rec.capture_id} -> {rec.target_page_id} ({rec.capture_status})")
-        for page in audit.pages_with_capture_sources:
-            caps = ", ".join(capture.capture_id for capture in page.source_captures)
-            lines.append(f"{page.page_id} sources: {caps}")
-        return tool_result(payload, "\n".join(lines) or "No promotions recorded.")
-
-    if name == "lore_create_stub":
-        page_id = require_string(arguments.get("page_id"), "page_id")
-        try:
-            existing = repo.read_page(page_id)
-        except InvalidPageId as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        if existing is not None:
-            return tool_result({"page_id": page_id}, f"Lore page already exists: {page_id}", is_error=True)
-
-        title = optional_string(arguments.get("title")) or page_id.rsplit("/", 1)[-1].replace("-", " ").title()
-        kind = optional_string(arguments.get("kind")) or "page"
-        source_page = optional_string(arguments.get("source_page")) or "stub-creation"
-        stub_content = f"""---
-title: {json.dumps(title)}
-kind: {kind}
-visibility: internal
-summary: "Stub page created from broken link."
-sources:
-  - {source_page}
-status: stub
----
-
-# {title}
-
-This page was auto-created as a stub. Replace with actual content.
-"""
-        try:
-            page = repo.upsert_page(page_id, stub_content)
-        except InvalidPageId as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        if search_index is not None:
-            search_index.upsert_page_from_detail(page)
-        index_vector_page(vector_store, page)
-        invalidate_graph_cache(graph_cache)
-        return tool_result({"page": page.model_dump()}, f"Created Lore stub: {page.id}")
-
-    if name == "lore_update_metadata":
-        page_id = require_string(arguments.get("page_id"), "page_id")
-        try:
-            page = repo.read_page(page_id)
-        except InvalidPageId as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        if page is None:
-            return tool_result({"page_id": page_id}, f"Lore page not found: {page_id}", is_error=True)
-        try:
-            payload = MetadataUpdate(**{key: value for key, value in arguments.items() if key != "page_id"})
-        except ValidationError as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        updates = payload.model_dump(exclude_none=True)
-        updated_content = update_frontmatter(page.content, updates)
-        try:
-            updated_page = repo.upsert_page(page.id, updated_content)
-        except InvalidPageId as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        if search_index is not None:
-            search_index.upsert_page_from_detail(updated_page)
-        index_vector_page(vector_store, updated_page)
-        invalidate_graph_cache(graph_cache)
-        return tool_result({"page": updated_page.model_dump()}, f"Updated Lore metadata: {updated_page.id}")
-
-    if name == "lore_ingest_service":
-        role = str(getattr(request.state, "lore_role", "") or "").strip() if request else ""
-        if role not in ("admin", ""):
-            raise JsonRpcError(-32602, "Admin access required for code ingest.")
-        service_id = require_string(arguments.get("service_id"), "service_id")
-        source_dir = require_string(arguments.get("source_dir"), "source_dir")
-        # Validate service_id
-        try:
-            validate_service_id(service_id)
-        except IngestValidationError as e:
-            raise JsonRpcError(-32602, str(e))
-        # Validate source_dir against configured roots and limits
-        cfg: LoreConfig | None = config
-        if cfg is not None:
-            try:
-                source_dir = str(validate_source_dir(source_dir, cfg))
-            except IngestValidationError as e:
-                raise JsonRpcError(-32602, str(e))
-        inventory = ingest_service_code(service_id, source_dir)
-        payload = inventory.model_dump()
-        inventories = code_inventories if code_inventories is not None else CODE_INVENTORIES
-        inventories[service_id] = payload
-        return tool_result(payload, summarize_inventory(payload))
-
-    if name == "lore_create_decision":
-        title = require_string(arguments.get("title"), "title")
-        summary = require_string(arguments.get("summary"), "summary")
-        context = require_string(arguments.get("context"), "context")
-        decision = require_string(arguments.get("decision"), "decision")
-        consequences = require_string(arguments.get("consequences"), "consequences")
-        deciders = string_arguments(arguments.get("deciders"))
-        status = optional_string(arguments.get("status")) or "proposed"
-        page_id = unique_page_id(repo, f"decisions/{slugify(title)}")
-        content = build_decision_markdown(
-            title=title,
-            summary=summary,
-            context=context,
-            decision=decision,
-            consequences=consequences,
-            deciders=deciders,
-            status=status,
-        )
-        try:
-            page = repo.upsert_page(page_id, content)
-        except InvalidPageId as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        if search_index is not None:
-            search_index.upsert_page_from_detail(page)
-        index_vector_page(vector_store, page)
-        invalidate_graph_cache(graph_cache)
-        return tool_result({"page": page.model_dump()}, f"Created Lore decision: {page.id}")
-
-    if name == "lore_create_trace":
-        ledger = require_service(ledger_db, "ledger database")
-        try:
-            payload = TraceCreateRequest(**arguments)
-        except ValidationError as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        trace = TraceEntry(trace_id="", **payload.model_dump())
-        stored = ledger.store_trace(trace)
-        content = stored.model_dump(mode="json")
-        return tool_result(content, f"Created reasoning trace: {stored.trace_id}")
-
-    if name == "lore_get_trace":
-        ledger = require_service(ledger_db, "ledger database")
-        trace_id = require_string(arguments.get("trace_id"), "trace_id")
-        trace = ledger.get_trace(trace_id)
-        if trace is None:
-            return tool_result({"trace_id": trace_id}, f"Trace not found: {trace_id}", is_error=True)
-        return tool_result(trace.model_dump(mode="json"), f"Retrieved reasoning trace: {trace.trace_id}")
-
-    if name == "lore_get_provenance":
-        entity_type = require_string(arguments.get("entity_type"), "entity_type")
-        entity_id = require_string(arguments.get("entity_id"), "entity_id")
-        if entity_type not in {"capture", "trace", "page"}:
-            raise JsonRpcError(-32602, "entity_type must be one of: capture, trace, page")
-        if entity_type == "capture":
-            provenance = get_capture_provenance(repo, entity_id)
-            if provenance is None:
-                return tool_result({"entity_type": entity_type, "entity_id": entity_id}, f"Capture not found: {entity_id}", is_error=True)
-        elif entity_type == "trace":
-            ledger = require_service(ledger_db, "ledger database")
-            trace = ledger.get_trace(entity_id)
-            if trace is None:
-                return tool_result({"entity_type": entity_type, "entity_id": entity_id}, f"Trace not found: {entity_id}", is_error=True)
-            provenance = trace.provenance
-        else:
-            provenance = get_page_provenance(repo, entity_id)
-        payload = {
-            "entity_type": entity_type,
-            "entity_id": entity_id,
-            "provenance": (provenance.model_dump(mode="json") if provenance is not None else {}),
-        }
-        return tool_result(payload, f"Retrieved provenance for {entity_type}: {entity_id}")
-
-    if name == "lore_list_traces":
-        ledger = require_service(ledger_db, "ledger database")
-        limit = max(1, min(int(arguments.get("limit") or 20), 500))
-        filters = {
-            "actor": optional_string(arguments.get("actor")),
-            "status": optional_string(arguments.get("status")),
-            "task_id": optional_string(arguments.get("task_id")),
-        }
-        traces = ledger.list_traces(**filters, limit=limit, offset=0)
-        total = ledger.count_traces(**filters)
-        response = TraceListResponse(traces=traces, total=total, limit=limit, offset=0)
-        payload = response.model_dump(mode="json")
-        return tool_result(payload, summarize_traces(payload))
-
-    if name == "lore_list_policies":
-        ledger = require_service(ledger_db, "ledger database")
-        enabled_only = bool(arguments.get("enabled_only", True))
-        policies = ledger.list_policies(
-            gate=optional_string(arguments.get("gate")),
-            enabled_only=enabled_only,
-        )
-        payload = {"count": len(policies), "policies": [policy.model_dump(mode="json") for policy in policies]}
-        return tool_result(payload, f"Found {len(policies)} policy rule(s).")
-
-    if name == "lore_find_precedents":
-        ledger = require_service(ledger_db, "ledger database")
-        limit = max(1, min(int(arguments.get("limit", 20)), 100))
-        result = search_precedents(
-            repo,
-            ledger,
-            PrecedentSearchRequest(
-                entity=optional_string(arguments.get("entity")),
-                situation_type=optional_string(arguments.get("situation_type")),
-                lane=optional_string(arguments.get("lane")),
-                actor=optional_string(arguments.get("actor")),
-                policy=optional_string(arguments.get("policy")),
-                keyword=optional_string(arguments.get("keyword")),
-                task_ref=optional_string(arguments.get("task_ref")),
-                limit=limit,
-            ),
-        )
-        return tool_result(result.model_dump(mode="json"), f"Found {result.total} precedent(s)")
-
-    if name == "lore_get_policy":
-        ledger = require_service(ledger_db, "ledger database")
-        policy_id = require_string(arguments.get("policy_id"), "policy_id")
-        policy = ledger.get_policy(policy_id)
-        if policy is None:
-            return tool_result({"policy_id": policy_id}, f"Policy not found: {policy_id}", is_error=True)
-        return tool_result(policy.model_dump(mode="json"), f"Retrieved policy: {policy.policy_id}")
-
-    if name == "lore_upsert_page":
-        page_id = require_string(arguments.get("page_id"), "page_id")
-        content = require_string(arguments.get("content"), "content")
-        try:
-            page = repo.upsert_page(page_id, content)
-        except InvalidPageId as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        if search_index is not None:
-            search_index.upsert_page_from_detail(page)
-        index_vector_page(vector_store, page)
-        invalidate_graph_cache(graph_cache)
-        return tool_result({"page": page.model_dump()}, f"Updated Lore page: {page.id}")
-
-    if name == "lore_distill_daily":
-        date_arg = optional_string(arguments.get("date"))
-        actor_arg = optional_string(arguments.get("actor"))
-        try:
-            result = distill_daily(repo, DailyDistillRequest(date=date_arg, actor=actor_arg))
-        except InvalidPageId as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        if search_index is not None and result.page_id:
-            page = repo.read_page(result.page_id)
-            if page is not None:
-                search_index.upsert_page_from_detail(page)
-                index_vector_page(vector_store, page)
-                invalidate_graph_cache(graph_cache)
-        payload = result.model_dump()
-        lines = [f"Distilled {result.capture_count} capture(s) for {result.date} -> {result.page_id}"]
-        for cap in result.captures:
-            lines.append(f"  - {cap.page_id}: {cap.title}")
-        return tool_result(payload, "\n".join(lines))
-
-    if name == "lore_get_daily":
-        date_arg = require_string(arguments.get("date"), "date")
-        try:
-            from datetime import date as _date
-            parsed = _date.fromisoformat(date_arg[:10])
-        except ValueError as exc:
-            raise JsonRpcError(-32602, "date must be ISO format YYYY-MM-DD.") from exc
-        captures = get_daily_captures(repo, parsed)
-        payload = {"date": date_arg, "captures": [c.model_dump() for c in captures]}
-        lines = [f"{len(captures)} capture(s) for {date_arg}"]
-        for cap in captures:
-            lines.append(f"  - {cap.id}: {cap.title}")
-        return tool_result(payload, "\n".join(lines))
-
-    if name == "lore_promote_daily":
-        date_arg = require_string(arguments.get("date"), "date")
-        try:
-            from datetime import date as _date
-            parsed = _date.fromisoformat(date_arg[:10])
-        except ValueError as exc:
-            raise JsonRpcError(-32602, "date must be ISO format YYYY-MM-DD.") from exc
-        try:
-            page_id = promote_daily_note(repo, parsed)
-        except InvalidPageId as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        return tool_result({"page_id": page_id, "status": "promoted"}, f"Promoted daily note: {page_id}")
-
-    if name == "lore_heartbeat_review":
-        _lint_config = _resolve_lint_config(repo)
-        result = heartbeat_review(repo, _lint_config, graph_cache.get(repo) if graph_cache else None)
-        payload = result.model_dump()
-        return tool_result(payload, summarize_heartbeat(payload))
-
-    if name == "lore_heartbeat_summary":
-        _lint_config = _resolve_lint_config(repo)
-        result = heartbeat_review(repo, _lint_config, graph_cache.get(repo) if graph_cache else None)
-        payload = {cat: getattr(result, cat).count for cat in (
-            "stale_pages", "missing_metadata", "contradictions",
-            "low_confidence", "expired_facts", "procedure_issues",
-        )}
-        payload["total_issues"] = result.total_issues
-        payload["generated_at"] = result.generated_at
-        return tool_result(payload, summarize_heartbeat(payload))
-
-    if name == "lore_heartbeat_audit":
-        _lint_config = _resolve_lint_config(repo)
-        captures = emit_heartbeat_captures(repo, _lint_config, graph_cache.get(repo) if graph_cache else None)
-        for capture in captures:
-            if search_index is not None:
-                search_index.upsert_page_from_detail(capture)
-            index_vector_page(vector_store, capture)
-        invalidate_graph_cache(graph_cache)
-        if metrics is not None:
-            for _ in captures:
-                metrics.increment_index_size()
-        if audit_log is not None:
-            from ..audit import new_audit_entry
-
-            for capture in captures:
-                audit_log.record(new_audit_entry(
-                    actor="mcp:heartbeat_audit",
-                    operation="heartbeat_capture",
-                    page_id=capture.id,
-                    summary=f"Captured {capture.title}",
-                    diff_size=len(capture.content.encode("utf-8")),
-                ))
-        payload = {"captures": [capture.model_dump() for capture in captures]}
-        return tool_result(payload, summarize_heartbeat_audit(payload))
-
-    if name == "lore_find_repeated_captures":
-        groups = find_repeated_captures(repo)
-        payload = {"groups": [g.model_dump() for g in groups]}
-        return tool_result(payload, summarize_repeated_captures(payload))
-
-    if name == "lore_propose_procedure_candidate":
-        capture_ids = string_arguments(arguments.get("capture_ids"))
-        if len(capture_ids) < 2:
-            raise JsonRpcError(-32602, "At least 2 capture IDs are required.")
-        title = optional_string(arguments.get("title"))
-        trigger = optional_string(arguments.get("trigger"))
-        lane = optional_string(arguments.get("lane"))
-        try:
-            result = propose_procedure_candidate(
-                repo, capture_ids, title=title, trigger=trigger, lane=lane,
-            )
-        except InvalidPageId as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        except ValueError as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        if search_index is not None:
-            search_index.upsert_page_from_detail(result.page)
-        index_vector_page(vector_store, result.page)
-        invalidate_graph_cache(graph_cache)
-        payload = {"page": result.page.model_dump(), "source_captures": [c.model_dump() for c in result.source_captures]}
-        return tool_result(payload, result.message)
-
-    if name == "lore_consolidation_status":
-        worker = require_service(consolidation_worker, "consolidation worker")
-        payload = worker.status()
-        return tool_result(payload, summarize_consolidation_status(payload))
-
-    if name == "lore_consolidation_run":
-        worker = require_service(consolidation_worker, "consolidation worker")
-        result = worker.run(
-            dry_run=bool(arguments.get("dry_run", True)),
-            batch_size=max(1, min(int(arguments.get("batch_size") or 10), 50)),
-            max_auto_apply=max(0, min(int(arguments.get("max_auto_apply") or 0), 100)),
-            force_reextract=bool(arguments.get("force_reextract", False)),
-        )
-        payload = result.model_dump(mode="json")
-        return tool_result(payload, summarize_consolidation_run(payload))
-
-    if name == "lore_consolidation_rollback":
-        worker = require_service(consolidation_worker, "consolidation worker")
-        plan_id = require_string(arguments.get("plan_id"), "plan_id")
-        try:
-            result = worker.rollback(plan_id)
-        except ValueError as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        payload = result.model_dump(mode="json")
-        return tool_result(payload, f"Rolled back plan {payload['plan_id']} on page {payload['page_id']}.")
-
-    if name == "lore_list_patch_plans":
-        ledger = require_service(ledger_db, "ledger database")
-        status = optional_string(arguments.get("status"))
-        valid_statuses = {"pending", "applied", "rejected", "rolled_back"}
-        if status and status not in valid_statuses:
-            raise JsonRpcError(-32602, f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}")
-        limit = max(1, min(int(arguments.get("limit") or 100), 500))
-        plans = ledger.list_patch_plans(
-            status=status,
-            target_page_id=optional_string(arguments.get("target_page_id")),
-            limit=limit,
-        )
-        payload = {"count": len(plans), "plans": plans}
-        return tool_result(payload, summarize_patch_plans(payload))
-
-    if name == "lore_preview_patch":
-        planner = require_service(patch_planner, "patch planner")
-        plan_id = require_string(arguments.get("plan_id"), "plan_id")
-        try:
-            result = planner.preview_patch(plan_id)
-        except ValueError as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        payload = result.model_dump(mode="json")
-        return tool_result(payload, summarize_patch_preview(payload))
-
-    if name == "lore_apply_patch":
-        planner = require_service(patch_planner, "patch planner")
-        plan_id = require_string(arguments.get("plan_id"), "plan_id")
-        try:
-            result = planner.apply_plan(plan_id, force=bool(arguments.get("force", False)))
-        except ValueError as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        payload = result.model_dump(mode="json")
-        return tool_result(
-            payload,
-            f"Applied patch {payload['plan_id']} to {payload['target_page_id']}. Operation: {payload['operation']}.",
-        )
-
-    if name == "lore_reject_patch":
-        planner = require_service(patch_planner, "patch planner")
-        plan_id = require_string(arguments.get("plan_id"), "plan_id")
-        reason = optional_string(arguments.get("reason"))
-        try:
-            planner.reject_plan(plan_id, reason=reason)
-        except ValueError as exc:
-            raise JsonRpcError(-32602, str(exc)) from exc
-        payload = {"plan_id": plan_id, "status": "rejected", "reason": reason}
-        return tool_result(payload, f"Rejected patch plan {plan_id}.")
-
-    if name == "lore_review_batch":
-        ledger = require_service(ledger_db, "ledger database")
-        planner = require_service(patch_planner, "patch planner")
-        batch_id = optional_string(arguments.get("batch_id"))
-        payload = build_review_batch(ledger, planner, batch_id=batch_id)
-        return tool_result(payload, summarize_review_batch(payload))
-
-    raise JsonRpcError(-32601, f"Unsupported Lore tool: {name}")
+    handler = TOOL_HANDLERS.get(name)
+    if handler is None:
+        raise JsonRpcError(-32601, f"Unsupported Lore tool: {name}")
+    ctx = McpContext(
+        repo=repo,
+        params=params,
+        search_index=search_index,
+        graph_cache=graph_cache,
+        vector_store=vector_store,
+        code_inventories=code_inventories if code_inventories is not None else {},
+        config=config,
+        ledger_db=ledger_db,
+        patch_planner=patch_planner,
+        consolidation_worker=consolidation_worker,
+        audit_log=audit_log,
+        metrics=metrics,
+        request=request,
+    )
+    return handler(ctx)
 
 
 def tool_result(structured_content: dict[str, Any], text: str, *, is_error: bool = False) -> dict[str, Any]:
@@ -1745,6 +1927,13 @@ def tool_result(structured_content: dict[str, Any], text: str, *, is_error: bool
         "structuredContent": structured_content,
         "isError": is_error,
     }
+
+
+def tool_arguments(params: dict[str, Any]) -> dict[str, Any]:
+    arguments = params.get("arguments") or {}
+    if not isinstance(arguments, dict):
+        raise JsonRpcError(-32602, "Tool arguments must be an object.")
+    return arguments
 
 
 def require_string(value: Any, name: str) -> str:
@@ -1824,13 +2013,6 @@ def enrich_expanded_results(repo: LoreRepository, payload: dict[str, Any]) -> di
     enriched["total"] = len(results)
     return enriched
 
-
-def search_index_has_pages(search_index: Any) -> bool:
-    try:
-        row = search_index._conn.execute("SELECT 1 FROM pages LIMIT 1").fetchone()
-    except Exception:
-        return True
-    return row is not None
 
 
 def filter_fts_hits(

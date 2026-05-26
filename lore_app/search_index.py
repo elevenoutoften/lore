@@ -180,6 +180,14 @@ class LoreSearchIndex:
             self._conn.execute("DELETE FROM pages WHERE page_id = ?", (page_id,))
             self._conn.commit()
 
+    def has_pages(self) -> bool:
+        """Check whether the search index contains any pages."""
+        try:
+            row = self._conn.execute("SELECT 1 FROM pages LIMIT 1").fetchone()
+        except Exception:
+            return True
+        return row is not None
+
     def search(self, query: str, *, kind: str | None = None, lane: str | None = None,
                actor: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
         """Search the FTS index using SQLite FTS rank ordering."""
