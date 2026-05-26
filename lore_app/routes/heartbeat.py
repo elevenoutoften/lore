@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from ..audit import AuditLog
 from ..deps import (
     get_audit_log,
+    get_context_graph_cache,
     get_graph_cache,
     get_lint_config,
     get_metrics,
@@ -15,6 +16,7 @@ from ..deps import (
     get_templates,
     get_vector_store,
 )
+from ..context_graph import ContextGraphCache
 from ..heartbeat import (
     emit_heartbeat_captures,
     heartbeat_capture_category_for_title,
@@ -49,6 +51,7 @@ def api_heartbeat_captures(
     repo: LoreRepository = Depends(get_repo),
     lint_config: LintConfig = Depends(get_lint_config),
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
+    context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
     search_idx: LoreSearchIndex = Depends(get_search_index),
     vector_store: VectorStore = Depends(get_vector_store),
     audit_log: AuditLog = Depends(get_audit_log),
@@ -60,6 +63,7 @@ def api_heartbeat_captures(
         search_idx.upsert_page_from_detail(capture)
         background_tasks.add_task(index_vectors_for_page, vector_store, capture)
         graph_cache.invalidate()
+        context_graph_cache.invalidate()
         record_audit(
             request,
             audit_log,

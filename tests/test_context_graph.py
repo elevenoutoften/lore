@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from lore_app.context_graph import build_context_graph, explain_context, query_neighbors, query_paths
+from lore_app.context_graph import ContextGraphCache, build_context_graph, explain_context, query_neighbors, query_paths
+from lore_app.schemas import ContextGraph
 from lore_app.schemas import ContextExplainQuery, ContextGraphNeighborQuery, ContextGraphPathQuery
 from lore_app.schemas import (
     ContextRef,
@@ -210,6 +211,67 @@ def test_context_graph_deterministic(client):
     assert len(first.nodes) == len(second.nodes)
     assert len(first.edges) == len(second.edges)
     assert first.model_dump(mode="json") == second.model_dump(mode="json")
+
+
+def test_context_graph_cache_reuses_cached_graph(client, monkeypatch):
+    repo = client.app.state.repository
+    calls = 0
+
+    def fake_build(repo_arg, ledger_arg=None):
+        nonlocal calls
+        calls += 1
+        return ContextGraph()
+
+    monkeypatch.setattr("lore_app.context_graph.build_context_graph", fake_build)
+    cache = ContextGraphCache()
+
+    first = cache.get(repo, None)
+    second = cache.get(repo, None)
+
+    assert first is second
+    assert calls == 1
+
+
+def test_context_graph_cache_invalidate_forces_rebuild(client, monkeypatch):
+    repo = client.app.state.repository
+    calls = 0
+
+    def fake_build(repo_arg, ledger_arg=None):
+        nonlocal calls
+        calls += 1
+        return ContextGraph(stats={"build": calls})
+
+    monkeypatch.setattr("lore_app.context_graph.build_context_graph", fake_build)
+    cache = ContextGraphCache()
+
+    first = cache.get(repo, None)
+    cache.invalidate()
+    second = cache.get(repo, None)
+
+    assert first is not second
+    assert second.stats["build"] == 2
+    assert calls == 2
+
+
+def test_context_graph_api_uses_cache_for_identical_calls(client, monkeypatch):
+    repo = client.app.state.repository
+    _write_context_pages(repo)
+    original_build = build_context_graph
+    calls = 0
+
+    def counted_build(repo_arg, ledger_arg=None):
+        nonlocal calls
+        calls += 1
+        return original_build(repo_arg, ledger_arg)
+
+    monkeypatch.setattr("lore_app.context_graph.build_context_graph", counted_build)
+
+    first = client.get("/api/context-graph")
+    second = client.get("/api/context-graph")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert calls == 1
 
 
 def test_context_graph_stats(client):

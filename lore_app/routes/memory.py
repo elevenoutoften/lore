@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from ..capture import capture_memory
 from ..deps import (
     get_audit_log,
+    get_context_graph_cache,
     get_graph_cache,
     get_ledger_db,
     get_lint_config,
@@ -15,6 +16,7 @@ from ..deps import (
     get_search_index,
     get_vector_store,
 )
+from ..context_graph import ContextGraphCache
 from ..heartbeat import heartbeat_review
 from ..ledger import LedgerDB
 from ..link_graph import LinkGraphCache
@@ -38,6 +40,7 @@ def api_memory_capture(
     search_idx: LoreSearchIndex = Depends(get_search_index),
     vector_store: VectorStore = Depends(get_vector_store),
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
+    context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
     audit_log: "AuditLog" = Depends(get_audit_log),
     metrics: MetricsCollector = Depends(get_metrics),
 ):
@@ -86,6 +89,7 @@ def api_memory_capture(
     search_idx.upsert_page_from_detail(page)
     background_tasks.add_task(index_vectors_for_page, vector_store, page)
     graph_cache.invalidate()
+    context_graph_cache.invalidate()
     record_audit(
         request,
         audit_log,

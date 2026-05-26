@@ -29,6 +29,57 @@ from .schemas import (
 WIKILINK_PATTERN = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 
 
+class ContextGraphCache:
+    """Lazy-rebuild cache for ContextGraph, invalidated by page or ledger changes."""
+
+    def __init__(self):
+        self._graph: ContextGraph | None = None
+        self._page_fingerprint: str = ""
+        self._ledger_fingerprint: str = ""
+
+    @staticmethod
+    def _page_fingerprint_for(repo: LoreRepository) -> str:
+        pages = repo.list_pages()
+        raw = json.dumps([(page.id, page.updated_at) for page in pages], separators=(",", ":"), default=str)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _ledger_fingerprint_for(ledger: LedgerDB | None) -> str:
+        if ledger is None:
+            return ""
+        try:
+            payload = {
+                "candidates": _fingerprint_rows(ledger.get_candidates(limit=10000)),
+                "patch_plans": _fingerprint_rows(ledger.list_patch_plans(limit=10000)),
+                "traces": _fingerprint_rows(ledger.list_traces(limit=10000)),
+                "policies": _fingerprint_rows(ledger.list_policies(enabled_only=False)),
+            }
+        except Exception:
+            return ""
+        raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def get(self, repo: LoreRepository, ledger: LedgerDB | None = None) -> ContextGraph:
+        page_fp = self._page_fingerprint_for(repo)
+        ledger_fp = self._ledger_fingerprint_for(ledger)
+        if (
+            self._graph is not None
+            and page_fp == self._page_fingerprint
+            and ledger_fp == self._ledger_fingerprint
+        ):
+            return self._graph
+
+        self._graph = build_context_graph(repo, ledger)
+        self._page_fingerprint = page_fp
+        self._ledger_fingerprint = ledger_fp
+        return self._graph
+
+    def invalidate(self) -> None:
+        self._graph = None
+        self._page_fingerprint = ""
+        self._ledger_fingerprint = ""
+
+
 def build_context_graph(repo: LoreRepository, ledger: LedgerDB | None = None) -> ContextGraph:
     """Build the full context graph deterministically from repo and ledger data."""
 
@@ -177,6 +228,38 @@ def query_neighbors(graph: ContextGraph, query: ContextGraphNeighborQuery) -> Co
     return ContextGraphNeighborResponse(node_id=query.node_id, neighbors=neighbors[: query.limit], total=total)
 
 
+def neighbors_of(graph: ContextGraph, node_id: str, depth: int = 1) -> ContextGraphNeighborResponse:
+    """Return neighbors of a cached graph node within the given depth."""
+
+    depth = max(1, depth)
+    node_index = {node.id: node for node in graph.nodes}
+    visited: set[str] = {node_id}
+    frontier: set[str] = {node_id}
+    neighbors: list[ContextGraphNeighbor] = []
+
+    for _ in range(depth):
+        next_frontier: set[str] = set()
+        for edge in graph.edges:
+            neighbor_id: str | None = None
+            if edge.source in frontier and edge.target not in visited:
+                neighbor_id = edge.target
+            elif edge.target in frontier and edge.source not in visited:
+                neighbor_id = edge.source
+            if neighbor_id is None:
+                continue
+            neighbor_node = node_index.get(neighbor_id)
+            if neighbor_node is None:
+                continue
+            neighbors.append(ContextGraphNeighbor(node=neighbor_node, edge=edge))
+            visited.add(neighbor_id)
+            next_frontier.add(neighbor_id)
+        frontier = next_frontier
+        if not frontier:
+            break
+
+    return ContextGraphNeighborResponse(node_id=node_id, neighbors=neighbors, total=len(neighbors))
+
+
 def query_paths(graph: ContextGraph, query: ContextGraphPathQuery) -> ContextGraphPathResponse:
     """Find bounded paths between two nodes using BFS over outgoing edges."""
 
@@ -219,6 +302,26 @@ def query_paths(graph: ContextGraph, query: ContextGraphPathQuery) -> ContextGra
             queue.append((node.id, steps + [ContextGraphPathStep(edge=edge, node=node)], seen | {node.id}))
 
     return ContextGraphPathResponse(source_id=query.source_id, target_id=query.target_id, paths=paths)
+
+
+def ego_subgraph(graph: ContextGraph, center_id: str, radius: int = 1) -> ContextGraph:
+    """Return the cached graph subset centered on a node within the given radius."""
+
+    neighbor_response = neighbors_of(graph, center_id, depth=radius)
+    keep_ids = {center_id, *(neighbor.node.id for neighbor in neighbor_response.neighbors)}
+    nodes = [node for node in graph.nodes if node.id in keep_ids]
+    edges = [edge for edge in graph.edges if edge.source in keep_ids and edge.target in keep_ids]
+    stats: dict[str, int] = {}
+    for node in nodes:
+        stats[node.type.value] = stats.get(node.type.value, 0) + 1
+    stats["edges"] = len(edges)
+    return ContextGraph(nodes=nodes, edges=edges, stats=stats)
+
+
+def path_between(graph: ContextGraph, source_id: str, target_id: str) -> ContextGraphPathResponse:
+    """Find shortest paths between two nodes in a cached graph."""
+
+    return query_paths(graph, ContextGraphPathQuery(source_id=source_id, target_id=target_id, limit=1))
 
 
 def explain_context(graph: ContextGraph, query: ContextExplainQuery) -> ContextExplainResponse:
@@ -469,6 +572,16 @@ def _safe_call(call: Any) -> list[Any]:
     except Exception:
         return []
     return result if isinstance(result, list) else []
+
+
+def _fingerprint_rows(rows: list[Any]) -> list[Any]:
+    result: list[Any] = []
+    for row in rows:
+        if hasattr(row, "model_dump"):
+            result.append(row.model_dump(mode="json"))
+        else:
+            result.append(row)
+    return result
 
 
 def _provenance_dict(value: Any) -> dict[str, Any]:

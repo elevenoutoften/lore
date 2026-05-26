@@ -23,14 +23,13 @@ def api_rag_retrieve(
     repo: LoreRepository = Depends(get_repo),
     ledger: LedgerDB = Depends(get_ledger_db),
 ):
-    from ..context_graph import build_context_graph
     from ..rag.hybrid_retrieval import hybrid_retrieve_expanded
 
     query = payload.query.strip()
     if not query:
         raise HTTPException(status_code=422, detail="Missing query.")
 
-    ctx_graph = build_context_graph(repo, ledger)
+    ctx_graph = request.app.state.context_graph_cache.get(repo, ledger)
     result = hybrid_retrieve_expanded(
         query,
         request.app.state.search_index,
@@ -54,7 +53,6 @@ def api_rag_retrieve_expanded(
     repo: LoreRepository = Depends(get_repo),
     ledger: LedgerDB = Depends(get_ledger_db),
 ):
-    from ..context_graph import build_context_graph
     from ..rag.hybrid_retrieval import hybrid_retrieve_expanded
 
     query = payload.query.strip()
@@ -65,7 +63,7 @@ def api_rag_retrieve_expanded(
         query,
         request.app.state.search_index,
         request.app.state.vector_store,
-        build_context_graph(repo, ledger),
+        request.app.state.context_graph_cache.get(repo, ledger),
         ledger,
         limit=payload.limit,
         expand_hops=payload.expand_hops,

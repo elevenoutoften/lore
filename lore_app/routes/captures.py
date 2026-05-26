@@ -8,7 +8,8 @@ from fastapi.templating import Jinja2Templates
 
 from ..audit import AuditLog
 from ..capture import build_capture_digest, build_promotion_audit, capture_memory, list_captures, promote_capture, transition_capture_status
-from ..deps import get_audit_log, get_graph_cache, get_metrics, get_repo, get_search_index, get_templates, get_vector_store
+from ..context_graph import ContextGraphCache
+from ..deps import get_audit_log, get_context_graph_cache, get_graph_cache, get_metrics, get_repo, get_search_index, get_templates, get_vector_store
 from ..link_graph import LinkGraphCache
 from ..observability import MetricsCollector
 from ..rag.vector_store import VectorStore
@@ -48,6 +49,7 @@ def api_capture(
     search_idx: LoreSearchIndex = Depends(get_search_index),
     vector_store: VectorStore = Depends(get_vector_store),
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
+    context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
     audit_log: AuditLog = Depends(get_audit_log),
     metrics: MetricsCollector = Depends(get_metrics),
 ):
@@ -64,6 +66,7 @@ def api_capture(
     search_idx.upsert_page_from_detail(page)
     background_tasks.add_task(index_vectors_for_page, vector_store, page)
     graph_cache.invalidate()
+    context_graph_cache.invalidate()
     record_audit(
         request,
         audit_log,
@@ -133,6 +136,7 @@ def api_capture_status(
     search_idx: LoreSearchIndex = Depends(get_search_index),
     vector_store: VectorStore = Depends(get_vector_store),
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
+    context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
 ):
     validate_page_id_input(page_id)
     try:
@@ -144,6 +148,7 @@ def api_capture_status(
     search_idx.upsert_page_from_detail(page)
     background_tasks.add_task(index_vectors_for_page, vector_store, page)
     graph_cache.invalidate()
+    context_graph_cache.invalidate()
     return page
 
 
@@ -157,6 +162,7 @@ def api_capture_promote(
     search_idx: LoreSearchIndex = Depends(get_search_index),
     vector_store: VectorStore = Depends(get_vector_store),
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
+    context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
     audit_log: AuditLog = Depends(get_audit_log),
     metrics: MetricsCollector = Depends(get_metrics),
 ):
@@ -187,6 +193,7 @@ def api_capture_promote(
         search_idx.upsert_page_from_detail(capture_page)
         background_tasks.add_task(index_vectors_for_page, vector_store, capture_page)
     graph_cache.invalidate()
+    context_graph_cache.invalidate()
     diff_size = len(page.content.encode("utf-8"))
     if capture_page is not None:
         diff_size += len(capture_page.content.encode("utf-8"))

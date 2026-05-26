@@ -9,6 +9,7 @@ from .api_keys import LoreApiKeyStore
 from .audit import AuditLog
 from .config import LoreConfig
 from .consolidation_worker import ConsolidationWorker
+from .context_graph import ContextGraphCache
 from .link_graph import LinkGraphCache
 from .lint_config import LintConfig
 from .ledger import LedgerDB
@@ -41,6 +42,10 @@ def get_lint_config(request: Request) -> LintConfig:
 
 def get_graph_cache(request: Request) -> LinkGraphCache:
     return request.app.state.graph_cache
+
+
+def get_context_graph_cache(request: Request) -> ContextGraphCache:
+    return request.app.state.context_graph_cache
 
 
 def get_audit_log(request: Request) -> AuditLog:

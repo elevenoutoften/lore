@@ -7,7 +7,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from ..deps import get_graph_cache, get_metrics, get_repo, get_search_index, get_templates, get_vector_store
+from ..context_graph import ContextGraphCache
+from ..deps import get_context_graph_cache, get_graph_cache, get_metrics, get_repo, get_search_index, get_templates, get_vector_store
 from ..frontmatter import update_frontmatter
 from ..link_graph import LinkGraphCache
 from ..observability import MetricsCollector
@@ -46,6 +47,7 @@ def api_propose_procedure_candidate(
     search_idx: LoreSearchIndex = Depends(get_search_index),
     vector_store: VectorStore = Depends(get_vector_store),
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
+    context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
     metrics: MetricsCollector = Depends(get_metrics),
 ):
     try:
@@ -65,6 +67,7 @@ def api_propose_procedure_candidate(
     search_idx.upsert_page_from_detail(result.page)
     background_tasks.add_task(index_vectors_for_page, vector_store, result.page)
     graph_cache.invalidate()
+    context_graph_cache.invalidate()
     return result
 
 

@@ -14,6 +14,7 @@ from .api_keys import LoreApiKeyStore
 from .auth import AuthMiddleware
 from .config import LoreConfig, VALID_AUTH_MODES
 from .consolidation_worker import ConsolidationWorker
+from .context_graph import ContextGraphCache
 from .ledger import LedgerDB
 from .link_graph import LinkGraphCache
 from .lint_config import LintConfig
@@ -84,6 +85,7 @@ def create_app(
     vector_store = VectorStore(lore_config.vector_db)
     lint_config = LintConfig(Path(lore_config.content_dir) / ".lore-lint.json")
     graph_cache = LinkGraphCache()
+    context_graph_cache = ContextGraphCache()
     ledger_db = LedgerDB(lore_config.ledger_db)
     ledger_db.initialize()
     policy_engine = PolicyEngine(ledger_db)
@@ -102,6 +104,7 @@ def create_app(
     app.state.vector_store = vector_store
     app.state.lint_config = lint_config
     app.state.graph_cache = graph_cache
+    app.state.context_graph_cache = context_graph_cache
     app.state.ledger_db = ledger_db
     app.state.policy_engine = policy_engine
     app.state.api_key_store = api_key_store

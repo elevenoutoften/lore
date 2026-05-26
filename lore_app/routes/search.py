@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from ..deps import get_graph_cache, get_repo, get_search_index, get_templates, get_vector_store
+from ..context_graph import ContextGraphCache
+from ..deps import get_context_graph_cache, get_graph_cache, get_repo, get_search_index, get_templates, get_vector_store
 from ..link_graph import LinkGraphCache
 from ..repository import LoreRepository
 from ..route_utils import rebuild_vector_index, template_context
@@ -56,10 +57,12 @@ def api_reindex(
     search_idx: LoreSearchIndex = Depends(get_search_index),
     vector_store: VectorStore = Depends(get_vector_store),
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
+    context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
 ):
     count = search_idx.rebuild(repo)
     vector_count = rebuild_vector_index(repo, vector_store)
     graph_cache.invalidate()
+    context_graph_cache.invalidate()
     return {"indexed": count, "vector_indexed": vector_count}
 
 

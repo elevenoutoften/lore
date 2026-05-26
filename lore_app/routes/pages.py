@@ -13,7 +13,8 @@ from ..capture import list_captures
 from ..code_ingest.ingest_service import ingest_service_code
 from ..code_ingest.validate import IngestValidationError, validate_service_id, validate_source_dir
 from ..config import LoreConfig
-from ..deps import get_audit_log, get_code_inventories, get_config, get_graph_cache, get_metrics, get_repo, get_search_index, get_templates, get_vector_store
+from ..context_graph import ContextGraphCache
+from ..deps import get_audit_log, get_code_inventories, get_config, get_context_graph_cache, get_graph_cache, get_metrics, get_repo, get_search_index, get_templates, get_vector_store
 from ..link_graph import LinkGraphCache, page_links
 from ..markdown_render import render_page_markdown
 from ..observability import MetricsCollector
@@ -244,6 +245,7 @@ def api_update_metadata(
     search_idx: LoreSearchIndex = Depends(get_search_index),
     vector_store: VectorStore = Depends(get_vector_store),
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
+    context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
     audit_log: AuditLog = Depends(get_audit_log),
 ):
     validate_page_id_input(page_id)
@@ -257,6 +259,7 @@ def api_update_metadata(
     search_idx.upsert_page_from_detail(updated_page)
     background_tasks.add_task(index_vectors_for_page, vector_store, updated_page)
     graph_cache.invalidate()
+    context_graph_cache.invalidate()
     before_size = len(page.content.encode("utf-8"))
     after_size = len(updated_page.content.encode("utf-8"))
     record_audit(
@@ -285,6 +288,7 @@ def api_upsert_page(
     search_idx: LoreSearchIndex = Depends(get_search_index),
     vector_store: VectorStore = Depends(get_vector_store),
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
+    context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
     audit_log: AuditLog = Depends(get_audit_log),
     metrics: MetricsCollector = Depends(get_metrics),
 ):
@@ -300,6 +304,7 @@ def api_upsert_page(
     search_idx.upsert_page_from_detail(page)
     background_tasks.add_task(index_vectors_for_page, vector_store, page)
     graph_cache.invalidate()
+    context_graph_cache.invalidate()
     before_size = len(before.content.encode("utf-8")) if before is not None else 0
     after_size = len(page.content.encode("utf-8"))
     operation = "update" if before is not None else "create"
@@ -324,6 +329,7 @@ def api_create_stub(
     search_idx: LoreSearchIndex = Depends(get_search_index),
     vector_store: VectorStore = Depends(get_vector_store),
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
+    context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
     audit_log: AuditLog = Depends(get_audit_log),
     metrics: MetricsCollector = Depends(get_metrics),
 ):
@@ -361,6 +367,7 @@ This page was auto-created as a stub. Replace with actual content.
     search_idx.upsert_page_from_detail(page)
     background_tasks.add_task(index_vectors_for_page, vector_store, page)
     graph_cache.invalidate()
+    context_graph_cache.invalidate()
     record_audit(
         request,
         audit_log,
@@ -380,6 +387,7 @@ def api_delete_page(
     search_idx: LoreSearchIndex = Depends(get_search_index),
     vector_store: VectorStore = Depends(get_vector_store),
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
+    context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
     audit_log: AuditLog = Depends(get_audit_log),
     metrics: MetricsCollector = Depends(get_metrics),
 ):
@@ -396,6 +404,7 @@ def api_delete_page(
     vector_store.remove_page(page_id)
     vector_store.rebuild_doc_freq()
     graph_cache.invalidate()
+    context_graph_cache.invalidate()
     record_audit(
         request,
         audit_log,
