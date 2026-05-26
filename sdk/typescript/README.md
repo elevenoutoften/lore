@@ -17,7 +17,7 @@ The SDK has no runtime dependencies and uses the native `fetch` API.
 ## Basic Usage
 
 ```typescript
-import { LoreClient } from "lore-sdk";
+import { LoreClient } from "axis-lore-sdk";
 
 const client = new LoreClient({ baseUrl: "http://localhost:8078" });
 
@@ -66,7 +66,7 @@ const client = new LoreClient({
 Non-2xx responses throw `LoreError`.
 
 ```typescript
-import { LoreClient, LoreError } from "lore-sdk";
+import { LoreClient, LoreError } from "axis-lore-sdk";
 
 const client = new LoreClient({ baseUrl: "http://localhost:8078" });
 

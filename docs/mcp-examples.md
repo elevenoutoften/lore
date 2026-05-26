@@ -28,8 +28,8 @@ Response:
       "resources": {"subscribe": false, "listChanged": false}
     },
     "serverInfo": {
-      "name": "axis-lore",
-      "version": "0.2.0"
+      "name": "lore",
+      "version": "0.3.0b1"
     }
   }
 }
