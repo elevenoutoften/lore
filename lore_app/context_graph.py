@@ -35,7 +35,7 @@ class ContextGraphCache:
     def __init__(self):
         self._graph: ContextGraph | None = None
         self._page_fingerprint: str = ""
-        self._ledger_fingerprint: str = ""
+        self._ledger_generation: int = -1
 
     @staticmethod
     def _page_fingerprint_for(repo: LoreRepository) -> str:
@@ -43,41 +43,25 @@ class ContextGraphCache:
         raw = json.dumps([(page.id, page.updated_at) for page in pages], separators=(",", ":"), default=str)
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
-    @staticmethod
-    def _ledger_fingerprint_for(ledger: LedgerDB | None) -> str:
-        if ledger is None:
-            return ""
-        try:
-            payload = {
-                "candidates": _fingerprint_rows(ledger.get_candidates(limit=10000)),
-                "patch_plans": _fingerprint_rows(ledger.list_patch_plans(limit=10000)),
-                "traces": _fingerprint_rows(ledger.list_traces(limit=10000)),
-                "policies": _fingerprint_rows(ledger.list_policies(enabled_only=False)),
-            }
-        except Exception:
-            return ""
-        raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
     def get(self, repo: LoreRepository, ledger: LedgerDB | None = None) -> ContextGraph:
         page_fp = self._page_fingerprint_for(repo)
-        ledger_fp = self._ledger_fingerprint_for(ledger)
+        ledger_generation = ledger.generation if ledger is not None else -1
         if (
             self._graph is not None
             and page_fp == self._page_fingerprint
-            and ledger_fp == self._ledger_fingerprint
+            and ledger_generation == self._ledger_generation
         ):
             return self._graph
 
         self._graph = build_context_graph(repo, ledger)
         self._page_fingerprint = page_fp
-        self._ledger_fingerprint = ledger_fp
+        self._ledger_generation = ledger_generation
         return self._graph
 
     def invalidate(self) -> None:
         self._graph = None
         self._page_fingerprint = ""
-        self._ledger_fingerprint = ""
+        self._ledger_generation = -1
 
 
 def build_context_graph(repo: LoreRepository, ledger: LedgerDB | None = None) -> ContextGraph:
@@ -572,16 +556,6 @@ def _safe_call(call: Any) -> list[Any]:
     except Exception:
         return []
     return result if isinstance(result, list) else []
-
-
-def _fingerprint_rows(rows: list[Any]) -> list[Any]:
-    result: list[Any] = []
-    for row in rows:
-        if hasattr(row, "model_dump"):
-            result.append(row.model_dump(mode="json"))
-        else:
-            result.append(row)
-    return result
 
 
 def _provenance_dict(value: Any) -> dict[str, Any]:

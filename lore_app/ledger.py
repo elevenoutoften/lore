@@ -100,6 +100,15 @@ class LedgerDB:
         self._connection: sqlite3.Connection | None = None
         self._conn_lock = threading.Lock()
         self._lock = threading.RLock()
+        self._generation: int = 0
+
+    @property
+    def generation(self) -> int:
+        """Monotonic counter incremented on every write. Used for cache invalidation."""
+        return self._generation
+
+    def _bump_generation(self) -> None:
+        self._generation += 1
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -377,6 +386,7 @@ class LedgerDB:
                 ),
             )
             self.connection.commit()
+            self._bump_generation()
         return policy
 
     def get_policy(self, policy_id: str) -> PolicyRule | None:
@@ -418,6 +428,8 @@ class LedgerDB:
                 (now, policy_id),
             )
             self.connection.commit()
+            if cursor.rowcount > 0:
+                self._bump_generation()
             return cursor.rowcount > 0
 
     @retry_on_locked()
@@ -500,6 +512,7 @@ class LedgerDB:
                     (result.batch_id, capture_id, result.processed_at),
                 )
             self.connection.commit()
+            self._bump_generation()
 
     # ─── Reinforcement ────────────────────────────────────────────────────
 
@@ -586,6 +599,7 @@ class LedgerDB:
                 ),
             )
             self.connection.commit()
+            self._bump_generation()
 
             return ClaimReinforcementResult(
                 candidate_id=existing_id,
@@ -636,6 +650,7 @@ class LedgerDB:
             ),
         )
         self.connection.commit()
+        self._bump_generation()
 
         return ClaimReinforcementResult(
             candidate_id=candidate_id,
@@ -679,6 +694,7 @@ class LedgerDB:
                 (old_candidate_id, now, new_candidate_id),
             )
             self.connection.commit()
+            self._bump_generation()
         return ClaimSupersedeResult(
             old_candidate_id=old_candidate_id,
             new_candidate_id=new_candidate_id,
@@ -759,6 +775,7 @@ class LedgerDB:
                     (new_status, now, candidate_id),
                 )
             self.connection.commit()
+            self._bump_generation()
 
     # ─── Decay ─────────────────────────────────────────────────────────────
 
@@ -810,6 +827,7 @@ class LedgerDB:
             max_strength = max(max_strength, new_strength)
 
         self.connection.commit()
+        self._bump_generation()
         return DecayResult(
             decayed_count=decayed_count,
             min_strength=round(min_strength, 4),
@@ -896,6 +914,8 @@ class LedgerDB:
                     (now, *reset_statuses),
                 )
                 self.connection.commit()
+                if cursor.rowcount > 0:
+                    self._bump_generation()
             return int(cursor.rowcount)
 
         normalized_capture_ids = list(dict.fromkeys(capture_id for capture_id in capture_ids if capture_id))
@@ -937,6 +957,8 @@ class LedgerDB:
                     (now, *reset_ids),
                 )
             self.connection.commit()
+            if cursor.rowcount > 0 or reset_ids:
+                self._bump_generation()
         return int(cursor.rowcount)
 
     def get_unprocessed_capture_ids(self, limit: int = 50) -> list[str]:
@@ -1049,6 +1071,7 @@ class LedgerDB:
             ),
         )
         self.connection.commit()
+        self._bump_generation()
 
     def get_patch_plan(self, plan_id: str) -> dict[str, Any] | None:
         row = self.connection.execute(
@@ -1102,6 +1125,7 @@ class LedgerDB:
         if cursor.rowcount == 0:
             raise ValueError(f"Patch plan {plan_id} not found")
         self.connection.commit()
+        self._bump_generation()
 
     def store_consolidation_run(
         self,
@@ -1137,6 +1161,7 @@ class LedgerDB:
             ),
         )
         self.connection.commit()
+        self._bump_generation()
 
     def get_consolidation_status(self) -> dict[str, Any]:
         last_run = self.connection.execute(
@@ -1219,6 +1244,7 @@ class LedgerDB:
             ),
         )
         self.connection.commit()
+        self._bump_generation()
         return stored
 
     def get_trace(self, trace_id: str) -> TraceEntry | None:

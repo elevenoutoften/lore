@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from unittest import mock
+
 from lore_app.context_graph import ContextGraphCache, build_context_graph, explain_context, query_neighbors, query_paths
-from lore_app.schemas import ContextGraph
+from lore_app.schemas import ContextGraph, PolicyRule
 from lore_app.schemas import ContextExplainQuery, ContextGraphNeighborQuery, ContextGraphPathQuery
 from lore_app.schemas import (
     ContextRef,
@@ -272,6 +274,69 @@ def test_context_graph_api_uses_cache_for_identical_calls(client, monkeypatch):
     assert first.status_code == 200
     assert second.status_code == 200
     assert calls == 1
+
+
+def test_context_graph_cache_no_ledger_reads_on_hit(client):
+    """Repeated cache gets must not re-read ledger rows."""
+    repo = client.app.state.repository
+    repo.upsert_page("test-page", "---\ntitle: Test\n---\nBody text.")
+
+    ledger = client.app.state.ledger_db
+    cache = client.app.state.context_graph_cache
+    cache.get(repo, ledger)
+
+    with (
+        mock.patch.object(ledger, "get_candidates", wraps=ledger.get_candidates) as mock_candidates,
+        mock.patch.object(ledger, "list_traces", wraps=ledger.list_traces) as mock_traces,
+        mock.patch.object(ledger, "list_patch_plans", wraps=ledger.list_patch_plans) as mock_plans,
+        mock.patch.object(ledger, "list_policies", wraps=ledger.list_policies) as mock_policies,
+    ):
+        cache.get(repo, ledger)
+
+    mock_candidates.assert_not_called()
+    mock_traces.assert_not_called()
+    mock_plans.assert_not_called()
+    mock_policies.assert_not_called()
+
+
+def test_context_graph_cache_invalidates_on_ledger_write(client, monkeypatch):
+    """Cache should detect ledger writes via generation counter."""
+    repo = client.app.state.repository
+    repo.upsert_page("test-page", "---\ntitle: Test\n---\nBody text.")
+
+    ledger = client.app.state.ledger_db
+    cache = ContextGraphCache()
+    original_build = build_context_graph
+    calls = 0
+
+    def counted_build(repo_arg, ledger_arg=None):
+        nonlocal calls
+        calls += 1
+        return original_build(repo_arg, ledger_arg)
+
+    monkeypatch.setattr("lore_app.context_graph.build_context_graph", counted_build)
+
+    graph1 = cache.get(repo, ledger)
+    gen1 = ledger.generation
+
+    ledger.store_policy(
+        PolicyRule(
+            policy_id="test-policy:v1",
+            name="Test policy",
+            gate="auto-apply",
+            condition_kind=[],
+            condition_operation=[],
+            effect_pass="allow",
+            effect_fail="block",
+            enabled=True,
+        )
+    )
+
+    assert ledger.generation > gen1
+    graph2 = cache.get(repo, ledger)
+
+    assert graph2 is not graph1
+    assert calls == 2
 
 
 def test_context_graph_stats(client):

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import lore_app.rag.hybrid_retrieval as hybrid_module
 from lore_app.context_graph import build_context_graph
 from lore_app.rag.hybrid_retrieval import hybrid_retrieve, hybrid_retrieve_expanded
 from lore_app.rag.chunker import chunk_page
 from lore_app.rag.eval_retrieval import evaluate_retrieval
 from lore_app.rag.vector_store import VectorStore
-from lore_app.schemas import ExtractedClaim, ExtractionResult
+from lore_app.schemas import ContextEdgeType, ContextGraph, ContextGraphEdge, ContextGraphNode, ContextNodeType, ExtractedClaim, ExtractionResult
 
 
 def rpc(client, method, params=None, request_id=1):
@@ -248,6 +249,42 @@ def test_retrieve_expanded_no_expansion_when_hops_zero(client):
 
     assert [result["page_id"] for result in expanded["results"]] == [result["page_id"] for result in base["results"][:5]]
     assert all(not result["relevance_paths"] for result in expanded["results"])
+
+
+def test_retrieve_expanded_builds_adjacency_from_query_scoped_subgraph(monkeypatch):
+    class FakeSearch:
+        def search(self, query, **kwargs):
+            return [{"page_id": "pages/a", "score": 1.0, "snippet": "alpha"}]
+
+    class FakeVector:
+        def search(self, query, limit=10):
+            return []
+
+    graph = ContextGraph(
+        nodes=[
+            ContextGraphNode(id="pages/a", type=ContextNodeType.page, label="A"),
+            ContextGraphNode(id="pages/b", type=ContextNodeType.page, label="B"),
+            ContextGraphNode(id="pages/c", type=ContextNodeType.page, label="C"),
+            ContextGraphNode(id="pages/d", type=ContextNodeType.page, label="D"),
+        ],
+        edges=[
+            ContextGraphEdge(source="pages/a", target="pages/b", type=ContextEdgeType.mentions),
+            ContextGraphEdge(source="pages/c", target="pages/d", type=ContextEdgeType.mentions),
+        ],
+    )
+    edge_counts = []
+    original_adjacency = hybrid_module._context_graph_adjacency
+
+    def counted_adjacency(context_graph, expand_edge_types):
+        edge_counts.append(len(context_graph.edges))
+        return original_adjacency(context_graph, expand_edge_types)
+
+    monkeypatch.setattr(hybrid_module, "_context_graph_adjacency", counted_adjacency)
+
+    result = hybrid_retrieve_expanded("alpha", FakeSearch(), FakeVector(), graph, limit=5, expand_hops=1)
+
+    assert edge_counts == [1]
+    assert any(row["page_id"] == "pages/b" for row in result["results"])
 
 
 def test_retrieve_expanded_relevant_because_summary(client):

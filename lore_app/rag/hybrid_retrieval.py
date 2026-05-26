@@ -153,8 +153,9 @@ def hybrid_retrieve_expanded(
             },
         }
 
-    node_index = {node.id: node for node in getattr(context_graph, "nodes", [])}
-    adjacency = _context_graph_adjacency(context_graph, expand_edge_types)
+    scoped_graph = _query_scoped_context_graph(context_graph, hit_page_ids, expand_hops)
+    node_index = {node.id: node for node in getattr(scoped_graph, "nodes", [])}
+    adjacency = _context_graph_adjacency(scoped_graph, expand_edge_types)
 
     reachable: dict[str, list[dict[str, Any]]] = {}
     frontier: list[tuple[str, dict[str, Any]]] = []
@@ -291,6 +292,41 @@ def _context_graph_adjacency(context_graph: Any, expand_edge_types: list[str] | 
         adjacency.setdefault(str(edge.source), []).append((str(edge.target), edge, "outgoing"))
         adjacency.setdefault(str(edge.target), []).append((str(edge.source), edge, "incoming"))
     return adjacency
+
+
+def _query_scoped_context_graph(context_graph: Any, seed_page_ids: set[str], expand_hops: int) -> Any:
+    """Merge ego subgraphs around direct hits so expansion avoids full-graph adjacency."""
+    try:
+        from ..context_graph import ContextGraph, ego_subgraph
+    except Exception:
+        return context_graph
+
+    nodes_by_id: dict[str, Any] = {}
+    edges_by_key: dict[tuple[str, str, str, str, str], Any] = {}
+    radius = max(1, expand_hops)
+
+    for page_id in seed_page_ids:
+        subgraph = ego_subgraph(context_graph, page_id, radius=radius)
+        for node in getattr(subgraph, "nodes", []):
+            nodes_by_id[str(node.id)] = node
+        for edge in getattr(subgraph, "edges", []):
+            edge_type = getattr(getattr(edge, "type", None), "value", None) or str(getattr(edge, "type", ""))
+            metadata = getattr(edge, "metadata", {}) or {}
+            key = (
+                str(edge.source),
+                str(edge.target),
+                edge_type,
+                str(getattr(edge, "label", "") or ""),
+                json.dumps(metadata, sort_keys=True, default=str),
+            )
+            edges_by_key[key] = edge
+
+    stats: dict[str, int] = {}
+    for node in nodes_by_id.values():
+        node_type = getattr(getattr(node, "type", None), "value", None) or "unknown"
+        stats[node_type] = stats.get(node_type, 0) + 1
+    stats["edges"] = len(edges_by_key)
+    return ContextGraph(nodes=list(nodes_by_id.values()), edges=list(edges_by_key.values()), stats=stats)
 
 
 def _path_explanation(path: list[dict[str, str]]) -> str:
