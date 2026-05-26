@@ -222,7 +222,4 @@ def create_app(
 
     return app
 
-
-import os as _os_env
-_os_env.environ.setdefault("LORE_ALLOW_INSECURE_BIND", "true")
 app = create_app()

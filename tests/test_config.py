@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib
 
 import pytest
 
@@ -138,6 +139,21 @@ def test_insecure_bind_rejected(monkeypatch, tmp_path):
     monkeypatch.delenv("LORE_ALLOW_INSECURE_BIND", raising=False)
     with pytest.raises(ValueError, match="SECURITY"):
         create_app()
+
+
+def test_import_main_does_not_bypass_insecure_bind_guard(monkeypatch, tmp_path):
+    """Regression: importing lore_app.main must not set LORE_ALLOW_INSECURE_BIND."""
+    monkeypatch.setenv("LORE_AUTH_MODE", "none")
+    monkeypatch.setenv("LORE_HOST", "0.0.0.0")
+    monkeypatch.delenv("LORE_ALLOW_INSECURE_BIND", raising=False)
+    monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
+    monkeypatch.setenv("LORE_SEARCH_DB", str(tmp_path / "search.db"))
+    monkeypatch.setenv("LORE_LEDGER_DB", str(tmp_path / "ledger.db"))
+    monkeypatch.setenv("LORE_API_KEYS_DB", str(tmp_path / "api_keys.db"))
+    import lore_app.main as _main_mod
+
+    with pytest.raises(ValueError, match="SECURITY"):
+        importlib.reload(_main_mod)
 
 
 def test_insecure_bind_allowed_with_override(monkeypatch, tmp_path):

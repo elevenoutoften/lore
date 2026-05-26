@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
+
+os.environ.setdefault("LORE_HOST", "127.0.0.1")
 
 from lore_app.main import create_app
 

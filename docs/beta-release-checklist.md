@@ -104,7 +104,8 @@ verified against the release candidate build, not only local development code.
   docker run -d -p 8100:8000 \
     -v lore-pages:/tmp/pages \
     -v lore-db:/tmp/db \
-    -e LORE_AUTH_MODE=none \
+    -e LORE_AUTH_MODE=bearer \
+    -e LORE_AUTH_SECRET=change-me-in-production \
     -e LORE_CONTENT_DIR=/tmp/pages \
     -e LORE_SEARCH_DB=/tmp/db/search.db \
     -e LORE_VECTOR_DB=/tmp/db/vectors.db \

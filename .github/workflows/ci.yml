@@ -99,7 +99,8 @@ jobs:
       - name: Verify container starts
         run: |
           docker run -d --name lore-ci -p 8101:8000 \
-            -e LORE_AUTH_MODE=none \
+            -e LORE_AUTH_MODE=bearer \
+            -e LORE_AUTH_SECRET=ci-test-secret \
             -e LORE_CONTENT_DIR=/tmp/pages \
             -e LORE_SEARCH_DB=/tmp/db/search.db \
             -e LORE_VECTOR_DB=/tmp/db/vectors.db \
@@ -107,6 +108,6 @@ jobs:
             -e LORE_API_KEYS_DB=/tmp/db/api_keys.db \
             lore:ci-test
           sleep 5
-          curl -f http://localhost:8101/healthz || (docker logs lore-ci && exit 1)
+          curl -f -H "Authorization: Bearer ci-test-secret" http://localhost:8101/healthz || (docker logs lore-ci && exit 1)
           docker stop lore-ci
           docker rm lore-ci
