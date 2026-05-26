@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from unittest import mock
 
 import pytest
 
@@ -69,6 +70,20 @@ def test_iter_pages_filters_by_kind(tmp_path):
     assert [page.id for page in pages] == ["services/bravo", "services/charlie"]
 
 
+def test_iter_pages_single_scan_500_pages(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    for index in range(500):
+        _write_page(repo, f"projects/page-{index:03d}", title=f"Page {index:03d}", body=f"Content {index}.")
+
+    repo._page_cache = None
+
+    with mock.patch.object(repo, "_read_file", wraps=repo._read_file) as read_file:
+        pages = list(repo.iter_pages())
+
+    assert len(pages) == 500
+    assert read_file.call_count == 500
+
+
 def test_list_pages_limit_offset(tmp_path):
     repo = LoreRepository(tmp_path / "pages")
     for index in range(10):
@@ -83,6 +98,22 @@ def test_list_pages_limit_offset(tmp_path):
         "projects/page-05",
         "projects/page-06",
     ]
+
+
+def test_list_pages_with_count_no_double_scan(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    for index in range(50):
+        _write_page(repo, f"projects/page-{index:03d}", title=f"Page {index:03d}")
+
+    repo._page_cache = None
+
+    with mock.patch.object(repo, "_scan_pages", wraps=repo._scan_pages) as scan_pages:
+        pages, total = repo.list_pages_with_count(limit=10, offset=5)
+
+    assert total == 50
+    assert len(pages) == 10
+    assert [page.id for page in pages] == [f"projects/page-{index:03d}" for index in range(5, 15)]
+    assert scan_pages.call_count == 1
 
 
 def test_catalog_uses_cache_no_extra_scan(tmp_path, monkeypatch):

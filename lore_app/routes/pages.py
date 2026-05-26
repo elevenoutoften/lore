@@ -116,8 +116,9 @@ def api_list_pages(
     offset: int = Query(default=0, ge=0),
     repo: LoreRepository = Depends(get_repo),
 ):
-    response.headers["X-Total-Count"] = str(len(repo.list_pages(kind=kind, visibility=visibility, q=q)))
-    return repo.list_pages(kind=kind, visibility=visibility, q=q, limit=limit, offset=offset)
+    pages, total = repo.list_pages_with_count(kind=kind, visibility=visibility, q=q, limit=limit, offset=offset)
+    response.headers["X-Total-Count"] = str(total)
+    return pages
 
 
 @router.get("/api/code-references/{code_path:path}")

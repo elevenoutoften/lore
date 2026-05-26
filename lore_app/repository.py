@@ -80,29 +80,73 @@ class LoreRepository:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[PageSummary]:
+        pages, _total = self.list_pages_with_count(
+            kind=kind,
+            visibility=visibility,
+            q=q,
+            limit=limit,
+            offset=offset,
+        )
+        return pages
+
+    def list_pages_meta(
+        self,
+        *,
+        kind: str | None = None,
+        visibility: str | None = None,
+        q: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[PageSummary]:
+        """Return page metadata summaries for callers that do not need bodies."""
+        return self.list_pages(kind=kind, visibility=visibility, q=q, limit=limit, offset=offset)
+
+    def list_pages_with_count(
+        self,
+        *,
+        kind: str | None = None,
+        visibility: str | None = None,
+        q: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[list[PageSummary], int]:
+        """Return the current page slice and total filtered count in one cache pass."""
         if self._page_cache is None:
             self._page_cache = [page.summary() for page in self._scan_pages()]
-        pages = list(self._page_cache)
+        pages = self._filter_summaries(self._page_cache, kind=kind, visibility=visibility, q=q)
+        total = len(pages)
+        if offset:
+            pages = pages[offset:]
+        if limit is not None:
+            pages = pages[:limit]
+        return pages, total
+
+    def _filter_summaries(
+        self,
+        summaries: list[PageSummary],
+        *,
+        kind: str | None = None,
+        visibility: str | None = None,
+        q: str | None = None,
+    ) -> list[PageSummary]:
+        pages = list(summaries)
         if kind:
             pages = [page for page in pages if page.kind == kind]
         if visibility:
             pages = [page for page in pages if page.visibility == visibility]
         if q:
             needle = q.casefold()
-            pages = [
-                page
-                for page in pages
-                if needle in page.id.casefold()
-                or needle in page.title.casefold()
-                or any(needle in tag.casefold() for tag in page.tags)
-                or (page.summary and needle in page.summary.casefold())
-            ]
+            pages = [page for page in pages if self._summary_matches_query(page, needle)]
         pages.sort(key=lambda page: (page.kind, page.id))
-        if offset:
-            pages = pages[offset:]
-        if limit is not None:
-            pages = pages[:limit]
         return pages
+
+    def _summary_matches_query(self, page: PageSummary, needle: str) -> bool:
+        return (
+            needle in page.id.casefold()
+            or needle in page.title.casefold()
+            or any(needle in tag.casefold() for tag in page.tags)
+            or (page.summary is not None and needle in page.summary.casefold())
+        )
 
     def read_page(self, page_id: str) -> PageDetail | None:
         normalized = normalize_page_id(page_id)
@@ -127,11 +171,17 @@ class LoreRepository:
         visibility: str | None = None,
         q: str | None = None,
     ) -> Iterator[PageDetail]:
-        """Yield page details matching the current summary filters."""
-        for summary in self.list_pages(kind=kind, visibility=visibility, q=q):
-            detail = self.read_page(summary.id)
-            if detail is not None:
-                yield detail
+        """Yield page details in one scan pass without re-reading each page."""
+        needle = q.casefold() if q else None
+        for page in self._scan_pages():
+            summary = page.summary()
+            if kind and summary.kind != kind:
+                continue
+            if visibility and summary.visibility != visibility:
+                continue
+            if needle and not self._summary_matches_query(summary, needle):
+                continue
+            yield page.detail()
 
     def upsert_page(self, page_id: str, content: str) -> PageDetail:
         normalized = normalize_page_id(page_id)
