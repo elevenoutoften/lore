@@ -9,6 +9,7 @@ from ..schemas import (
     ClaimReinforcementResult,
     ClaimSupersedeResult,
     DecayResult,
+    ExtractedCandidateResponse,
     ExtractedClaim,
     LedgerClaimQuery,
     LedgerReinforceRequest,
@@ -126,3 +127,62 @@ def get_claims(
         valid_at=valid_at,
     )
     return {"count": len(claims), "claims": claims}
+
+
+def _row_to_candidate_response(row: dict) -> ExtractedCandidateResponse:
+    """Convert a raw row dict to an ExtractedCandidateResponse."""
+    content_json = row.get("content_json")
+    evidence = None
+    if isinstance(content_json, dict):
+        evidence = content_json.get("evidence") or content_json.get("object")
+    elif isinstance(content_json, str):
+        try:
+            import json as _json
+            parsed = _json.loads(content_json)
+            evidence = parsed.get("evidence") or parsed.get("object")
+        except Exception:
+            pass
+    return ExtractedCandidateResponse(
+        candidate_id=str(row.get("candidate_id", "")),
+        batch_id=str(row.get("batch_id", "")),
+        candidate_type=str(row.get("candidate_type", "")),
+        status=str(row.get("status", "candidate")),
+        confidence=str(row.get("confidence")) if row.get("confidence") else None,
+        epistemic_status=str(row.get("epistemic_status")) if row.get("epistemic_status") else None,
+        actor=str(row.get("actor")) if row.get("actor") else None,
+        lane=str(row.get("lane")) if row.get("lane") else None,
+        observed_at=str(row.get("observed_at")) if row.get("observed_at") else None,
+        valid_from=str(row.get("valid_from")) if row.get("valid_from") else None,
+        valid_until=str(row.get("valid_until")) if row.get("valid_until") else None,
+        strength=float(row.get("strength", 0.5)),
+        source_capture_ids=list(row.get("source_capture_ids", []) if isinstance(row.get("source_capture_ids"), list) else []),
+        source_page_ids=list(row.get("source_page_ids", []) if isinstance(row.get("source_page_ids"), list) else []),
+        evidence=evidence,
+        content=content_json if isinstance(content_json, dict) else None,
+        created_at=str(row.get("created_at", "")),
+        updated_at=str(row.get("updated_at", "")),
+    )
+
+
+@ledger_router.get("/candidates")
+def get_ledger_candidates(
+    capture_id: str | None = Query(default=None, description="Filter by source capture ID."),
+    page_id: str | None = Query(default=None, description="Filter by source page ID."),
+    lane: str | None = Query(default=None, description="Filter by retrieval lane."),
+    actor: str | None = Query(default=None, description="Filter by agent actor name."),
+    status: str | None = Query(default=None, description="Filter by status (candidate, active, rejected, archived, superseded)."),
+    candidate_type: str | None = Query(default=None, alias="type", description="Filter by candidate type (claim, entity, edge, invalidation)."),
+    limit: int = Query(default=100, ge=1, le=500, description="Max results to return."),
+    ledger_db: LedgerDB = Depends(get_ledger_db),
+) -> list[ExtractedCandidateResponse]:
+    """Get extraction candidates with full provenance and filter support."""
+    candidates = ledger_db.get_candidates(
+        candidate_type=candidate_type,
+        status=status,
+        capture_id=capture_id,
+        page_id=page_id,
+        lane=lane,
+        actor=actor,
+        limit=limit,
+    )
+    return [_row_to_candidate_response(c) for c in candidates]

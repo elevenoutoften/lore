@@ -225,6 +225,93 @@ def test_procedure_read_rejects_non_procedure(client):
     assert client.get("/api/procedures/services/workflow-engine/export").status_code == 404
 
 
+def test_ledger_candidates_endpoint(client):
+    """Test GET /api/ledger/candidates returns typed candidates with full provenance."""
+    from lore_app.schemas import ExtractedClaim, ExtractionResult
+
+    # Insert a candidate via store_extraction_result (creates batch respecting FK)
+    ledger = client.app.state.ledger_db
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="test-prov-batch",
+            processed_at="2026-05-10T00:00:00+00:00",
+            source_capture_ids=["inbox/test-prov-cap"],
+            claims=[
+                ExtractedClaim(
+                    subject="services/test-svc",
+                    predicate="states",
+                    object="Test service has a new API endpoint.",
+                    confidence="high",
+                    actor="nyx",
+                    lane="project",
+                    observed_at="2026-05-10T00:00:00+00:00",
+                    valid_from="2026-05-01",
+                    valid_until="2026-12-31",
+                    evidence="Observed during deployment.",
+                    source_page_ids=["captures/cap-001"],
+                )
+            ],
+        )
+    )
+
+    # Query without filters — should return at least that candidate
+    response = client.get("/api/ledger/candidates")
+    assert response.status_code == 200
+    candidates = response.json()
+    assert isinstance(candidates, list)
+    assert len(candidates) >= 1
+
+    # Verify provenance fields on our inserted candidate
+    found = [c for c in candidates if c["batch_id"] == "test-prov-batch"]
+    assert len(found) == 1
+    cand = found[0]
+    assert cand["candidate_type"] == "claim"
+    assert cand["status"] == "candidate"
+    assert cand["confidence"] == "high"
+    assert cand["actor"] == "nyx"
+    assert cand["lane"] == "project"
+    assert cand["observed_at"] == "2026-05-10T00:00:00+00:00"
+    assert cand["valid_from"] == "2026-05-01"
+    assert cand["valid_until"] == "2026-12-31"
+    assert "captures/cap-001" in cand["source_page_ids"]
+    assert "test-prov-cap" in cand["source_capture_ids"] or "inbox/test-prov-cap" in cand["source_capture_ids"]
+    assert "created_at" in cand
+    assert "updated_at" in cand
+
+    # Test filter by actor
+    filtered = client.get("/api/ledger/candidates", params={"actor": "nyx"})
+    assert filtered.status_code == 200
+    assert len(filtered.json()) >= 1
+
+    filtered = client.get("/api/ledger/candidates", params={"actor": "nobody"})
+    assert filtered.status_code == 200
+    assert len(filtered.json()) == 0
+
+    # Test filter by lane
+    filtered = client.get("/api/ledger/candidates", params={"lane": "project"})
+    assert filtered.status_code == 200
+    assert len(filtered.json()) >= 1
+
+    filtered = client.get("/api/ledger/candidates", params={"lane": "ops"})
+    assert filtered.status_code == 200
+    assert len(filtered.json()) == 0
+
+    # Test filter by status
+    filtered = client.get("/api/ledger/candidates", params={"status": "candidate"})
+    assert filtered.status_code == 200
+    assert len(filtered.json()) >= 1
+
+    # Test filter by type
+    filtered = client.get("/api/ledger/candidates", params={"type": "claim"})
+    assert filtered.status_code == 200
+    assert len(filtered.json()) >= 1
+
+    # Test filter by page_id
+    filtered = client.get("/api/ledger/candidates", params={"page_id": "captures/cap-001"})
+    assert filtered.status_code == 200
+    assert len(filtered.json()) >= 1
+
+
 def test_semantics_endpoint(client):
     response = client.get("/api/semantics")
     assert response.status_code == 200

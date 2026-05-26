@@ -986,6 +986,10 @@ class LedgerDB:
         self,
         candidate_type: str | None = None,
         status: str | None = None,
+        capture_id: str | None = None,
+        page_id: str | None = None,
+        lane: str | None = None,
+        actor: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         clauses: list[str] = []
@@ -996,6 +1000,18 @@ class LedgerDB:
         if status:
             clauses.append("status = ?")
             params.append(status)
+        if capture_id:
+            clauses.append("source_capture_ids LIKE ?")
+            params.append(f"%{capture_id}%")
+        if page_id:
+            clauses.append("source_page_ids LIKE ?")
+            params.append(f"%{page_id}%")
+        if lane:
+            clauses.append("lane = ?")
+            params.append(lane)
+        if actor:
+            clauses.append("actor = ?")
+            params.append(actor)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(max(1, min(limit, 500)))
         rows = self.connection.execute(

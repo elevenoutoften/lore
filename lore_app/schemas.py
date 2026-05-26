@@ -1161,3 +1161,26 @@ class LedgerClaimQuery(BaseModel):
     lane: str | None = None
     min_strength: float = 0.0
     valid_at: str | None = None
+
+
+class ExtractedCandidateResponse(BaseModel):
+    """A typed extraction candidate with full provenance fields."""
+
+    candidate_id: str
+    batch_id: str
+    candidate_type: str
+    status: str
+    confidence: str | None = None
+    epistemic_status: str | None = None
+    actor: str | None = None
+    lane: str | None = None
+    observed_at: str | None = Field(default=None, description="When the fact was observed (capture time).")
+    valid_from: str | None = Field(default=None, description="When the fact became true in the world.")
+    valid_until: str | None = Field(default=None, description="When the fact ceased to be true (null = still valid).")
+    strength: float = 0.5
+    source_capture_ids: list[str] = Field(default_factory=list, description="Capture IDs that contributed to this candidate.")
+    source_page_ids: list[str] = Field(default_factory=list, description="Lore page IDs that contributed to this candidate.")
+    evidence: str | None = Field(default=None, description="Supporting evidence text extracted from the claim content.")
+    content: dict[str, Any] | None = Field(default=None, description="The full parsed content JSON.")
+    created_at: str
+    updated_at: str
