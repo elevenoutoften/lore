@@ -22,6 +22,19 @@ For `LORE_AUTH_MODE=bearer` and `LORE_AUTH_MODE=basic`, `LORE_AUTH_SECRET`
 must be a non-empty string. If it is unset, empty, or whitespace-only, Lore
 fails to start with a clear configuration error.
 
+## Placeholder Secret Detection
+
+Lore refuses to start when `LORE_AUTH_MODE=bearer` or `LORE_AUTH_MODE=basic`
+is combined with a known placeholder secret (for example, `change-me`,
+`changeme`, `password`, `secret`, or `default`) and a non-loopback bind
+address. Generate a strong random secret:
+
+    python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+When running in Docker, always pass a generated secret:
+
+    docker run -e LORE_AUTH_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(32))") ...
+
 `LORE_AUTH_MODE=api_key` validates bearer tokens against Lore's own SQLite API
 key registry at `LORE_API_KEYS_DB`. All requests must present a valid API key.
 Trusted proxy browser sessions require explicit configuration.

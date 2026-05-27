@@ -9,6 +9,18 @@ from pathlib import Path
 from typing import Any
 
 VALID_AUTH_MODES = ("none", "bearer", "basic", "api_key")
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+KNOWN_INSECURE_SECRETS = frozenset(
+    {
+        "change-me",
+        "changeme",
+        "change-me-in-production",
+        "your-secret-here",
+        "secret",
+        "password",
+        "default",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -98,6 +110,14 @@ class LoreConfig:
                 f"Unsupported LORE_AUTH_MODE={self.auth_mode!r}. "
                 f"Must be one of: {', '.join(VALID_AUTH_MODES)}."
             )
+        if self.auth_mode in ("bearer", "basic"):
+            secret_lower = self.auth_secret.strip().lower()
+            if secret_lower in KNOWN_INSECURE_SECRETS and self.host not in LOOPBACK_HOSTS:
+                raise ValueError(
+                    f"SECURITY: LORE_AUTH_SECRET is a known placeholder value ({self.auth_secret!r}). "
+                    f"A non-loopback bind address ({self.host!r}) requires a strong, unique secret. "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                )
 
     def to_dict(self) -> dict[str, Any]:
         return {

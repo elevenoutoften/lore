@@ -8,7 +8,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     LORE_LEDGER_DB=/data/db/ledger.db \
     LORE_API_KEYS_DB=/data/db/api-keys.db \
     LORE_AUTH_MODE=bearer \
-    LORE_AUTH_SECRET=change-me-in-production \
     LORE_HOST=0.0.0.0 \
     LORE_PORT=8000
 

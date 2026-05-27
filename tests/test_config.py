@@ -194,9 +194,67 @@ def test_localhost_bind_allowed_without_auth(monkeypatch, tmp_path):
     assert app is not None
 
 
+def test_known_placeholder_secret_rejected_on_non_loopback(monkeypatch):
+    monkeypatch.setenv("LORE_AUTH_MODE", "bearer")
+    monkeypatch.setenv("LORE_AUTH_SECRET", "change-me-in-production")
+    monkeypatch.setenv("LORE_HOST", "0.0.0.0")
+
+    with pytest.raises(ValueError, match="SECURITY"):
+        LoreConfig()
+
+
+def test_known_placeholder_secret_allowed_on_loopback(monkeypatch, tmp_path):
+    monkeypatch.setenv("LORE_AUTH_MODE", "bearer")
+    monkeypatch.setenv("LORE_AUTH_SECRET", "change-me")
+    monkeypatch.setenv("LORE_HOST", "127.0.0.1")
+    monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
+    monkeypatch.setenv("LORE_SEARCH_DB", str(tmp_path / "search.db"))
+    monkeypatch.setenv("LORE_LEDGER_DB", str(tmp_path / "ledger.db"))
+    monkeypatch.setenv("LORE_API_KEYS_DB", str(tmp_path / "api_keys.db"))
+
+    app = create_app()
+    assert app is not None
+
+
+def test_real_secret_allowed_on_non_loopback(monkeypatch, tmp_path):
+    monkeypatch.setenv("LORE_AUTH_MODE", "bearer")
+    monkeypatch.setenv("LORE_AUTH_SECRET", "a-real-opaque-secret")
+    monkeypatch.setenv("LORE_HOST", "0.0.0.0")
+    monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
+    monkeypatch.setenv("LORE_SEARCH_DB", str(tmp_path / "search.db"))
+    monkeypatch.setenv("LORE_LEDGER_DB", str(tmp_path / "ledger.db"))
+    monkeypatch.setenv("LORE_API_KEYS_DB", str(tmp_path / "api_keys.db"))
+    monkeypatch.delenv("LORE_ALLOW_INSECURE_BIND", raising=False)
+
+    app = create_app()
+    assert app is not None
+
+
+def test_empty_secret_rejected_in_bearer_mode(monkeypatch, tmp_path):
+    monkeypatch.setenv("LORE_AUTH_MODE", "bearer")
+    monkeypatch.setenv("LORE_AUTH_SECRET", "")
+    monkeypatch.setenv("LORE_HOST", "0.0.0.0")
+    monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
+    monkeypatch.setenv("LORE_SEARCH_DB", str(tmp_path / "search.db"))
+    monkeypatch.setenv("LORE_LEDGER_DB", str(tmp_path / "ledger.db"))
+    monkeypatch.setenv("LORE_API_KEYS_DB", str(tmp_path / "api_keys.db"))
+
+    with pytest.raises(ValueError, match="non-empty string"):
+        create_app()
+
+
+def test_placeholder_secret_case_insensitive(monkeypatch):
+    monkeypatch.setenv("LORE_AUTH_MODE", "bearer")
+    monkeypatch.setenv("LORE_AUTH_SECRET", "Change-Me")
+    monkeypatch.setenv("LORE_HOST", "0.0.0.0")
+
+    with pytest.raises(ValueError, match="SECURITY"):
+        LoreConfig()
+
+
 def test_auth_mode_does_not_trigger_bind_guard(monkeypatch, tmp_path):
     monkeypatch.setenv("LORE_AUTH_MODE", "bearer")
-    monkeypatch.setenv("LORE_AUTH_SECRET", "secret")
+    monkeypatch.setenv("LORE_AUTH_SECRET", "a-real-opaque-secret")
     monkeypatch.setenv("LORE_HOST", "0.0.0.0")
     monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
     monkeypatch.setenv("LORE_SEARCH_DB", str(tmp_path / "search.db"))
