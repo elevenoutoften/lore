@@ -66,6 +66,7 @@ class LoreRepository:
     def __init__(self, root: str | Path, search_index: "LoreSearchIndex | None" = None):
         self.root = Path(root).resolve()
         self._page_cache: list[PageSummary] | None = None
+        self._meta_cache: list[PageSummary] | None = None
         self._search_index = search_index
 
     def ensure_root(self) -> None:
@@ -98,8 +99,15 @@ class LoreRepository:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[PageSummary]:
-        """Return page metadata summaries for callers that do not need bodies."""
-        return self.list_pages(kind=kind, visibility=visibility, q=q, limit=limit, offset=offset)
+        """Return page summaries without retaining body content in memory."""
+        pages, _total = self.list_pages_meta_with_count(
+            kind=kind,
+            visibility=visibility,
+            q=q,
+            limit=limit,
+            offset=offset,
+        )
+        return pages
 
     def list_pages_with_count(
         self,
@@ -114,6 +122,26 @@ class LoreRepository:
         if self._page_cache is None:
             self._page_cache = [page.summary() for page in self._scan_pages()]
         pages = self._filter_summaries(self._page_cache, kind=kind, visibility=visibility, q=q)
+        total = len(pages)
+        if offset:
+            pages = pages[offset:]
+        if limit is not None:
+            pages = pages[:limit]
+        return pages, total
+
+    def list_pages_meta_with_count(
+        self,
+        *,
+        kind: str | None = None,
+        visibility: str | None = None,
+        q: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[list[PageSummary], int]:
+        """Return metadata-only summaries and total count in one cache pass."""
+        if self._meta_cache is None:
+            self._meta_cache = self._scan_pages_meta()
+        pages = self._filter_summaries(self._meta_cache, kind=kind, visibility=visibility, q=q)
         total = len(pages)
         if offset:
             pages = pages[offset:]
@@ -192,6 +220,7 @@ class LoreRepository:
             normalized_content += "\n"
         path.write_text(normalized_content, encoding="utf-8")
         self._page_cache = None
+        self._meta_cache = None
         return self._read_file(path, normalized).detail()
 
     def delete_page(self, page_id: str) -> bool:
@@ -201,6 +230,7 @@ class LoreRepository:
             return False
         path.unlink()
         self._page_cache = None
+        self._meta_cache = None
         return True
 
     def search(
@@ -263,7 +293,7 @@ class LoreRepository:
         return SearchResponse(query=cleaned_query, hits=hits[:limit])
 
     def catalog(self) -> CatalogResponse:
-        pages = self.list_pages()
+        pages = self.list_pages_meta()
         return CatalogResponse(
             kinds=sorted({page.kind for page in pages}),
             visibilities=sorted({page.visibility for page in pages}),
@@ -289,6 +319,47 @@ class LoreRepository:
                 continue
             pages.append(self._read_file(path, page_id))
         return pages
+
+    def _scan_pages_meta(self) -> list[PageSummary]:
+        """Scan pages producing summaries without persistent MarkdownPage objects."""
+        self.ensure_root()
+        summaries: list[PageSummary] = []
+        for path in self.root.rglob("*.md"):
+            if any(part.startswith(".") for part in path.relative_to(self.root).parts):
+                continue
+            page_id = path.relative_to(self.root).with_suffix("").as_posix()
+            try:
+                normalize_page_id(page_id)
+            except InvalidPageId:
+                continue
+            summaries.append(self._read_file_summary(path, page_id))
+        return summaries
+
+    def _read_file_summary(self, path: Path, page_id: str) -> PageSummary:
+        content = path.read_text(encoding="utf-8")
+        frontmatter, body = parse_frontmatter(content)
+        normalized_frontmatter = normalize_frontmatter(frontmatter)
+        stat = path.stat()
+        updated_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
+        return PageSummary(
+            id=page_id,
+            title=page_title(page_id, body, normalized_frontmatter),
+            kind=str(normalized_frontmatter.get("kind") or infer_kind(page_id)),
+            visibility=str(normalized_frontmatter.get("visibility") or "internal"),
+            status=optional_string(normalized_frontmatter.get("status")),
+            summary=optional_string(normalized_frontmatter.get("summary")),
+            tags=string_list(normalized_frontmatter.get("tags")),
+            sources=string_list(normalized_frontmatter.get("sources")),
+            source_task=optional_string(normalized_frontmatter.get("source_task")),
+            decision_id=optional_string(normalized_frontmatter.get("decision_id")),
+            trace_id=optional_string(normalized_frontmatter.get("trace_id")),
+            tool_calls=dict_list(normalized_frontmatter.get("tool_calls")),
+            constraints=string_list(normalized_frontmatter.get("constraints")),
+            policies_applied=string_list(normalized_frontmatter.get("policies_applied")),
+            epistemic_status=epistemic_status_value(normalized_frontmatter.get("epistemic_status")),
+            updated_at=updated_at,
+            size=stat.st_size,
+        )
 
     def _read_file(self, path: Path, page_id: str) -> MarkdownPage:
         content = path.read_text(encoding="utf-8")

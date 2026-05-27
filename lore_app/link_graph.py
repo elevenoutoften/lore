@@ -31,12 +31,12 @@ class LinkGraphCache:
 
 def _page_fingerprint(repo: LoreRepository) -> int:
     """Hash of page IDs + mtimes for cheap change detection."""
-    pages = repo.list_pages()
+    pages = repo.list_pages_meta()
     return hash(tuple((page.id, page.updated_at) for page in pages))
 
 
 def build_link_graph(repo: LoreRepository) -> LinkGraphResponse:
-    pages = repo.list_pages()
+    pages = repo.list_pages_meta()
     page_by_id = {page.id: page for page in pages}
     page_ids = {page.id for page in pages}
     edges: list[LinkEdge] = []

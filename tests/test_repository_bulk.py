@@ -116,6 +116,49 @@ def test_list_pages_with_count_no_double_scan(tmp_path):
     assert scan_pages.call_count == 1
 
 
+def test_list_pages_meta_does_not_create_full_pages(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    _write_page(repo, "projects/alpha", title="Alpha", body="A" * 10000)
+    _write_page(repo, "projects/bravo", title="Bravo", body="B" * 10000)
+
+    repo._page_cache = None
+    repo._meta_cache = None
+
+    with mock.patch.object(repo, "_scan_pages", wraps=repo._scan_pages) as full_scan:
+        summaries = repo.list_pages_meta()
+
+    assert len(summaries) == 2
+    assert full_scan.call_count == 0
+
+
+def test_list_pages_meta_with_count_no_double_scan(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    for index in range(50):
+        _write_page(repo, f"projects/page-{index:03d}", title=f"Page {index:03d}")
+
+    repo._meta_cache = None
+
+    with mock.patch.object(repo, "_scan_pages_meta", wraps=repo._scan_pages_meta) as meta_scan:
+        pages, total = repo.list_pages_meta_with_count(limit=10, offset=5)
+
+    assert total == 50
+    assert len(pages) == 10
+    assert [page.id for page in pages] == [f"projects/page-{index:03d}" for index in range(5, 15)]
+    assert meta_scan.call_count == 1
+
+
+def test_api_list_pages_uses_meta_scan(client):
+    repo = client.app.state.repository
+    repo._meta_cache = None
+    repo._page_cache = None
+
+    with mock.patch.object(repo, "_scan_pages", wraps=repo._scan_pages) as full_scan:
+        response = client.get("/api/pages")
+
+    assert response.status_code == 200
+    assert full_scan.call_count == 0
+
+
 def test_catalog_uses_cache_no_extra_scan(tmp_path, monkeypatch):
     repo = LoreRepository(tmp_path / "pages")
     _write_page(repo, "projects/alpha", title="Alpha", body="alpha")
@@ -135,6 +178,28 @@ def test_catalog_uses_cache_no_extra_scan(tmp_path, monkeypatch):
     catalog = repo.catalog()
 
     assert scan_calls == 1
+    assert catalog.kinds == ["project", "service"]
+
+
+def test_catalog_uses_meta_scan(tmp_path, monkeypatch):
+    repo = LoreRepository(tmp_path / "pages")
+    _write_page(repo, "projects/alpha", title="Alpha")
+    _write_page(repo, "services/bravo", title="Bravo", kind="service")
+
+    meta_scan_calls = 0
+    original_scan_meta = repo._scan_pages_meta
+
+    def counted_scan_meta():
+        nonlocal meta_scan_calls
+        meta_scan_calls += 1
+        return original_scan_meta()
+
+    monkeypatch.setattr(repo, "_scan_pages_meta", counted_scan_meta)
+    monkeypatch.setattr(repo, "_scan_pages", lambda: pytest.fail("catalog should not call _scan_pages"))
+
+    catalog = repo.catalog()
+
+    assert meta_scan_calls == 1
     assert catalog.kinds == ["project", "service"]
 
 

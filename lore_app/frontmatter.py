@@ -55,6 +55,56 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     return frontmatter, body
 
 
+def parse_frontmatter_only(content: str) -> dict[str, Any]:
+    """Parse only the frontmatter block from content, skipping body parsing."""
+    normalized = content.replace("\r\n", "\n").replace("\r", "\n")
+    lines = normalized.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return {}
+
+    closing_index = None
+    for index, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            closing_index = index
+            break
+
+    if closing_index is None:
+        return {}
+
+    frontmatter: dict[str, Any] = {}
+    current_list_key: str | None = None
+    for line in lines[1:closing_index]:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        if stripped.startswith("- ") and current_list_key:
+            value = parse_scalar(stripped[2:].strip())
+            existing = frontmatter.setdefault(current_list_key, [])
+            if isinstance(existing, list):
+                existing.append(value)
+            continue
+
+        if ":" not in line:
+            current_list_key = None
+            continue
+
+        key, raw_value = line.split(":", 1)
+        key = key.strip()
+        raw_value = raw_value.strip()
+        if not key:
+            current_list_key = None
+            continue
+        if raw_value == "":
+            frontmatter[key] = []
+            current_list_key = key
+        else:
+            frontmatter[key] = parse_scalar(raw_value)
+            current_list_key = None
+
+    return frontmatter
+
+
 def parse_scalar(raw_value: str) -> Any:
     value = raw_value.strip()
     if not value:

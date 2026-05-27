@@ -39,7 +39,7 @@ class ContextGraphCache:
 
     @staticmethod
     def _page_fingerprint_for(repo: LoreRepository) -> str:
-        pages = repo.list_pages()
+        pages = repo.list_pages_meta()
         raw = json.dumps([(page.id, page.updated_at) for page in pages], separators=(",", ":"), default=str)
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
