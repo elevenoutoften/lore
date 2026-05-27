@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -8,9 +10,21 @@ from lore_app.code_ingest.fastapi_ingest import ingest_fastapi_routes
 from lore_app.code_ingest.ingest_service import ingest_service_code
 from lore_app.code_ingest.source_refs import resolve_source_ref
 from lore_app.code_ingest.symbol_ingest import ingest_python_symbols
-from lore_app.code_ingest.validate import validate_source_dir, validate_service_id, IngestValidationError
+from lore_app.code_ingest.validate import (
+    IngestValidationError,
+    safe_rglob_py_files,
+    validate_service_id,
+    validate_source_dir,
+)
 from lore_app.config import LoreConfig
 from lore_app.main import create_app
+
+
+def _symlink_or_skip(link: Path, target: Path, *, target_is_directory: bool = False) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
 
 
 def test_fastapi_route_ingest(tmp_path):
@@ -313,15 +327,51 @@ def test_escape_attempt_rejected(tmp_path, monkeypatch):
 
 def test_symlink_escape_rejected(tmp_path, monkeypatch):
     """symlink pointing outside allowed roots is rejected after resolve."""
-    monkeypatch.setenv("LORE_CODE_INGEST_ROOTS", str(tmp_path))
+    allowed_root = tmp_path / "allowed"
+    outside_root = tmp_path / "outside_root"
+    allowed_root.mkdir()
+    outside_root.mkdir()
+    monkeypatch.setenv("LORE_CODE_INGEST_ROOTS", str(allowed_root))
     monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
     config = LoreConfig()
     (tmp_path / "pages").mkdir(exist_ok=True)
-    # Create symlink inside allowed root pointing to /etc
-    link = tmp_path / "evil_link"
-    link.symlink_to("/etc")
+    link = allowed_root / "evil_link"
+    _symlink_or_skip(link, outside_root, target_is_directory=True)
     with pytest.raises(IngestValidationError, match="outside"):
         validate_source_dir(str(link), config)
+
+
+def test_symlink_file_inside_root_is_skipped(tmp_path, monkeypatch):
+    """A .py symlink inside an allowed root pointing outside is skipped."""
+    allowed_root = tmp_path / "allowed"
+    outside_root = tmp_path / "outside_root"
+    allowed_root.mkdir()
+    outside_root.mkdir()
+    monkeypatch.setenv("LORE_CODE_INGEST_ROOTS", str(allowed_root))
+    monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
+    config = LoreConfig()
+    (tmp_path / "pages").mkdir(exist_ok=True)
+    (allowed_root / "real.py").write_text("def hello(): pass", encoding="utf-8")
+    (outside_root / "secret.py").write_text("def leaked(): pass", encoding="utf-8")
+    _symlink_or_skip(allowed_root / "evil.py", outside_root / "secret.py")
+
+    result = validate_source_dir(str(allowed_root), config)
+    assert result == allowed_root.resolve()
+
+    safe_files = safe_rglob_py_files(allowed_root, config.code_ingest_roots)
+    safe_names = {path.name for path in safe_files}
+    assert "real.py" in safe_names
+    assert "evil.py" not in safe_names
+
+    symbols = ingest_python_symbols(allowed_root)
+    symbol_names = {symbol.name for symbol in symbols}
+    assert "hello" in symbol_names
+    assert "leaked" not in symbol_names
+
+    inventory = ingest_service_code("services/demo", allowed_root)
+    source_file_names = {Path(source_ref.file_path).name for source_ref in inventory.source_files}
+    assert "real.py" in source_file_names
+    assert "evil.py" not in source_file_names
 
 
 def test_file_count_limit_rejected(tmp_path, monkeypatch):

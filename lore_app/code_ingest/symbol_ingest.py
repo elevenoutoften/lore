@@ -15,7 +15,14 @@ def ingest_python_symbols(source_dir: str | Path) -> list[SymbolEntry]:
     if not source_dir.exists():
         return symbols
 
+    resolved_source_dir = source_dir.resolve()
     for py_file in source_dir.rglob("*.py"):
+        try:
+            resolved_file = py_file.resolve()
+        except (OSError, RuntimeError):
+            continue
+        if not resolved_file.is_relative_to(resolved_source_dir):
+            continue
         try:
             source = py_file.read_text(encoding="utf-8")
             tree = ast.parse(source)
@@ -58,4 +65,3 @@ def _is_method(node: ast.FunctionDef | ast.AsyncFunctionDef, tree: ast.AST) -> b
         if isinstance(parent, ast.ClassDef) and node in parent.body:
             return True
     return False
-

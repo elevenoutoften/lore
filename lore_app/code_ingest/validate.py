@@ -12,6 +12,20 @@ class IngestValidationError(ValueError):
     """Raised when a source_dir fails validation."""
 
 
+def safe_rglob_py_files(directory: Path, allowed_roots: list[Path]) -> list[Path]:
+    """Return Python files under directory that resolve within allowed roots."""
+
+    safe_files: list[Path] = []
+    for py_file in directory.rglob("*.py"):
+        try:
+            resolved_file = py_file.resolve()
+        except (OSError, RuntimeError):
+            continue
+        if any(resolved_file == root or resolved_file.is_relative_to(root) for root in allowed_roots):
+            safe_files.append(py_file)
+    return safe_files
+
+
 def validate_source_dir(source_dir: str | Path, config: LoreConfig) -> Path:
     """Validate and resolve a source_dir against configured roots and limits.
 
@@ -51,7 +65,7 @@ def validate_source_dir(source_dir: str | Path, config: LoreConfig) -> Path:
             break
 
     # File count and total size limits
-    py_files = list(resolved.rglob("*.py"))
+    py_files = safe_rglob_py_files(resolved, config.code_ingest_roots)
     if len(py_files) > config.code_ingest_max_files:
         raise IngestValidationError(
             f"source_dir contains {len(py_files)} Python files, exceeding the "

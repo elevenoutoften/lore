@@ -17,7 +17,14 @@ def ingest_fastapi_routes(source_dir: str | Path) -> list[RouteEntry]:
     if not source_dir.exists():
         return routes
 
+    resolved_source_dir = source_dir.resolve()
     for py_file in source_dir.rglob("*.py"):
+        try:
+            resolved_file = py_file.resolve()
+        except (OSError, RuntimeError):
+            continue
+        if not resolved_file.is_relative_to(resolved_source_dir):
+            continue
         try:
             tree = ast.parse(py_file.read_text(encoding="utf-8"))
         except (OSError, SyntaxError, UnicodeDecodeError):
@@ -68,4 +75,3 @@ def _parse_route_decorator(decorator: ast.expr) -> tuple[str, str] | None:
                     if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
                         return elt.value.upper(), path
     return None
-

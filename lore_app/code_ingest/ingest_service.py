@@ -7,6 +7,7 @@ from .fastapi_ingest import ingest_fastapi_routes
 from .schemas import ServiceInventory
 from .source_refs import resolve_source_refs
 from .symbol_ingest import ingest_python_symbols
+from .validate import safe_rglob_py_files
 
 
 def ingest_service_code(
@@ -19,7 +20,8 @@ def ingest_service_code(
     source_dir = Path(source_dir)
     routes = ingest_fastapi_routes(source_dir)
     symbols = ingest_python_symbols(source_dir)
-    source_files = resolve_source_refs([str(path) for path in source_dir.rglob("*.py")], repo_root)
+    safe_files = safe_rglob_py_files(source_dir, [source_dir.resolve()])
+    source_files = resolve_source_refs([str(path) for path in safe_files], repo_root)
 
     return ServiceInventory(
         service_id=service_id,
