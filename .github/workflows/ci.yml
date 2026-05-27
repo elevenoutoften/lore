@@ -40,7 +40,6 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -51,7 +50,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
       - name: ruff check
-        run: ruff check . --exit-zero
+        run: ruff check .
       - name: ruff format --check
         run: ruff format --check .
 
@@ -76,7 +75,7 @@ jobs:
         run: |
           rm -rf /tmp/lore-ci-db /tmp/lore-ci-pages
           mkdir -p /tmp/lore-ci-db /tmp/lore-ci-pages
-          python -m pytest tests/ eval --timeout=60 --cov=lore_app --cov-report=term-missing
+          python -m pytest tests/ eval --timeout=60 --cov=lore_app --cov-report=term-missing --cov-fail-under=50
 
   dependency-audit:
     runs-on: ubuntu-latest
@@ -162,6 +161,6 @@ jobs:
             -e LORE_API_KEYS_DB=/tmp/db/api_keys.db \
             lore:ci-test
           sleep 5
-          curl -f -H "Authorization: Bearer ci-test-secret" http://localhost:8101/healthz || (docker logs lore-ci && exit 1)
+          curl -f http://localhost:8101/healthz || (docker logs lore-ci && exit 1)
           docker stop lore-ci
           docker rm lore-ci

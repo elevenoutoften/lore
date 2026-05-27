@@ -10,8 +10,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .api_keys import LoreApiKeyStore
+from .audit import AuditLog
 from .auth import AuthMiddleware
-from .config import LoreConfig, VALID_AUTH_MODES
+from .config import VALID_AUTH_MODES, LoreConfig
 from .consolidation_worker import ConsolidationWorker
 from .context_graph import ContextGraphCache
 from .ledger import LedgerDB
@@ -23,12 +24,40 @@ from .patch_planner import PatchPlanner
 from .policy_engine import PolicyEngine
 from .rag.vector_store import VectorStore
 from .repository import LoreRepository
-from .route_utils import actor_from_request, client_rate_limit_key, is_rate_limited_write, retrieve_context, workspace_lore_config
-from .routes import admin_router, api_keys_router, captures_router, consolidation_router, context_graph_router, distillation_router, extraction_router, graph_router, heartbeat_router, ledger_router, lint_router, mcp_router, memory_router, metadata_router, pages_router, policies_router, precedents_router, procedures_router, provenance_router, rag_router, search_router, trace_router
+from .route_utils import (
+    actor_from_request,
+    client_rate_limit_key,
+    is_rate_limited_write,
+    retrieve_context,
+    workspace_lore_config,
+)
+from .routes import (
+    admin_router,
+    api_keys_router,
+    captures_router,
+    consolidation_router,
+    context_graph_router,
+    distillation_router,
+    extraction_router,
+    graph_router,
+    heartbeat_router,
+    ledger_router,
+    lint_router,
+    mcp_router,
+    memory_router,
+    metadata_router,
+    pages_router,
+    policies_router,
+    precedents_router,
+    procedures_router,
+    provenance_router,
+    rag_router,
+    search_router,
+    trace_router,
+)
 from .routes.admin import package_version
 from .search_index import LoreSearchIndex
 from .security import RateLimiter
-from .audit import AuditLog
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 
@@ -45,8 +74,7 @@ def create_app(
 
     if lore_config.auth_mode not in VALID_AUTH_MODES:
         raise ValueError(
-            f"Unsupported LORE_AUTH_MODE={lore_config.auth_mode!r}. "
-            f"Must be one of: {', '.join(VALID_AUTH_MODES)}."
+            f"Unsupported LORE_AUTH_MODE={lore_config.auth_mode!r}. Must be one of: {', '.join(VALID_AUTH_MODES)}."
         )
 
     # Fail closed: refuse to start if auth_mode='none' and binding a non-loopback address
@@ -60,6 +88,7 @@ def create_app(
                 "the risk and proceed."
             )
         import logging
+
         logging.getLogger("lore").warning(
             "SECURITY: Lore is running with LORE_AUTH_MODE=none on non-loopback "
             f"address {lore_config.host}. This is insecure unless an external gateway "
@@ -78,7 +107,9 @@ def create_app(
     policy_engine = PolicyEngine(ledger_db)
     api_key_store = LoreApiKeyStore(lore_config.api_keys_db)
     api_key_store.initialize()
-    audit_log = AuditLog(Path(lore_config.content_dir) / ".lore" / "audit", retention_days=lore_config.audit_retention_days)
+    audit_log = AuditLog(
+        Path(lore_config.content_dir) / ".lore" / "audit", retention_days=lore_config.audit_retention_days
+    )
     metrics = MetricsCollector()
     metrics.set_index_size(len(repo.list_pages()))
 
@@ -112,17 +143,20 @@ def create_app(
         max_requests=lore_config.write_rate_limit,
         window_seconds=lore_config.write_rate_window_seconds,
     )
-    app.state.retrieve_context = lambda query, limit=10: retrieve_context(repo, search_idx, vector_store, graph_cache, query, limit)
+    app.state.retrieve_context = lambda query, limit=10: retrieve_context(
+        repo, search_idx, vector_store, graph_cache, query, limit
+    )
 
     app.mount("/static", StaticFiles(directory=str(PACKAGE_DIR / "static")), name="static")
 
-    if lore_config.auth_mode in ("bearer", "basic"):
-        if not lore_config.auth_secret or not lore_config.auth_secret.strip():
-            raise ValueError(
-                "LORE_AUTH_SECRET must be a non-empty string when "
-                f"LORE_AUTH_MODE={lore_config.auth_mode!r}. "
-                f"Set a strong secret or switch to LORE_AUTH_MODE=none or LORE_AUTH_MODE=api_key."
-            )
+    if lore_config.auth_mode in ("bearer", "basic") and (
+        not lore_config.auth_secret or not lore_config.auth_secret.strip()
+    ):
+        raise ValueError(
+            "LORE_AUTH_SECRET must be a non-empty string when "
+            f"LORE_AUTH_MODE={lore_config.auth_mode!r}. "
+            f"Set a strong secret or switch to LORE_AUTH_MODE=none or LORE_AUTH_MODE=api_key."
+        )
 
     if lore_config.auth_mode != "none":
         app.add_middleware(
@@ -165,8 +199,7 @@ def create_app(
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Content-Security-Policy"] = lore_config.csp_policy or (
-            "default-src 'self'; style-src 'self' 'unsafe-inline'; "
-            f"script-src 'self' 'nonce-{request.state.csp_nonce}'"
+            f"default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-{request.state.csp_nonce}'"
         )
         return response
 

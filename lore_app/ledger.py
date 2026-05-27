@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
+from .db_utils import retry_on_locked
+from .provenance import merge_trace_provenance
 from .schemas import (
     ClaimReinforcementResult,
     ClaimSupersedeResult,
@@ -23,8 +26,6 @@ from .schemas import (
     PolicyRule,
     TraceEntry,
 )
-from .db_utils import retry_on_locked
-from .provenance import merge_trace_provenance
 
 CONFIDENCE_ORDER = {"unknown": 0, "low": 1, "medium": 2, "high": 3}
 SEED_POLICIES = [
@@ -87,7 +88,7 @@ VALID_TRANSITIONS = {
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _normalize(text: str) -> str:
@@ -123,7 +124,7 @@ class LedgerDB:
         return self._connection
 
     # Columns added by migrations beyond the original schema.
-    _MIGRATION_COLUMNS = {
+    _MIGRATION_COLUMNS: ClassVar[dict[str, list[tuple[str, str]]]] = {
         "extraction_deadletters": [
             ("deadletter_id", "TEXT PRIMARY KEY"),
             ("capture_id", "TEXT NOT NULL DEFAULT ''"),
@@ -219,7 +220,7 @@ class LedgerDB:
     def initialize(self) -> None:
         with self._lock:
             self.connection.executescript(
-            """
+                """
             CREATE TABLE IF NOT EXISTS extraction_batches (
                 batch_id TEXT PRIMARY KEY,
                 created_at TEXT NOT NULL,
@@ -362,24 +363,16 @@ class LedgerDB:
         """Add columns from _MIGRATION_COLUMNS that don't yet exist."""
         with self._lock:
             for table, columns in self._MIGRATION_COLUMNS.items():
-                existing = {
-                    row[1]
-                    for row in self.connection.execute(f"PRAGMA table_info({table})").fetchall()
-                }
+                existing = {row[1] for row in self.connection.execute(f"PRAGMA table_info({table})").fetchall()}
                 for col_name, col_def in columns:
                     if col_name not in existing:
-                        try:
-                            self.connection.execute(
-                                f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}"
-                            )
-                        except sqlite3.OperationalError:
-                            pass  # Column already exists from concurrent migration
+                        with contextlib.suppress(sqlite3.OperationalError):
+                            self.connection.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
                 self.connection.commit()
 
     def _seed_policies(self) -> None:
         existing = {
-            str(row["policy_id"])
-            for row in self.connection.execute("SELECT policy_id FROM policies").fetchall()
+            str(row["policy_id"]) for row in self.connection.execute("SELECT policy_id FROM policies").fetchall()
         }
         for policy in SEED_POLICIES:
             if policy.policy_id not in existing:
@@ -614,8 +607,12 @@ class LedgerDB:
                 )
 
                 # Keep more specific temporal bounds
-                existing_valid_from = str(existing["valid_from"]) if existing["valid_from"] else metadata.get("valid_from")
-                existing_valid_until = str(existing["valid_until"]) if existing["valid_until"] else metadata.get("valid_until")
+                existing_valid_from = (
+                    str(existing["valid_from"]) if existing["valid_from"] else metadata.get("valid_from")
+                )
+                existing_valid_until = (
+                    str(existing["valid_until"]) if existing["valid_until"] else metadata.get("valid_until")
+                )
 
                 self.connection.execute(
                     """
@@ -712,9 +709,7 @@ class LedgerDB:
     # ─── Invalidation ─────────────────────────────────────────────────────
 
     @retry_on_locked()
-    def supersede_candidate(
-        self, old_candidate_id: str, new_candidate_id: str, reason: str
-    ) -> ClaimSupersedeResult:
+    def supersede_candidate(self, old_candidate_id: str, new_candidate_id: str, reason: str) -> ClaimSupersedeResult:
         """Mark old claim as superseded by new claim."""
         with self._lock:
             old_row = self.connection.execute(
@@ -790,9 +785,7 @@ class LedgerDB:
         self._transition_status(candidate_id, "archived")
 
     @retry_on_locked()
-    def _transition_status(
-        self, candidate_id: str, new_status: str, *, reason: str | None = None
-    ) -> None:
+    def _transition_status(self, candidate_id: str, new_status: str, *, reason: str | None = None) -> None:
         with self._lock:
             row = self.connection.execute(
                 "SELECT status FROM extraction_candidates WHERE candidate_id = ?",
@@ -802,9 +795,7 @@ class LedgerDB:
                 raise ValueError(f"Candidate {candidate_id} not found")
             current = str(row["status"])
             if new_status not in VALID_TRANSITIONS.get(current, set()):
-                raise ValueError(
-                    f"Invalid status transition: {current} → {new_status}"
-                )
+                raise ValueError(f"Invalid status transition: {current} → {new_status}")
             now = utc_now()
             if reason:
                 self.connection.execute(
@@ -849,7 +840,7 @@ class LedgerDB:
             if not rows:
                 return DecayResult(decayed_count=0, min_strength=0.0, max_strength=0.0)
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             decayed_count = 0
             min_strength = 1.0
             max_strength = 0.0
@@ -857,14 +848,11 @@ class LedgerDB:
             for row in rows:
                 accessed = datetime.fromisoformat(str(row["last_accessed_at"]))
                 if accessed.tzinfo is None:
-                    accessed = accessed.replace(tzinfo=timezone.utc)
-                if days_since_access is not None:
-                    days = days_since_access
-                else:
-                    days = max(0, (now - accessed).days)
+                    accessed = accessed.replace(tzinfo=UTC)
+                days = days_since_access if days_since_access is not None else max(0, (now - accessed).days)
 
                 old_strength = float(row["strength"])
-                new_strength = max(0.01, old_strength * (0.995 ** days))
+                new_strength = max(0.01, old_strength * (0.995**days))
 
                 self.connection.execute(
                     """
@@ -1264,7 +1252,7 @@ class LedgerDB:
             if len(updates) == 1 and self.get_patch_plan(plan_id) is None:
                 raise ValueError(f"Patch plan {plan_id} not found")
             assignments = ", ".join(f"{column} = ?" for column in updates)
-            params = list(updates.values()) + [plan_id]
+            params = [*list(updates.values()), plan_id]
             cursor = self.connection.execute(
                 f"UPDATE patch_plans SET {assignments} WHERE plan_id = ?",
                 params,
@@ -1328,7 +1316,7 @@ class LedgerDB:
             GROUP BY status
             """
         ).fetchall()
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+        cutoff = datetime.now(UTC) - timedelta(hours=1)
         stuck_rows = self.connection.execute(
             """
             SELECT *
@@ -1517,13 +1505,18 @@ def _candidate_source_page_ids(candidate: Any) -> list[str]:
 
 def _decode_row(row: sqlite3.Row) -> dict[str, Any]:
     decoded = dict(row)
-    for key in ("content_json", "source_capture_ids", "source_page_ids", "candidate_ids", "policies_applied", "token_usage"):
+    for key in (
+        "content_json",
+        "source_capture_ids",
+        "source_page_ids",
+        "candidate_ids",
+        "policies_applied",
+        "token_usage",
+    ):
         if key not in decoded:
             continue
-        try:
+        with contextlib.suppress(TypeError, json.JSONDecodeError):
             decoded[key] = json.loads(str(decoded[key]))
-        except (TypeError, json.JSONDecodeError):
-            pass
     if "auto_appliable" in decoded:
         decoded["auto_appliable"] = bool(decoded["auto_appliable"])
     if "epistemic_status" in decoded and decoded["epistemic_status"] is not None:
@@ -1603,9 +1596,7 @@ def _trace_filter_clauses(
             clauses.append(f"json_extract(related_ids, '$.{key}') = ?")
             params.append(value)
     if policy_ref:
-        clauses.append(
-            "EXISTS (SELECT 1 FROM json_each(reasoning_traces.policy_refs) WHERE value = ?)"
-        )
+        clauses.append("EXISTS (SELECT 1 FROM json_each(reasoning_traces.policy_refs) WHERE value = ?)")
         params.append(policy_ref)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     return where, params

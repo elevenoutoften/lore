@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from typing import Literal
+# ruff: noqa: B008
+from typing import TYPE_CHECKING, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..deps import get_ledger_db, get_repo
-from ..ledger import LedgerDB
 from ..provenance import get_capture_provenance, get_page_provenance
-from ..repository import LoreRepository
 from ..schemas import ProvenanceRef, ProvenanceResponse
+
+if TYPE_CHECKING:
+    from ..ledger import LedgerDB
+    from ..repository import LoreRepository
 
 router = APIRouter(prefix="/api/provenance", tags=["provenance"])
 

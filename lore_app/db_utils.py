@@ -3,9 +3,11 @@ from __future__ import annotations
 import logging
 import sqlite3
 import time
-from collections.abc import Callable
 from functools import wraps
-from typing import ParamSpec, TypeVar
+from typing import TYPE_CHECKING, ParamSpec, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 

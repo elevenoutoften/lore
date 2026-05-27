@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from types import SimpleNamespace
 import re
 import textwrap
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -162,7 +162,7 @@ def test_llm_success_populates_provenance_and_merges_results(tmp_path, monkeypat
         suggested_target_page="services/lore",
         body="Lore still uses [[Workflow Engine|services/workflow-engine]].",
     )
-    observed_at = datetime(2026, 5, 26, 12, 34, 56, tzinfo=timezone.utc)
+    observed_at = datetime(2026, 5, 26, 12, 34, 56, tzinfo=UTC)
 
     class FixedDateTime(datetime):
         @classmethod

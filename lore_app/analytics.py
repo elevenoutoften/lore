@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from collections import Counter, deque
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from .schemas import ContextGraph
+if TYPE_CHECKING:
+    from .schemas import ContextGraph
 
 
 class GraphMetrics(BaseModel):
@@ -66,7 +68,7 @@ class GraphAnalytics:
             node_metrics=node_metrics,
             communities=communities,
             top_nodes=top_nodes,
-            computed_at=datetime.now(timezone.utc).isoformat(),
+            computed_at=datetime.now(UTC).isoformat(),
             node_count=len(node_ids),
             edge_count=len(self._graph.edges),
         )
@@ -75,7 +77,11 @@ class GraphAnalytics:
     def degree_centrality(self, node_id: str) -> float:
         """Get degree centrality for a specific node."""
 
-        return self.compute().node_metrics.get(node_id, GraphMetrics(node_id=node_id, degree_centrality=0.0)).degree_centrality
+        return (
+            self.compute()
+            .node_metrics.get(node_id, GraphMetrics(node_id=node_id, degree_centrality=0.0))
+            .degree_centrality
+        )
 
     def community_of(self, node_id: str) -> int:
         """Get community ID for a specific node."""
@@ -145,11 +151,11 @@ class GraphAnalytics:
         grouped: dict[str, list[str]] = {}
         for node_id in node_ids:
             grouped.setdefault(labels[node_id], []).append(node_id)
-        communities = sorted((sorted(members) for members in grouped.values()), key=lambda members: (members[0], len(members)))
+        communities = sorted(
+            (sorted(members) for members in grouped.values()), key=lambda members: (members[0], len(members))
+        )
         community_by_node = {
-            node_id: community_id
-            for community_id, members in enumerate(communities)
-            for node_id in members
+            node_id: community_id for community_id, members in enumerate(communities) for node_id in members
         }
         return community_by_node, communities
 

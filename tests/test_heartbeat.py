@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def mcp_call(client, name, arguments=None):
@@ -51,7 +51,7 @@ stale_after: 2020-01-01
     assert payload["categories_covered"] == ["stale_pages"]
     assert len(payload["captures"]) == 1
     capture = payload["captures"][0]
-    assert capture["id"].startswith(f"inbox/{datetime.now(timezone.utc).date().isoformat()}/")
+    assert capture["id"].startswith(f"inbox/{datetime.now(UTC).date().isoformat()}/")
     assert capture["title"] == "Heartbeat audit: 1 stale page"
     assert capture["kind"] == "capture"
     assert capture["status"] == "draft"
@@ -224,8 +224,7 @@ def test_heartbeat_audit_mcp_side_effects(client):
     audit_resp = client.get("/api/audit", params={"actor": "mcp:heartbeat_audit"})
     assert audit_resp.status_code == 200
     assert any(
-        entry["operation"] == "heartbeat_capture" and entry["page_id"] == capture["id"]
-        for entry in audit_resp.json()
+        entry["operation"] == "heartbeat_capture" and entry["page_id"] == capture["id"] for entry in audit_resp.json()
     )
 
 

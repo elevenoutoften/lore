@@ -3,8 +3,8 @@ from __future__ import annotations
 import base64
 
 import pytest
-from starlette.requests import Request
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from lore_app.api_keys import LoreApiKeyStore
 from lore_app.config import LoreConfig
@@ -25,10 +25,7 @@ def make_config(content_dir, search_db, tmp_path, mode: str, secret: str) -> Lor
 
 
 def make_request(app, *, headers=None, client_host: str = "127.0.0.1") -> Request:
-    raw_headers = [
-        (name.lower().encode("latin-1"), value.encode("latin-1"))
-        for name, value in (headers or {}).items()
-    ]
+    raw_headers = [(name.lower().encode("latin-1"), value.encode("latin-1")) for name, value in (headers or {}).items()]
     return Request(
         {
             "type": "http",
@@ -213,7 +210,7 @@ def test_lore_api_key_auth_protects_api(content_dir, search_db, tmp_path):
     config = make_config(content_dir, search_db, tmp_path, "api_key", "")
     store = LoreApiKeyStore(config.api_keys_db)
     store.initialize()
-    api_key_obj, api_key = store.create_key(name="codex", role="writer")
+    _api_key_obj, api_key = store.create_key(name="codex", role="writer")
     app = create_app(config)
 
     with TestClient(app) as client:
@@ -316,7 +313,7 @@ def test_revoked_lore_api_key_is_rejected(content_dir, search_db, tmp_path):
     config = make_config(content_dir, search_db, tmp_path, "api_key", "")
     store = LoreApiKeyStore(config.api_keys_db)
     store.initialize()
-    admin_key_obj, admin_key = store.create_key(name="admin-key", role="admin")
+    _admin_key_obj, admin_key = store.create_key(name="admin-key", role="admin")
     app = create_app(config)
 
     with TestClient(app) as client:
@@ -336,7 +333,7 @@ def test_reader_lore_api_key_cannot_write(content_dir, search_db, tmp_path):
     config = make_config(content_dir, search_db, tmp_path, "api_key", "")
     store = LoreApiKeyStore(config.api_keys_db)
     store.initialize()
-    admin_key_obj, admin_key = store.create_key(name="admin-key", role="admin")
+    _admin_key_obj, admin_key = store.create_key(name="admin-key", role="admin")
     app = create_app(config)
 
     with TestClient(app) as client:

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends
 
 from ..context_graph import ContextGraphCache, explain_context, query_neighbors, query_paths
 from ..deps import get_context_graph_cache, get_ledger_db, get_repo
-from ..ledger import LedgerDB
-from ..repository import LoreRepository
 from ..schemas import (
     ContextExplainQuery,
     ContextExplainResponse,
@@ -15,6 +16,10 @@ from ..schemas import (
     ContextGraphPathQuery,
     ContextGraphPathResponse,
 )
+
+if TYPE_CHECKING:
+    from ..ledger import LedgerDB
+    from ..repository import LoreRepository
 
 router = APIRouter(prefix="/api/context-graph", tags=["context-graph"])
 

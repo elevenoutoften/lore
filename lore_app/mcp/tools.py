@@ -1,28 +1,36 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
 from ..analytics import GraphAnalytics
-from ..capture import build_capture_digest, build_promotion_audit, capture_memory, list_captures, promote_capture, slugify, transition_capture_status, unique_page_id
-from ..context_graph import build_context_graph, explain_context, query_neighbors, query_paths
-from ..distillation import distill_daily, get_daily_captures, get_pending_days, promote_daily_note
-from ..procedure_candidate import find_repeated_captures, propose_procedure_candidate
+from ..capture import (
+    build_capture_digest,
+    build_promotion_audit,
+    capture_memory,
+    list_captures,
+    promote_capture,
+    slugify,
+    transition_capture_status,
+    unique_page_id,
+)
 from ..code_ingest.ingest_service import ingest_service_code
 from ..code_ingest.validate import IngestValidationError, validate_service_id, validate_source_dir
-from ..config import LoreConfig
-from ..frontmatter import frontmatter_scalar, update_frontmatter
+from ..context_graph import build_context_graph, explain_context, query_neighbors, query_paths
+from ..distillation import distill_daily, get_daily_captures, promote_daily_note
+from ..frontmatter import update_frontmatter
 from ..frontmatter_spec import get_frontmatter_spec
-from ..provenance import get_capture_provenance, get_page_provenance
-from ..precedent_search import search_precedents
+from ..heartbeat import emit_heartbeat_captures, heartbeat_review
 from ..link_graph import build_link_graph, page_links
 from ..lint import lint_contradiction_review, lint_lore, lint_stale_queue
 from ..lint_config import LintConfig
-from ..heartbeat import emit_heartbeat_captures, heartbeat_review
+from ..precedent_search import search_precedents
+from ..procedure_candidate import find_repeated_captures, propose_procedure_candidate
+from ..provenance import get_capture_provenance, get_page_provenance
 from ..rag.chunker import chunk_page
-from ..rag.hybrid_retrieval import hybrid_retrieve, hybrid_retrieve_expanded
+from ..rag.hybrid_retrieval import hybrid_retrieve_expanded
 from ..repository import InvalidPageId, LoreRepository
 from ..schemas import (
     CaptureRequest,
@@ -39,6 +47,11 @@ from ..schemas import (
 from .context import McpContext
 from .decisions import build_decision_markdown, build_procedure_markdown, export_procedure_skill
 from .dispatch import JsonRpcError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from ..config import LoreConfig
 
 WRITE_TOOL_NAMES = {
     "lore_capture",
@@ -63,8 +76,14 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "kind": {"type": "string", "description": "Optional kind such as project, service, decision, or runbook."},
-                "visibility": {"type": "string", "description": "Optional visibility such as public, internal, or private."},
+                "kind": {
+                    "type": "string",
+                    "description": "Optional kind such as project, service, decision, or runbook.",
+                },
+                "visibility": {
+                    "type": "string",
+                    "description": "Optional visibility such as public, internal, or private.",
+                },
                 "query": {"type": "string", "description": "Optional title/tag/summary filter."},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 50},
             },
@@ -96,8 +115,15 @@ TOOLS: list[dict[str, Any]] = [
                 "kind": {"type": "string", "description": "Filter by page kind (project, service, runbook, etc.)."},
                 "visibility": {"type": "string", "description": "Filter by visibility (internal, public)."},
                 "status": {"type": "string", "description": "Filter by page status."},
-                "namespace": {"type": "string", "description": "Filter by page namespace, such as projects or services."},
-                "lane": {"type": "string", "enum": ["project", "procedural", "ops", "companion", "draft"], "description": "Filter by retrieval lane."},
+                "namespace": {
+                    "type": "string",
+                    "description": "Filter by page namespace, such as projects or services.",
+                },
+                "lane": {
+                    "type": "string",
+                    "enum": ["project", "procedural", "ops", "companion", "draft"],
+                    "description": "Filter by retrieval lane.",
+                },
                 "actor": {"type": "string", "description": "Filter by producing agent name."},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 20},
             },
@@ -193,8 +219,16 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "node_id": {"type": "string", "description": "Node ID to find neighbors for."},
                 "direction": {"type": "string", "enum": ["outgoing", "incoming", "both"], "default": "both"},
-                "edge_types": {"type": "array", "items": {"type": "string"}, "description": "Filter to these edge types."},
-                "node_types": {"type": "array", "items": {"type": "string"}, "description": "Filter neighbors to these node types."},
+                "edge_types": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Filter to these edge types.",
+                },
+                "node_types": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Filter neighbors to these node types.",
+                },
                 "limit": {"type": "integer", "default": 50, "minimum": 1, "maximum": 500},
             },
             "required": ["node_id"],
@@ -210,7 +244,11 @@ TOOLS: list[dict[str, Any]] = [
                 "source_id": {"type": "string", "description": "Start node ID."},
                 "target_id": {"type": "string", "description": "Target node ID."},
                 "max_depth": {"type": "integer", "default": 3, "minimum": 1, "maximum": 6},
-                "edge_types": {"type": "array", "items": {"type": "string"}, "description": "Filter edges to these types."},
+                "edge_types": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Filter edges to these types.",
+                },
                 "limit": {"type": "integer", "default": 10, "minimum": 1, "maximum": 50},
             },
             "required": ["source_id", "target_id"],
@@ -225,7 +263,11 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "node_id": {"type": "string", "description": "Node to explain."},
                 "depth": {"type": "integer", "default": 2, "minimum": 1, "maximum": 3},
-                "edge_types": {"type": "array", "items": {"type": "string"}, "description": "Filter edges to these types."},
+                "edge_types": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Filter edges to these types.",
+                },
             },
             "required": ["node_id"],
         },
@@ -587,8 +629,15 @@ TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "actor": {"type": "string", "description": "Agent or person making the decision."},
-                "reason_summary": {"type": "string", "description": "Concise human-readable rationale (max 5000 chars)."},
-                "status": {"type": "string", "enum": ["active", "completed", "abandoned"], "description": "Trace status. Default: active."},
+                "reason_summary": {
+                    "type": "string",
+                    "description": "Concise human-readable rationale (max 5000 chars).",
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["active", "completed", "abandoned"],
+                    "description": "Trace status. Default: active.",
+                },
                 "parent_trace_id": {"type": "string", "description": "Parent trace ID for sub-decisions."},
                 "context_refs": {
                     "type": "array",
@@ -615,8 +664,16 @@ TOOLS: list[dict[str, Any]] = [
                     },
                     "description": "Tools called during the decision.",
                 },
-                "constraints": {"type": "array", "items": {"type": "string"}, "description": "Constraints that applied."},
-                "policy_refs": {"type": "array", "items": {"type": "string"}, "description": "Policy IDs that governed the decision."},
+                "constraints": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Constraints that applied.",
+                },
+                "policy_refs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Policy IDs that governed the decision.",
+                },
                 "alternatives": {
                     "type": "array",
                     "items": {
@@ -629,7 +686,10 @@ TOOLS: list[dict[str, Any]] = [
                     },
                     "description": "Alternatives considered and why they were rejected.",
                 },
-                "outcome": {"type": "string", "description": "Outcome of the decision (fill in later if unknown at creation time)."},
+                "outcome": {
+                    "type": "string",
+                    "description": "Outcome of the decision (fill in later if unknown at creation time).",
+                },
                 "related_ids": {
                     "type": "object",
                     "description": "Linked entities: task_id, capture_id, page_id, candidate_id, decision_id.",
@@ -689,7 +749,10 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "gate": {"type": "string", "description": "Optional gate filter, such as auto-apply or protected-surface."},
+                "gate": {
+                    "type": "string",
+                    "description": "Optional gate filter, such as auto-apply or protected-surface.",
+                },
                 "enabled_only": {"type": "boolean", "default": True, "description": "Only return enabled policies."},
             },
         },
@@ -941,7 +1004,6 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 
-
 def _handle_lore_list_pages(ctx: McpContext) -> dict[str, Any]:
     arguments = tool_arguments(ctx.params)
     limit = int(arguments.get("limit") or 50)
@@ -979,7 +1041,9 @@ def _handle_lore_search(ctx: McpContext) -> dict[str, Any]:
     if ctx.search_index is not None:
         fts_hits = ctx.search_index.search(query, kind=kind, lane=lane, actor=actor, limit=50)
         if fts_hits or ctx.search_index.has_pages():
-            hits = filter_fts_hits(fts_hits, visibility=visibility, status=status, namespace=namespace, lane=lane)[:limit_val]
+            hits = filter_fts_hits(fts_hits, visibility=visibility, status=status, namespace=namespace, lane=lane)[
+                :limit_val
+            ]
             payload = {"query": query, "hits": hits}
             return tool_result(payload, summarize_fts_search(payload))
 
@@ -990,7 +1054,7 @@ def _handle_lore_search(ctx: McpContext) -> dict[str, Any]:
 
 
 def _handle_lore_list_lanes(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     if ctx.search_index is None:
         return tool_result({"lanes": []}, "Search index is not available.")
     lanes = ctx.search_index.list_lanes()
@@ -998,7 +1062,7 @@ def _handle_lore_list_lanes(ctx: McpContext) -> dict[str, Any]:
 
 
 def _handle_lore_list_actors(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     if ctx.search_index is None:
         return tool_result({"actors": []}, "Search index is not available.")
     actors = ctx.search_index.list_actors()
@@ -1074,14 +1138,14 @@ def _handle_lore_rag_context_expanded(ctx: McpContext) -> dict[str, Any]:
 
 
 def _handle_lore_link_graph(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     graph = build_link_graph(ctx.repo)
     payload = graph.model_dump()
     return tool_result(payload, summarize_link_graph(payload))
 
 
 def _handle_lore_context_graph(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     ledger = require_service(ctx.ledger_db, "ledger database")
     graph = build_context_graph(ctx.repo, ledger)
     payload = graph.model_dump(mode="json")
@@ -1089,7 +1153,7 @@ def _handle_lore_context_graph(ctx: McpContext) -> dict[str, Any]:
 
 
 def _handle_lore_graph_analytics(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     ledger = require_service(ctx.ledger_db, "ledger database")
     graph = build_context_graph(ctx.repo, ledger)
     result = GraphAnalytics(graph).compute()
@@ -1134,7 +1198,9 @@ def _handle_lore_context_graph_paths(ctx: McpContext) -> dict[str, Any]:
         limit=limit,
     )
     result = query_paths(graph, query)
-    return tool_result(result.model_dump(mode="json"), f"Found {len(result.paths)} paths from {source_id} to {target_id}")
+    return tool_result(
+        result.model_dump(mode="json"), f"Found {len(result.paths)} paths from {source_id} to {target_id}"
+    )
 
 
 def _handle_lore_explain_context(ctx: McpContext) -> dict[str, Any]:
@@ -1160,35 +1226,35 @@ def _handle_lore_page_links(ctx: McpContext) -> dict[str, Any]:
 
 
 def _handle_lore_lint(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     lint = lint_lore(ctx.repo)
     payload = lint.model_dump()
     return tool_result(payload, summarize_lint(payload))
 
 
 def _handle_lore_stale_pages(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     stale = lint_stale_queue(ctx.repo)
     payload = stale.model_dump()
     return tool_result(payload, summarize_stale_pages(payload))
 
 
 def _handle_lore_contradiction_review(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     review = lint_contradiction_review(ctx.repo)
     payload = review.model_dump()
     return tool_result(payload, summarize_contradiction_review(payload))
 
 
 def _handle_lore_frontmatter_spec(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     spec = get_frontmatter_spec()
     payload = spec.model_dump()
     return tool_result(payload, f"{len(payload['specs'])} frontmatter kind specs.")
 
 
 def _handle_lore_list_procedures(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     pages = ctx.repo.list_pages(kind="procedure")
     procedures = []
     for summary in pages:
@@ -1284,7 +1350,7 @@ def _handle_lore_list_captures(ctx: McpContext) -> dict[str, Any]:
 
 
 def _handle_lore_capture_digest(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     digest = build_capture_digest(ctx.repo)
     payload = digest.model_dump()
     lines = [f"Draft: {digest.total_draft}, Review: {digest.total_review}"]
@@ -1342,7 +1408,7 @@ def _handle_lore_promote_capture(ctx: McpContext) -> dict[str, Any]:
 
 
 def _handle_lore_promotion_audit(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     audit = build_promotion_audit(ctx.repo)
     payload = audit.model_dump()
     lines = []
@@ -1429,14 +1495,14 @@ def _handle_lore_ingest_service(ctx: McpContext) -> dict[str, Any]:
     try:
         validate_service_id(service_id)
     except IngestValidationError as e:
-        raise JsonRpcError(-32602, str(e))
+        raise JsonRpcError(-32602, str(e)) from e
     # Validate source_dir against configured roots and limits
     cfg: LoreConfig | None = ctx.config
     if cfg is not None:
         try:
             source_dir = str(validate_source_dir(source_dir, cfg))
         except IngestValidationError as e:
-            raise JsonRpcError(-32602, str(e))
+            raise JsonRpcError(-32602, str(e)) from e
     inventory = ingest_service_code(service_id, source_dir)
     payload = inventory.model_dump()
     ctx.code_inventories[service_id] = payload
@@ -1505,12 +1571,16 @@ def _handle_lore_get_provenance(ctx: McpContext) -> dict[str, Any]:
     if entity_type == "capture":
         provenance = get_capture_provenance(ctx.repo, entity_id)
         if provenance is None:
-            return tool_result({"entity_type": entity_type, "entity_id": entity_id}, f"Capture not found: {entity_id}", is_error=True)
+            return tool_result(
+                {"entity_type": entity_type, "entity_id": entity_id}, f"Capture not found: {entity_id}", is_error=True
+            )
     elif entity_type == "trace":
         ledger = require_service(ctx.ledger_db, "ledger database")
         trace = ledger.get_trace(entity_id)
         if trace is None:
-            return tool_result({"entity_type": entity_type, "entity_id": entity_id}, f"Trace not found: {entity_id}", is_error=True)
+            return tool_result(
+                {"entity_type": entity_type, "entity_id": entity_id}, f"Trace not found: {entity_id}", is_error=True
+            )
         provenance = trace.provenance
     else:
         provenance = get_page_provenance(ctx.repo, entity_id)
@@ -1622,6 +1692,7 @@ def _handle_lore_get_daily(ctx: McpContext) -> dict[str, Any]:
     date_arg = require_string(arguments.get("date"), "date")
     try:
         from datetime import date as _date
+
         parsed = _date.fromisoformat(date_arg[:10])
     except ValueError as exc:
         raise JsonRpcError(-32602, "date must be ISO format YYYY-MM-DD.") from exc
@@ -1638,6 +1709,7 @@ def _handle_lore_promote_daily(ctx: McpContext) -> dict[str, Any]:
     date_arg = require_string(arguments.get("date"), "date")
     try:
         from datetime import date as _date
+
         parsed = _date.fromisoformat(date_arg[:10])
     except ValueError as exc:
         raise JsonRpcError(-32602, "date must be ISO format YYYY-MM-DD.") from exc
@@ -1649,7 +1721,7 @@ def _handle_lore_promote_daily(ctx: McpContext) -> dict[str, Any]:
 
 
 def _handle_lore_heartbeat_review(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     _lint_config = _resolve_lint_config(ctx.repo)
     result = heartbeat_review(ctx.repo, _lint_config, ctx.graph_cache.get(ctx.repo) if ctx.graph_cache else None)
     payload = result.model_dump()
@@ -1657,22 +1729,31 @@ def _handle_lore_heartbeat_review(ctx: McpContext) -> dict[str, Any]:
 
 
 def _handle_lore_heartbeat_summary(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     _lint_config = _resolve_lint_config(ctx.repo)
     result = heartbeat_review(ctx.repo, _lint_config, ctx.graph_cache.get(ctx.repo) if ctx.graph_cache else None)
-    payload = {cat: getattr(result, cat).count for cat in (
-        "stale_pages", "missing_metadata", "contradictions",
-        "low_confidence", "expired_facts", "procedure_issues",
-    )}
+    payload = {
+        cat: getattr(result, cat).count
+        for cat in (
+            "stale_pages",
+            "missing_metadata",
+            "contradictions",
+            "low_confidence",
+            "expired_facts",
+            "procedure_issues",
+        )
+    }
     payload["total_issues"] = result.total_issues
     payload["generated_at"] = result.generated_at
     return tool_result(payload, summarize_heartbeat(payload))
 
 
 def _handle_lore_heartbeat_audit(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     _lint_config = _resolve_lint_config(ctx.repo)
-    captures = emit_heartbeat_captures(ctx.repo, _lint_config, ctx.graph_cache.get(ctx.repo) if ctx.graph_cache else None)
+    captures = emit_heartbeat_captures(
+        ctx.repo, _lint_config, ctx.graph_cache.get(ctx.repo) if ctx.graph_cache else None
+    )
     for capture in captures:
         if ctx.search_index is not None:
             ctx.search_index.upsert_page_from_detail(capture)
@@ -1685,19 +1766,21 @@ def _handle_lore_heartbeat_audit(ctx: McpContext) -> dict[str, Any]:
         from ..audit import new_audit_entry
 
         for capture in captures:
-            ctx.audit_log.record(new_audit_entry(
-                actor="mcp:heartbeat_audit",
-                operation="heartbeat_capture",
-                page_id=capture.id,
-                summary=f"Captured {capture.title}",
-                diff_size=len(capture.content.encode("utf-8")),
-            ))
+            ctx.audit_log.record(
+                new_audit_entry(
+                    actor="mcp:heartbeat_audit",
+                    operation="heartbeat_capture",
+                    page_id=capture.id,
+                    summary=f"Captured {capture.title}",
+                    diff_size=len(capture.content.encode("utf-8")),
+                )
+            )
     payload = {"captures": [capture.model_dump() for capture in captures]}
     return tool_result(payload, summarize_heartbeat_audit(payload))
 
 
 def _handle_lore_find_repeated_captures(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     groups = find_repeated_captures(ctx.repo)
     payload = {"groups": [g.model_dump() for g in groups]}
     return tool_result(payload, summarize_repeated_captures(payload))
@@ -1713,7 +1796,11 @@ def _handle_lore_propose_procedure_candidate(ctx: McpContext) -> dict[str, Any]:
     lane = optional_string(arguments.get("lane"))
     try:
         result = propose_procedure_candidate(
-            ctx.repo, capture_ids, title=title, trigger=trigger, lane=lane,
+            ctx.repo,
+            capture_ids,
+            title=title,
+            trigger=trigger,
+            lane=lane,
         )
     except InvalidPageId as exc:
         raise JsonRpcError(-32602, str(exc)) from exc
@@ -1728,7 +1815,7 @@ def _handle_lore_propose_procedure_candidate(ctx: McpContext) -> dict[str, Any]:
 
 
 def _handle_lore_consolidation_status(ctx: McpContext) -> dict[str, Any]:
-    arguments = tool_arguments(ctx.params)
+    tool_arguments(ctx.params)
     worker = require_service(ctx.consolidation_worker, "consolidation worker")
     payload = worker.status()
     return tool_result(payload, summarize_consolidation_status(payload))
@@ -1883,6 +1970,7 @@ TOOL_HANDLERS: dict[str, Callable[[McpContext], dict[str, Any]]] = {
     "lore_review_batch": _handle_lore_review_batch,
 }
 
+
 def call_tool(
     repo: LoreRepository,
     params: dict[str, Any],
@@ -1956,6 +2044,7 @@ def require_service(value: Any | None, name: str) -> Any:
 
 def _resolve_lint_config(repo: LoreRepository) -> LintConfig:
     from pathlib import Path
+
     config_path = Path(repo.root) / ".lore-lint.json"
     return LintConfig(config_path)
 
@@ -2014,7 +2103,6 @@ def enrich_expanded_results(repo: LoreRepository, payload: dict[str, Any]) -> di
     return enriched
 
 
-
 def filter_fts_hits(
     hits: list[dict[str, Any]],
     *,
@@ -2071,9 +2159,7 @@ def matches_page_filters(
         return False
     if status_filter and status != status_filter:
         return False
-    if namespace_filter and page_id.split("/", 1)[0] != namespace_filter:
-        return False
-    return True
+    return not (namespace_filter and page_id.split("/", 1)[0] != namespace_filter)
 
 
 def summarize_pages(pages: list[Any]) -> str:
@@ -2123,7 +2209,9 @@ def summarize_rag_context(payload: dict[str, Any]) -> str:
     for result in results:
         sources = ", ".join(result.get("sources") or [])
         title = result.get("title") or result.get("page_id") or "?"
-        lines.append(f"  {result.get('page_id', '?')} - {title} (score={result.get('score', 0):.3f}, sources: {sources})")
+        lines.append(
+            f"  {result.get('page_id', '?')} - {title} (score={result.get('score', 0):.3f}, sources: {sources})"
+        )
         citation = next((text for text in result.get("citations") or [] if text), "")
         if citation:
             lines.append(f"    {str(citation)[:120]}")
@@ -2261,7 +2349,9 @@ def summarize_repeated_captures(payload: dict[str, Any]) -> str:
         return "No repeated capture patterns found."
     lines = [f"Found {len(groups)} repeated capture group(s)."]
     for group in groups[:10]:
-        lines.append(f"  {group.get('suggested_title', '?')}: {group.get('count', 0)} captures (key: {group.get('group_key', '?')})")
+        lines.append(
+            f"  {group.get('suggested_title', '?')}: {group.get('count', 0)} captures (key: {group.get('group_key', '?')})"
+        )
     return "\n".join(lines)
 
 

@@ -4,7 +4,6 @@ from typing import Any
 
 from .schemas import FrontmatterKindSpec, FrontmatterSpecResponse
 
-
 FRONTMATTER_SPEC: dict[str, FrontmatterKindSpec] = {
     "project": FrontmatterKindSpec(
         kind="project",
@@ -14,7 +13,16 @@ FRONTMATTER_SPEC: dict[str, FrontmatterKindSpec] = {
     "service": FrontmatterKindSpec(
         kind="service",
         required=["title", "kind", "visibility", "summary", "owner"],
-        optional=["tags", "sources", "status", "stale_after", "reviewed_at", "confidence", "dependencies", "epistemic_status"],
+        optional=[
+            "tags",
+            "sources",
+            "status",
+            "stale_after",
+            "reviewed_at",
+            "confidence",
+            "dependencies",
+            "epistemic_status",
+        ],
     ),
     "decision": FrontmatterKindSpec(
         kind="decision",
@@ -24,7 +32,17 @@ FRONTMATTER_SPEC: dict[str, FrontmatterKindSpec] = {
     "runbook": FrontmatterKindSpec(
         kind="runbook",
         required=["title", "kind", "visibility", "summary"],
-        optional=["tags", "sources", "owner", "status", "stale_after", "reviewed_at", "confidence", "steps", "epistemic_status"],
+        optional=[
+            "tags",
+            "sources",
+            "owner",
+            "status",
+            "stale_after",
+            "reviewed_at",
+            "confidence",
+            "steps",
+            "epistemic_status",
+        ],
     ),
     "concept": FrontmatterKindSpec(
         kind="concept",
@@ -76,7 +94,17 @@ FRONTMATTER_SPEC: dict[str, FrontmatterKindSpec] = {
     "page": FrontmatterKindSpec(
         kind="page",
         required=["title", "kind", "visibility"],
-        optional=["summary", "tags", "sources", "owner", "status", "stale_after", "reviewed_at", "confidence", "epistemic_status"],
+        optional=[
+            "summary",
+            "tags",
+            "sources",
+            "owner",
+            "status",
+            "stale_after",
+            "reviewed_at",
+            "confidence",
+            "epistemic_status",
+        ],
     ),
 }
 

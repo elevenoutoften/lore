@@ -119,7 +119,9 @@ class LoreClient:
         limit: int = 50,
         offset: int = 0,
     ) -> dict[str, Any] | list[Any]:
-        return self._request("GET", "/api/captures", params={"status": status, "tag": tag, "limit": limit, "offset": offset})
+        return self._request(
+            "GET", "/api/captures", params={"status": status, "tag": tag, "limit": limit, "offset": offset}
+        )
 
     def create_capture(
         self,

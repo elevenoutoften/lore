@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends
 
 from ..deps import get_repo
 from ..frontmatter_spec import get_frontmatter_spec
-from ..repository import LoreRepository
 from ..schemas import CatalogResponse, FrontmatterSpecResponse
+
+if TYPE_CHECKING:
+    from ..repository import LoreRepository
 
 router = APIRouter()
 

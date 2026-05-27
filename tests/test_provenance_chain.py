@@ -16,8 +16,7 @@ def test_round_trip_provenance_chain(client):
         json={
             "title": "Provenance chain capture",
             "observation": (
-                f"{unique_term} confirms Lore provenance behavior and references "
-                "[[services/workflow-engine]]."
+                f"{unique_term} confirms Lore provenance behavior and references [[services/workflow-engine]]."
             ),
             "capture_date": "2026-05-26",
             "suggested_target_page": "services/lore-provenance-chain",

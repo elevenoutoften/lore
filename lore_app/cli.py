@@ -1,4 +1,5 @@
 """Lore CLI - vault management from the command line."""
+
 from __future__ import annotations
 
 import argparse
@@ -7,7 +8,7 @@ import json
 import sys
 import tarfile
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -150,7 +151,7 @@ def cmd_backup(content_dir: str, output: str) -> int:
 
     manifest = {
         "version": 1,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "page_count": len(pages),
         "checksums": checksums,
     }
@@ -210,9 +211,7 @@ def cmd_export(content_dir: str, output: str, export_format: str = "json") -> in
             pages.append(page.model_dump())
 
     if export_format == "markdown":
-        data = "\n\n".join(
-            f"<!-- lore-page-id: {page['id']} -->\n\n{page['content'].rstrip()}" for page in pages
-        )
+        data = "\n\n".join(f"<!-- lore-page-id: {page['id']} -->\n\n{page['content'].rstrip()}" for page in pages)
     else:
         data = json.dumps({"pages": pages}, indent=2, ensure_ascii=False)
     if output == "-":

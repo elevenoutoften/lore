@@ -3,21 +3,22 @@ from __future__ import annotations
 import subprocess
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException, Request
 
 from .audit import AuditLog, new_audit_entry
 from .config import LoreConfig, WorkspaceConfig
-from .frontmatter import update_frontmatter
-from .link_graph import LinkGraphCache
 from .rag.chunker import chunk_page
 from .rag.hybrid_retrieval import hybrid_retrieve
-from .rag.vector_store import VectorStore
 from .repository import InvalidPageId, LoreRepository, build_candidate_page_index, page_result_provenance
-from .schemas import LinkEdge, PageDetail, PageLinks, PageSummary
-from .search_index import LoreSearchIndex
 from .security import sanitize_content, sanitize_page_id
+
+if TYPE_CHECKING:
+    from .link_graph import LinkGraphCache
+    from .rag.vector_store import VectorStore
+    from .schemas import LinkEdge, PageDetail, PageLinks, PageSummary
+    from .search_index import LoreSearchIndex
 
 GIT_REF_CACHE_TTL_SECONDS = 300
 _GIT_REF_CACHE: tuple[str, float] | None = None
@@ -118,10 +119,7 @@ def is_rate_limited_write(request: Request) -> bool:
         return False
 
     # Rate-limit API mutations. MCP has its own call-aware limiter in routes/mcp.py.
-    if path.startswith("/api/"):
-        return True
-
-    return False
+    return bool(path.startswith("/api/"))
 
 
 def client_rate_limit_key(request: Request) -> str:

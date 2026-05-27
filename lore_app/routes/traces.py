@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+# ruff: noqa: B008
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_ledger_db
-from ..ledger import LedgerDB
 from ..schemas import TraceCreateRequest, TraceEntry, TraceListResponse, TraceUpdateRequest
+
+if TYPE_CHECKING:
+    from ..ledger import LedgerDB
 
 router = APIRouter(prefix="/api/traces", tags=["traces"])
 
@@ -85,5 +89,5 @@ def update_trace(
         raise HTTPException(status_code=404, detail=f"Trace {trace_id} not found")
     update_data = payload.model_dump(exclude_unset=True)
     updated = TraceEntry.model_validate(existing.model_dump() | update_data)
-    updated.updated_at = datetime.now(timezone.utc).isoformat()
+    updated.updated_at = datetime.now(UTC).isoformat()
     return ledger.store_trace(updated)

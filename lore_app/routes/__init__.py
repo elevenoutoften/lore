@@ -5,10 +5,11 @@ from .api_keys import router as api_keys_router
 from .captures import router as captures_router
 from .consolidation import consolidation_router
 from .context_graph import router as context_graph_router
-from .heartbeat import router as heartbeat_router
 from .distillation import router as distillation_router
 from .extraction import router as extraction_router
 from .graph import router as graph_router
+from .heartbeat import router as heartbeat_router
+from .ledger import ledger_router
 from .lint import router as lint_router
 from .mcp import router as mcp_router
 from .memory import router as memory_router
@@ -19,7 +20,6 @@ from .precedents import router as precedents_router
 from .procedures import router as procedures_router
 from .provenance import router as provenance_router
 from .rag import router as rag_router
-from .ledger import ledger_router
 from .search import router as search_router
 from .traces import router as trace_router
 

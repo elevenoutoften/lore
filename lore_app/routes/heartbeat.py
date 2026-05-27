@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
-from ..audit import AuditLog
 from ..deps import (
     get_audit_log,
     get_context_graph_cache,
@@ -16,21 +17,26 @@ from ..deps import (
     get_templates,
     get_vector_store,
 )
-from ..context_graph import ContextGraphCache
 from ..heartbeat import (
     emit_heartbeat_captures,
     heartbeat_capture_category_for_title,
     heartbeat_capture_category_keys,
     heartbeat_review,
 )
-from ..link_graph import LinkGraphCache
-from ..lint_config import LintConfig
-from ..observability import MetricsCollector
-from ..rag.vector_store import VectorStore
-from ..repository import LoreRepository
 from ..route_utils import index_vectors_for_page, record_audit, template_context
-from ..search_index import LoreSearchIndex
 from ..schemas import HeartbeatCaptureResponse, HeartbeatResponse
+
+if TYPE_CHECKING:
+    from fastapi.templating import Jinja2Templates
+
+    from ..audit import AuditLog
+    from ..context_graph import ContextGraphCache
+    from ..link_graph import LinkGraphCache
+    from ..lint_config import LintConfig
+    from ..observability import MetricsCollector
+    from ..rag.vector_store import VectorStore
+    from ..repository import LoreRepository
+    from ..search_index import LoreSearchIndex
 
 router = APIRouter()
 
@@ -78,9 +84,7 @@ def api_heartbeat_captures(
         if (category := heartbeat_capture_category_for_title(capture.title)) is not None
     ]
     skipped_categories = [
-        category
-        for category in heartbeat_capture_category_keys()
-        if category not in categories_covered
+        category for category in heartbeat_capture_category_keys() if category not in categories_covered
     ]
     return HeartbeatCaptureResponse(
         captures=captures,

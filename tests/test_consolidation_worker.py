@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+import json
 from argparse import Namespace
 from dataclasses import dataclass
-import json
 
-import pytest
 from fastapi.testclient import TestClient
 
 from lore_app.audit import AuditLog
@@ -440,9 +439,7 @@ def test_apply_failure_creates_trace(tmp_path, monkeypatch):
 
     assert result.auto_applied == 0
     assert any("apply exploded" in error for error in result.errors)
-    failure_traces = [
-        trace for trace in traces if trace.status == "failed" and "Apply failed" in trace.reason_summary
-    ]
+    failure_traces = [trace for trace in traces if trace.status == "failed" and "Apply failed" in trace.reason_summary]
     assert len(failure_traces) == 1
     assert failure_traces[0].tool_refs[0].action == "apply"
 

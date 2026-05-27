@@ -6,14 +6,12 @@ import json
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .audit import AuditLog, new_audit_entry
 from .capture import is_capture_page_id
 from .frontmatter import serialize_markdown, update_frontmatter
 from .ledger import LedgerDB, utc_now
-from .link_graph import LinkGraphCache
-from .policy_engine import PolicyEngine
 from .repository import InvalidPageId, LoreRepository, infer_kind, normalize_page_id, optional_string
 from .route_utils import index_vectors_for_page
 from .schemas import (
@@ -30,8 +28,12 @@ from .schemas import (
     ToolRef,
     TraceEntry,
 )
-from .search_index import LoreSearchIndex
-from .rag.vector_store import VectorStore
+
+if TYPE_CHECKING:
+    from .link_graph import LinkGraphCache
+    from .policy_engine import PolicyEngine
+    from .rag.vector_store import VectorStore
+    from .search_index import LoreSearchIndex
 
 
 def _content_hash(content: str) -> str:
@@ -59,8 +61,8 @@ class PatchPlanner:
         audit_log: AuditLog | None = None,
         *,
         search_index: LoreSearchIndex | None = None,
-        vector_store: "VectorStore | None" = None,
-        graph_cache: "LinkGraphCache | None" = None,
+        vector_store: VectorStore | None = None,
+        graph_cache: LinkGraphCache | None = None,
         policy_engine: PolicyEngine | None = None,
     ):
         self.repo = repo
@@ -168,7 +170,7 @@ class PatchPlanner:
             f"""
             SELECT *
             FROM extraction_candidates
-            WHERE {' AND '.join(clauses)}
+            WHERE {" AND ".join(clauses)}
             ORDER BY created_at ASC, candidate_id
             """,
             params,
@@ -211,10 +213,7 @@ class PatchPlanner:
                     f"Generated {operation.value} plan for {target_page_id}: "
                     f"{risk_level.value} risk, auto_appliable={auto_appliable}"
                 ),
-                context_refs=[
-                    ContextRef(type="candidate", id=str(candidate_id))
-                    for candidate_id in candidate_ids
-                ],
+                context_refs=[ContextRef(type="candidate", id=str(candidate_id)) for candidate_id in candidate_ids],
                 tool_refs=[ToolRef(tool="patch-planner", action="build_plan")],
                 constraints=self._trace_constraints(target_page_id, contradictions),
                 policy_refs=self._trace_policy_refs(target_page_id, operation, auto_appliable, policy_decisions),
@@ -329,10 +328,7 @@ class PatchPlanner:
         policy_decisions: list[PolicyDecision] | None = None,
     ) -> list[str]:
         if policy_decisions:
-            return [
-                f"{decision.policy_id}:{'pass' if decision.passed else 'fail'}"
-                for decision in policy_decisions
-            ]
+            return [f"{decision.policy_id}:{'pass' if decision.passed else 'fail'}" for decision in policy_decisions]
         policy_refs = ["patch-planner:auto-apply"]
         if not auto_appliable:
             policy_refs.append("patch-planner:review-required")
@@ -422,7 +418,9 @@ class PatchPlanner:
             ):
                 return PatchOperation.update_existing_fact
             return PatchOperation.mark_stale
-        if self._target_section(target_page_id, PatchOperation.append_sourced_paragraph) in self._current_content(target_page_id):
+        if self._target_section(target_page_id, PatchOperation.append_sourced_paragraph) in self._current_content(
+            target_page_id
+        ):
             return PatchOperation.append_sourced_paragraph
         return PatchOperation.insert_new_fact
 
@@ -522,10 +520,7 @@ class PatchPlanner:
             return _RenderedPatch(content=self._build_stub_page(target_page_id, bundles))
 
         detail = self.repo.read_page(target_page_id)
-        if detail is None:
-            content = self._build_stub_page(target_page_id, bundles)
-        else:
-            content = detail.content
+        content = self._build_stub_page(target_page_id, bundles) if detail is None else detail.content
 
         paragraphs = [self._candidate_paragraph(bundle) for bundle in bundles]
         if operation in {PatchOperation.insert_new_fact, PatchOperation.append_sourced_paragraph}:
@@ -535,9 +530,7 @@ class PatchPlanner:
         if operation == PatchOperation.update_existing_fact:
             return self._render_update_existing_fact(content, bundles)
         if operation == PatchOperation.mark_stale:
-            stale_marker = (
-                "<!-- stale: auto-consolidation detected a contradiction requiring review -->"
-            )
+            stale_marker = "<!-- stale: auto-consolidation detected a contradiction requiring review -->"
             return _RenderedPatch(
                 content=_insert_into_section(content, target_section or "## Review Notes", stale_marker)
             )
@@ -618,7 +611,10 @@ class PatchPlanner:
         if claim_subject == target_page_id:
             return target_page_id.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").title()
         first_capture = self._first_capture_detail(bundles)
-        return optional_string(first_capture.title if first_capture else None) or target_page_id.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").title()
+        return (
+            optional_string(first_capture.title if first_capture else None)
+            or target_page_id.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").title()
+        )
 
     def _claim_summary(self, bundle: _CandidateBundle) -> str:
         return optional_string(bundle.claim.get("object")) or "Auto-generated stub page."
@@ -736,7 +732,15 @@ class PatchPlanner:
                 self.repo.upsert_page(capture_id, updated)
                 self._reindex_page(capture_id)
 
-    def _record_audit(self, plan: PatchPlan, before_hash: str, after_hash: str, unified_diff: str, *, before_content: str | None = None) -> None:
+    def _record_audit(
+        self,
+        plan: PatchPlan,
+        before_hash: str,
+        after_hash: str,
+        unified_diff: str,
+        *,
+        before_content: str | None = None,
+    ) -> None:
         if self.audit_log is None:
             return
         payload: dict[str, Any] = {
@@ -806,7 +810,7 @@ def _insert_into_section(content: str, heading: str, block: str) -> str:
             insert_at = index + 1
             while insert_at < len(lines) and lines[insert_at].strip() == "":
                 insert_at += 1
-            updated = lines[:insert_at] + [normalized_block, ""] + lines[insert_at:]
+            updated = [*lines[:insert_at], normalized_block, "", *lines[insert_at:]]
             return "\n".join(updated).rstrip() + "\n"
     if not content.endswith("\n"):
         content += "\n"

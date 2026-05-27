@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from .frontmatter import frontmatter_scalar
-from .repository import InvalidPageId, LoreRepository, optional_string, string_list
+from .repository import InvalidPageId, LoreRepository, optional_string
 from .schemas import (
     DailyDistillCapture,
     DailyDistillRequest,
     DailyDistillResponse,
-    PendingDay,
-    PendingDaysResponse,
     PageDetail,
     PageSummary,
+    PendingDay,
+    PendingDaysResponse,
 )
 
 
@@ -33,11 +33,7 @@ def _date_from_frontmatter(page: PageDetail) -> date | None:
 
 
 def get_daily_captures(repo: LoreRepository, target_date: date) -> list[PageSummary]:
-    all_captures = [
-        page
-        for page in repo.list_pages(kind="capture")
-        if page.id.startswith(("inbox/", "notes/"))
-    ]
+    all_captures = [page for page in repo.list_pages(kind="capture") if page.id.startswith(("inbox/", "notes/"))]
     matching: list[PageSummary] = []
     for summary in all_captures:
         detail = repo.read_page(summary.id)
@@ -50,11 +46,7 @@ def get_daily_captures(repo: LoreRepository, target_date: date) -> list[PageSumm
 
 
 def get_pending_days(repo: LoreRepository) -> PendingDaysResponse:
-    all_captures = [
-        page
-        for page in repo.list_pages(kind="capture")
-        if page.id.startswith(("inbox/", "notes/"))
-    ]
+    all_captures = [page for page in repo.list_pages(kind="capture") if page.id.startswith(("inbox/", "notes/"))]
 
     date_captures: dict[str, list[PageSummary]] = {}
     for summary in all_captures:
@@ -108,23 +100,27 @@ def distill_session_to_daily(
         "status: active",
         f"summary: Distilled daily note from {len(capture_details)} session capture(s).",
         "tags: [daily-note, distilled]",
-        f"distilled_at: {datetime.now(timezone.utc).isoformat()}",
+        f"distilled_at: {datetime.now(UTC).isoformat()}",
     ]
     if actor:
         lines.append(f"actor: {frontmatter_scalar(actor)}")
-    lines.extend([
-        "sources:",
-    ])
+    lines.extend(
+        [
+            "sources:",
+        ]
+    )
     for detail in capture_details:
         lines.append(f"  - {detail.id}")
-    lines.extend([
-        "---",
-        "",
-        f"# Daily Note — {target_date.isoformat()}",
-        "",
-        f"> Distilled from {len(capture_details)} session capture(s).",
-        "",
-    ])
+    lines.extend(
+        [
+            "---",
+            "",
+            f"# Daily Note — {target_date.isoformat()}",
+            "",
+            f"> Distilled from {len(capture_details)} session capture(s).",
+            "",
+        ]
+    )
 
     for detail in capture_details:
         title = detail.title
@@ -175,12 +171,10 @@ def distill_daily(
         except ValueError as exc:
             raise InvalidPageId("date must be an ISO date (YYYY-MM-DD).") from exc
     else:
-        target_date = datetime.now(timezone.utc).date()
+        target_date = datetime.now(UTC).date()
 
     captures = get_daily_captures(repo, target_date)
-    result = distill_session_to_daily(
-        repo, captures, target_date, actor=optional_string(payload.actor)
-    )
+    result = distill_session_to_daily(repo, captures, target_date, actor=optional_string(payload.actor))
 
     if result["capture_count"] == 0:
         return DailyDistillResponse(**result)
@@ -203,7 +197,7 @@ def promote_daily_note(repo: LoreRepository, target_date: date) -> str:
     updated_lines = ["---"]
     in_fm = False
     status_updated = False
-    reviewed_at = datetime.now(timezone.utc).isoformat()
+    reviewed_at = datetime.now(UTC).isoformat()
     for line in page.content.splitlines():
         if line.strip() == "---":
             if not in_fm:
@@ -211,14 +205,14 @@ def promote_daily_note(repo: LoreRepository, target_date: date) -> str:
                 updated_lines.append(line)
             else:
                 if not status_updated:
-                    updated_lines.append(f"status: promoted")
+                    updated_lines.append("status: promoted")
                     updated_lines.append(f"reviewed_at: {reviewed_at}")
                     status_updated = True
                 in_fm = False
                 updated_lines.append(line)
             continue
         if in_fm and line.startswith("status:"):
-            updated_lines.append(f"status: promoted")
+            updated_lines.append("status: promoted")
             status_updated = True
             continue
         if in_fm and line.startswith("reviewed_at:"):

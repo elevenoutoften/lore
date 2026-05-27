@@ -1,4 +1,5 @@
 """SQLite-backed sparse vector store using TF-IDF weighting."""
+
 from __future__ import annotations
 
 import math
@@ -121,10 +122,7 @@ class VectorStore:
                         len(tokens),
                     ),
                 )
-                all_token_rows.extend(
-                    (chunk["chunk_id"], token, count / total)
-                    for token, count in tf_counts.items()
-                )
+                all_token_rows.extend((chunk["chunk_id"], token, count / total) for token, count in tf_counts.items())
             if all_token_rows:
                 self._conn.executemany(
                     "INSERT INTO chunk_tokens (chunk_id, token, tf) VALUES (?, ?, ?)",
@@ -263,10 +261,7 @@ class VectorStore:
             if total_docs == 0:
                 return {token: 0.0 for token in tokens}
             rows = self._conn.execute("SELECT token, df FROM doc_freq").fetchall()
-            cache = {
-                token: math.log((total_docs + 1) / (df + 1)) + 1
-                for token, df in rows
-            }
+            cache = {token: math.log((total_docs + 1) / (df + 1)) + 1 for token, df in rows}
             with self._cache_lock:
                 self._idf_cache = dict(cache)
         return {token: cache.get(token, 1.0) for token in tokens}

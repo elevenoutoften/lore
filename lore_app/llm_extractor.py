@@ -4,6 +4,7 @@ This module normalizes provider JSON into the same extraction schemas used by
 the deterministic extractor. Callers decide whether to fall back when this
 module raises.
 """
+
 from __future__ import annotations
 
 import hashlib

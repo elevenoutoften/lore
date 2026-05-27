@@ -1,19 +1,16 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from pathlib import Path
 
 import pytest
 
 from lore_app.audit import AuditLog
 from lore_app.config import LoreConfig
 from lore_app.consolidation_worker import ConsolidationWorker
-from lore_app.extraction import extract_from_captures
 from lore_app.ledger import LedgerDB
 from lore_app.patch_planner import PatchPlanner
 from lore_app.repository import LoreRepository
-from lore_app.schemas import ExtractedClaim, ExtractionResult, PatchOperation
+from lore_app.schemas import ExtractedClaim, ExtractionResult
 
 
 @dataclass
@@ -41,9 +38,7 @@ def ctx(tmp_path, monkeypatch) -> PlannerContext:
     ledger.initialize()
     audit_log = AuditLog(audit_dir)
     planner = PatchPlanner(repo, ledger, audit_log=audit_log)
-    return PlannerContext(
-        repo=repo, ledger=ledger, planner=planner, config=config, audit_log=audit_log
-    )
+    return PlannerContext(repo=repo, ledger=ledger, planner=planner, config=config, audit_log=audit_log)
 
 
 def add_capture(

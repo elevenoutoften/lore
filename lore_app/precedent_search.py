@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .context_graph import build_context_graph, query_neighbors, query_paths
-from .ledger import LedgerDB
 from .repository import LoreRepository, optional_string, string_list
 from .schemas import (
     ContextGraphNeighborQuery,
@@ -12,6 +11,9 @@ from .schemas import (
     PrecedentSearchRequest,
     PrecedentSearchResponse,
 )
+
+if TYPE_CHECKING:
+    from .ledger import LedgerDB
 
 
 def search_precedents(
@@ -273,7 +275,9 @@ def _search_via_context_graph(
     return target_node
 
 
-def _enrich_graph_paths(repo: LoreRepository, ledger: LedgerDB | None, target_node: str, results: list[PrecedentResult]) -> None:
+def _enrich_graph_paths(
+    repo: LoreRepository, ledger: LedgerDB | None, target_node: str, results: list[PrecedentResult]
+) -> None:
     try:
         graph = build_context_graph(repo, ledger)
     except Exception:
@@ -298,8 +302,7 @@ def _enrich_graph_paths(repo: LoreRepository, ledger: LedgerDB | None, target_no
                 continue
             path = path_response.paths[0]
             result.graph_paths = [
-                {"from": step.edge.source, "edge": step.edge.type.value, "to": step.edge.target}
-                for step in path.steps
+                {"from": step.edge.source, "edge": step.edge.type.value, "to": step.edge.target} for step in path.steps
             ]
             break
 
@@ -326,7 +329,7 @@ def _result_graph_node_ids(result: PrecedentResult) -> list[str]:
 
 
 def _trace_has_task_ref(trace: Any, task_ref: str) -> bool:
-    if task_ref in (trace.related_ids or {}).keys() or task_ref in (trace.related_ids or {}).values():
+    if task_ref in (trace.related_ids or {}) or task_ref in (trace.related_ids or {}).values():
         return True
     provenance = trace.provenance
     return bool(provenance and task_ref in getattr(provenance, "task_ids", []))

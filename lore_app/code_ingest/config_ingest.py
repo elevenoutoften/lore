@@ -91,4 +91,3 @@ def ingest_systemd_units(unit_dir: str | Path) -> list[ContainerSpec]:
         ContainerSpec(name=unit_file.stem, kind="systemd", unit_file=str(unit_file))
         for unit_file in unit_dir.glob("*.service")
     ]
-

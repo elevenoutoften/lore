@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_BASELINE = REPO_ROOT / "scripts" / "scan_secrets_baseline.txt"
 SELF_PATH = "scripts/scan_secrets.py"
@@ -211,9 +210,7 @@ def is_placeholder_value(value: str) -> bool:
         return True
     if cleaned.startswith(("$", "${", "<")):
         return True
-    if "os.environ" in cleaned or "getenv(" in cleaned or "environ.get(" in cleaned:
-        return True
-    return False
+    return bool("os.environ" in cleaned or "getenv(" in cleaned or "environ.get(" in cleaned)
 
 
 def extract_secret_candidate(value: str) -> str | None:
@@ -249,9 +246,7 @@ def is_safe_ip(ip: str) -> bool:
         return True
     if o1 == 127:
         return True
-    if o1 == 169 and o2 == 254:
-        return True
-    return False
+    return bool(o1 == 169 and o2 == 254)
 
 
 def is_safe_url(url: str) -> bool:
@@ -260,10 +255,7 @@ def is_safe_url(url: str) -> bool:
     except ValueError:
         return False
     hostname = (parsed.hostname or "").lower()
-    return (
-        hostname in SAFE_URL_HOSTS
-        or any(hostname.endswith(suffix) for suffix in SAFE_URL_SUFFIXES)
-    )
+    return hostname in SAFE_URL_HOSTS or any(hostname.endswith(suffix) for suffix in SAFE_URL_SUFFIXES)
 
 
 def add_finding(
@@ -358,7 +350,7 @@ def scan_content(path: str, content: str, baseline: list[BaselineRule] | None = 
 
         if "@" in line and not line.lstrip().startswith("@"):
             for match in SOCIAL_HANDLE_RE.finditer(line):
-                next_char = line[match.end():match.end() + 1]
+                next_char = line[match.end() : match.end() + 1]
                 if next_char in {".", "/", "("}:
                     continue
                 if match.group(0).lower() == "@media":

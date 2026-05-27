@@ -1,22 +1,59 @@
 from __future__ import annotations
 
-from typing import Literal
+# ruff: noqa: B008
+from typing import TYPE_CHECKING, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
-from ..audit import AuditLog
-from ..capture import build_capture_digest, build_promotion_audit, capture_memory, list_captures, promote_capture, transition_capture_status
-from ..context_graph import ContextGraphCache
-from ..deps import get_audit_log, get_context_graph_cache, get_graph_cache, get_metrics, get_repo, get_search_index, get_templates, get_vector_store
-from ..link_graph import LinkGraphCache
-from ..observability import MetricsCollector
-from ..rag.vector_store import VectorStore
+from ..capture import (
+    build_capture_digest,
+    build_promotion_audit,
+    capture_memory,
+    list_captures,
+    promote_capture,
+    transition_capture_status,
+)
+from ..deps import (
+    get_audit_log,
+    get_context_graph_cache,
+    get_graph_cache,
+    get_metrics,
+    get_repo,
+    get_search_index,
+    get_templates,
+    get_vector_store,
+)
 from ..repository import InvalidPageId, LoreRepository, optional_string, string_list
-from ..route_utils import index_vectors_for_page, record_audit, template_context, validate_content, validate_optional_content, validate_optional_page_id_input, validate_page_id_input
-from ..schemas import CaptureDigestResponse, CaptureListResponse, CapturePromotion, CaptureRequest, CaptureResponse, CaptureStatusUpdate, PageDetail, PromotionAuditResponse
-from ..search_index import LoreSearchIndex
+from ..route_utils import (
+    index_vectors_for_page,
+    record_audit,
+    template_context,
+    validate_content,
+    validate_optional_content,
+    validate_optional_page_id_input,
+    validate_page_id_input,
+)
+from ..schemas import (
+    CaptureDigestResponse,
+    CaptureListResponse,
+    CapturePromotion,
+    CaptureRequest,
+    CaptureResponse,
+    CaptureStatusUpdate,
+    PageDetail,
+    PromotionAuditResponse,
+)
+
+if TYPE_CHECKING:
+    from fastapi.templating import Jinja2Templates
+
+    from ..audit import AuditLog
+    from ..context_graph import ContextGraphCache
+    from ..link_graph import LinkGraphCache
+    from ..observability import MetricsCollector
+    from ..rag.vector_store import VectorStore
+    from ..search_index import LoreSearchIndex
 
 router = APIRouter()
 
@@ -173,7 +210,9 @@ def api_capture_promote(
     try:
         capture_before = repo.read_page(page_id)
         if capture_before is not None:
-            target_page_id = payload.target_page_id or optional_string(capture_before.frontmatter.get("suggested_target_page"))
+            target_page_id = payload.target_page_id or optional_string(
+                capture_before.frontmatter.get("suggested_target_page")
+            )
             if target_page_id:
                 target_existed = repo.read_page(target_page_id) is not None
     except InvalidPageId:

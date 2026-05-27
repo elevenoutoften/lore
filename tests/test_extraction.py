@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+from unittest import mock
+
 import pytest
 from pydantic import ValidationError
-from unittest import mock
 
 from lore_app.cli import main
 from lore_app.extraction import compute_extraction_hash, extract_from_captures, get_unprocessed_captures
@@ -103,9 +104,7 @@ def extraction_result(batch_id: str, capture_id: str, fact: str) -> ExtractionRe
 
 def candidate_for_capture(ledger: LedgerDB, capture_id: str) -> dict:
     return next(
-        candidate
-        for candidate in ledger.get_candidates(limit=10)
-        if capture_id in candidate["source_capture_ids"]
+        candidate for candidate in ledger.get_candidates(limit=10) if capture_id in candidate["source_capture_ids"]
     )
 
 
@@ -220,12 +219,8 @@ def test_ledger_store_extraction_result_stores_all_candidate_types(tmp_path):
 
 def test_ledger_reset_extraction_for_specific_capture_ids(tmp_path):
     ledger = make_ledger(tmp_path)
-    ledger.store_extraction_result(
-        extraction_result("batch-1", "inbox/2026-05-10/one", "Lore stores reset state.")
-    )
-    ledger.store_extraction_result(
-        extraction_result("batch-2", "inbox/2026-05-10/two", "Lore keeps other captures.")
-    )
+    ledger.store_extraction_result(extraction_result("batch-1", "inbox/2026-05-10/one", "Lore stores reset state."))
+    ledger.store_extraction_result(extraction_result("batch-2", "inbox/2026-05-10/two", "Lore keeps other captures."))
     first_candidate = candidate_for_capture(ledger, "inbox/2026-05-10/one")["candidate_id"]
     second_candidate = candidate_for_capture(ledger, "inbox/2026-05-10/two")["candidate_id"]
     ledger.activate_candidate(first_candidate)
@@ -242,12 +237,8 @@ def test_ledger_reset_extraction_for_specific_capture_ids(tmp_path):
 
 def test_ledger_reset_extraction_without_capture_ids_resets_all(tmp_path):
     ledger = make_ledger(tmp_path)
-    ledger.store_extraction_result(
-        extraction_result("batch-1", "inbox/2026-05-10/one", "Lore stores reset state.")
-    )
-    ledger.store_extraction_result(
-        extraction_result("batch-2", "inbox/2026-05-10/two", "Lore keeps other captures.")
-    )
+    ledger.store_extraction_result(extraction_result("batch-1", "inbox/2026-05-10/one", "Lore stores reset state."))
+    ledger.store_extraction_result(extraction_result("batch-2", "inbox/2026-05-10/two", "Lore keeps other captures."))
     candidates = ledger.get_candidates(status="candidate", limit=10)
     ledger.activate_candidate(candidates[0]["candidate_id"])
     ledger.reject_candidate(candidates[1]["candidate_id"])

@@ -1,4 +1,5 @@
 """Run with: python -m services.lore.tests.benchmark_report"""
+
 from __future__ import annotations
 
 import statistics
@@ -15,8 +16,8 @@ SERVICE_ROOT = ROOT / "services" / "lore"
 if str(SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVICE_ROOT))
 
-from lore_app.main import create_app  # noqa: E402
 from lore_app.config import LoreConfig  # noqa: E402
+from lore_app.main import create_app  # noqa: E402
 from lore_app.security import RateLimiter  # noqa: E402
 
 

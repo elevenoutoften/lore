@@ -1,4 +1,5 @@
 """Simple retrieval evaluation using precision@k and recall@k."""
+
 from __future__ import annotations
 
 from typing import Any

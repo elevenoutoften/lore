@@ -1,14 +1,16 @@
 """Pluggable auth middleware for Lore."""
+
 from __future__ import annotations
 
 import base64
 import secrets
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .api_keys import LoreApiKeyStore
+if TYPE_CHECKING:
+    from .api_keys import LoreApiKeyStore
 
 
 class AuthMiddleware(BaseHTTPMiddleware):

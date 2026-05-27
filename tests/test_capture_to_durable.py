@@ -113,10 +113,7 @@ See [[dailies/{capture_date}]].
 
         candidates = client.get("/api/extraction/candidates", params={"status": "candidate"})
         assert candidates.status_code == 200, candidates.text
-        assert any(
-            capture_id in candidate["source_capture_ids"]
-            for candidate in candidates.json()["candidates"]
-        )
+        assert any(capture_id in candidate["source_capture_ids"] for candidate in candidates.json()["candidates"])
 
         plans = client.get("/api/consolidation/plans")
         assert plans.status_code == 200, plans.text
@@ -175,8 +172,7 @@ See [[dailies/{capture_date}]].
         )
         assert mcp_search.status_code == 200, mcp_search.text
         assert any(
-            hit["page_id"] == durable_page_id
-            for hit in mcp_search.json()["result"]["structuredContent"]["hits"]
+            hit["page_id"] == durable_page_id for hit in mcp_search.json()["result"]["structuredContent"]["hits"]
         )
 
         heartbeat = client.get("/api/heartbeat")
@@ -222,9 +218,6 @@ See [[dailies/{capture_date}]].
             {"name": "lore_list_captures", "arguments": {"status": "all", "limit": 20}},
         )
         assert listed.status_code == 200, listed.text
-        listed_ids = {
-            capture["id"]
-            for capture in listed.json()["result"]["structuredContent"]["captures"]
-        }
+        listed_ids = {capture["id"] for capture in listed.json()["result"]["structuredContent"]["captures"]}
         assert capture_id in listed_ids
         assert mcp_capture_id in listed_ids

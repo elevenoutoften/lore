@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import hashlib
-from pathlib import Path
 import secrets
 import sqlite3
 import threading
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 from .db_utils import retry_on_locked
-
 
 VALID_API_KEY_ROLES = {"admin", "writer", "reader"}
 
@@ -27,7 +26,7 @@ class LoreApiKey:
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def hash_api_key(api_key: str) -> str:

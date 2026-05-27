@@ -77,4 +77,3 @@ def _detect_language(path: Path) -> str | None:
     if name in {"dockerfile", "caddyfile"}:
         return LANG_MAP[f".{name}"]
     return None
-

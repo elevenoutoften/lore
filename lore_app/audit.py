@@ -3,8 +3,11 @@ from __future__ import annotations
 import gzip
 import json
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
+from datetime import UTC, date, datetime, timedelta
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass
@@ -60,7 +63,7 @@ class AuditLog:
         return self.query(page_id=page_id, limit=10_000)
 
     def compact_old_logs(self) -> None:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         if self._last_compacted_on == today:
             return
         self._last_compacted_on = today
@@ -94,7 +97,7 @@ def new_audit_entry(
     diff_size: int | None = None,
 ) -> AuditEntry:
     return AuditEntry(
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         actor=actor,
         operation=operation,
         page_id=page_id,
@@ -108,8 +111,8 @@ def parse_timestamp(value: str) -> datetime:
     normalized = value.replace("Z", "+00:00")
     parsed = datetime.fromisoformat(normalized)
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def log_date_from_path(path: Path) -> date | None:

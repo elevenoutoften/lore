@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends, Query, Request
 
 from ..deps import get_ledger_db, get_repo
 from ..extraction import extract_from_captures, get_unprocessed_captures
-from ..ledger import LedgerDB
 from ..llm_provider import FallbackLLMClient, NoLlmClient
-from ..repository import LoreRepository
 from ..schemas import (
     ExtractionRequest,
     ExtractionResetRequest,
@@ -14,6 +15,10 @@ from ..schemas import (
     ExtractionResult,
     ExtractionStatusResponse,
 )
+
+if TYPE_CHECKING:
+    from ..ledger import LedgerDB
+    from ..repository import LoreRepository
 
 router = APIRouter()
 

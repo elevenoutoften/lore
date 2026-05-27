@@ -1,15 +1,18 @@
 """Heartbeat review and self-audit capture generation."""
+
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
-from typing import Any
+from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING, Any
 
 from .capture import capture_memory
 from .link_graph import LinkGraphResponse, build_link_graph
 from .lint import lint_lore
 from .lint_config import LintConfig
-from .repository import LoreRepository
 from .schemas import CaptureRequest, HeartbeatCategory, HeartbeatResponse, PageDetail
+
+if TYPE_CHECKING:
+    from .repository import LoreRepository
 
 PROCEDURE_RULES = {"procedure_missing_steps", "procedure_missing_trigger", "procedure_step_not_in_body"}
 HEARTBEAT_CAPTURE_SOURCE_TASK = "heartbeat-self-audit"
@@ -33,7 +36,7 @@ def _days_stale(stale_after: str) -> int:
         parsed = date.fromisoformat(stale_after[:10])
     except ValueError:
         return 0
-    return max(0, (datetime.now(timezone.utc).date() - parsed).days)
+    return max(0, (datetime.now(UTC).date() - parsed).days)
 
 
 def _format_stale_pages(repo: LoreRepository, items: list[dict[str, Any]]) -> str:
@@ -152,7 +155,9 @@ def heartbeat_review(
     missing_items = [
         {"page_id": issue.page_id, "title": issue.title, "kind": ""}
         for issue in lint_result.issues
-        if issue.rule in ("missing_title", "missing_kind", "missing_visibility", "missing_summary", "missing_frontmatter") and not issue.suppressed
+        if issue.rule
+        in ("missing_title", "missing_kind", "missing_visibility", "missing_summary", "missing_frontmatter")
+        and not issue.suppressed
     ]
 
     contradiction_items = [
@@ -194,7 +199,7 @@ def heartbeat_review(
     )
 
     return HeartbeatResponse(
-        generated_at=datetime.now(timezone.utc).isoformat(),
+        generated_at=datetime.now(UTC).isoformat(),
         total_issues=total,
         stale_pages=HeartbeatCategory(count=len(stale_items), items=stale_items),
         missing_metadata=HeartbeatCategory(count=len(missing_items), items=missing_items),
@@ -229,11 +234,7 @@ def emit_heartbeat_captures(
         )
         formatter = category["formatter"]
         observation = formatter(repo, items)
-        related_pages = [
-            str(item.get("page_id"))
-            for item in items
-            if item.get("page_id")
-        ]
+        related_pages = [str(item.get("page_id")) for item in items if item.get("page_id")]
 
         captures.append(
             capture_memory(
@@ -276,7 +277,7 @@ def heartbeat_capture_category_keys() -> list[str]:
 
 
 def existing_heartbeat_capture_categories(repo: LoreRepository) -> set[str]:
-    today_prefix = f"inbox/{datetime.now(timezone.utc).date().isoformat()}/"
+    today_prefix = f"inbox/{datetime.now(UTC).date().isoformat()}/"
     existing: set[str] = set()
     for page in repo.list_pages(kind="capture"):
         if not page.id.startswith(today_prefix) or not page.title.startswith(HEARTBEAT_CAPTURE_PREFIX):

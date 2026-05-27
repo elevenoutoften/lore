@@ -1,29 +1,54 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
 import json
 from dataclasses import asdict
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
-from ..audit import AuditLog
 from ..capture import list_captures
 from ..code_ingest.ingest_service import ingest_service_code
 from ..code_ingest.validate import IngestValidationError, validate_service_id, validate_source_dir
-from ..config import LoreConfig
-from ..context_graph import ContextGraphCache
-from ..deps import get_audit_log, get_code_inventories, get_config, get_context_graph_cache, get_graph_cache, get_metrics, get_repo, get_search_index, get_templates, get_vector_store
+from ..deps import (
+    get_audit_log,
+    get_code_inventories,
+    get_config,
+    get_context_graph_cache,
+    get_graph_cache,
+    get_metrics,
+    get_repo,
+    get_search_index,
+    get_templates,
+    get_vector_store,
+)
+from ..frontmatter import update_frontmatter
 from ..link_graph import LinkGraphCache, page_links
 from ..markdown_render import render_page_markdown
-from ..observability import MetricsCollector
-from ..rag.vector_store import VectorStore
-from ..repository import InvalidPageId, LoreRepository, optional_string, string_list
-from ..route_utils import backlink_groups, index_vectors_for_page, record_audit, require_page, template_context, update_frontmatter, validate_content, validate_optional_page_id_input, validate_page_id_input
+from ..repository import InvalidPageId, LoreRepository, string_list
+from ..route_utils import (
+    backlink_groups,
+    index_vectors_for_page,
+    record_audit,
+    require_page,
+    template_context,
+    validate_content,
+    validate_optional_page_id_input,
+    validate_page_id_input,
+)
 from ..schemas import MetadataUpdate, PageDetail, PageRendered, PageSummary, PageUpsert, StubRequest
-from ..search_index import LoreSearchIndex
 from .api_keys import require_lore_key_admin
+
+if TYPE_CHECKING:
+    from fastapi.templating import Jinja2Templates
+
+    from ..audit import AuditLog
+    from ..config import LoreConfig
+    from ..context_graph import ContextGraphCache
+    from ..observability import MetricsCollector
+    from ..rag.vector_store import VectorStore
+    from ..search_index import LoreSearchIndex
 
 router = APIRouter()
 
@@ -126,14 +151,20 @@ def api_code_references(code_path: str, repo: LoreRepository = Depends(get_repo)
     referencing = []
     for page in repo.iter_pages():
         if any(code_path in source for source in page.sources):
-            referencing.append({"page": page.model_dump(exclude={"content", "body", "frontmatter"}), "match_field": "sources"})
+            referencing.append(
+                {"page": page.model_dump(exclude={"content", "body", "frontmatter"}), "match_field": "sources"}
+            )
             continue
         source_paths = string_list(page.frontmatter.get("source_paths"))
         if any(code_path in source_path for source_path in source_paths):
-            referencing.append({"page": page.model_dump(exclude={"content", "body", "frontmatter"}), "match_field": "source_paths"})
+            referencing.append(
+                {"page": page.model_dump(exclude={"content", "body", "frontmatter"}), "match_field": "source_paths"}
+            )
             continue
         if code_path in page.body:
-            referencing.append({"page": page.model_dump(exclude={"content", "body", "frontmatter"}), "match_field": "body"})
+            referencing.append(
+                {"page": page.model_dump(exclude={"content", "body", "frontmatter"}), "match_field": "body"}
+            )
     return {"code_path": code_path, "referenced_by": referencing}
 
 
@@ -150,13 +181,13 @@ def api_ingest_service(
     try:
         validate_service_id(service_id)
     except IngestValidationError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     # Validate source_dir against configured roots and limits
     try:
         validated_dir = validate_source_dir(source_dir, config)
     except IngestValidationError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     inventory = ingest_service_code(service_id, validated_dir)
     payload = inventory.model_dump()
@@ -474,7 +505,7 @@ def render_reader_page(
 
 
 def decision_template() -> str:
-    return '''---
+    return """---
 title: "Decision Title"
 kind: decision
 visibility: internal
@@ -500,11 +531,11 @@ What was decided.
 
 ## Consequences
 What changes as a result.
-'''
+"""
 
 
 def procedure_template() -> str:
-    return '''---
+    return """---
 title: "Procedure Title"
 kind: procedure
 visibility: internal
@@ -539,7 +570,7 @@ When to use this procedure.
 
 ## Error Handling
 What to do if things go wrong.
-'''
+"""
 
 
 def export_procedure_skill(page: PageDetail) -> str:
@@ -550,28 +581,28 @@ def export_procedure_skill(page: PageDetail) -> str:
     error_handling = page.frontmatter.get("error_handling", "")
 
     return f"""---
-name: {page.id.replace('/', '-')}
+name: {page.id.replace("/", "-")}
 description: {page.summary or page.title}
 ---
 
 # {page.title}
 
-{page.summary or ''}
+{page.summary or ""}
 
 ## Trigger
 {trigger}
 
 ## Preconditions
-{chr(10).join(f'- {p}' for p in preconditions) if preconditions else 'None'}
+{chr(10).join(f"- {p}" for p in preconditions) if preconditions else "None"}
 
 ## Steps
-{chr(10).join(f'{i}. {s}' for i, s in enumerate(steps, 1)) if steps else 'None'}
+{chr(10).join(f"{i}. {s}" for i, s in enumerate(steps, 1)) if steps else "None"}
 
 ## Postconditions
-{chr(10).join(f'- {p}' for p in postconditions) if postconditions else 'None'}
+{chr(10).join(f"- {p}" for p in postconditions) if postconditions else "None"}
 
 ## Error Handling
-{error_handling or 'See page body for details.'}
+{error_handling or "See page body for details."}
 
 ## Source
 Exported from [Lore]({page.id}).

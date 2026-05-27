@@ -1,4 +1,5 @@
 """Performance benchmarks for Lore API - run with pytest -v --tb=short."""
+
 from __future__ import annotations
 
 import statistics
@@ -95,7 +96,9 @@ def test_page_write_performance(client):
 def test_search_performance(client):
     unthrottle_writes(client)
     for index in range(100):
-        content = markdown_page(index, body=f"Search benchmark page {index} mentions latency throughput ExampleProject.")
+        content = markdown_page(
+            index, body=f"Search benchmark page {index} mentions latency throughput ExampleProject."
+        )
         response = client.put(f"/api/pages/bench/search-{index}", json={"content": content})
         assert response.status_code == 200
 

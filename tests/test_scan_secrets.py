@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from scripts.scan_secrets import BaselineRule, FORBIDDEN_FILE_RE, scan_content, should_skip_path
+from scripts.scan_secrets import FORBIDDEN_FILE_RE, BaselineRule, scan_content, should_skip_path
 
 
 def test_scan_secrets_detects_bearer_token():

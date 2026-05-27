@@ -4,15 +4,14 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import hashlib
 import json
-from pathlib import Path
 import secrets
 import sqlite3
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
-
 
 KEY_NAME = "axis-lore-consolidation"
 KEY_DESCRIPTION = "Systemd timer for Lore consolidation runs."
@@ -49,7 +48,7 @@ def generate_api_key_secret() -> str:
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def ensure_schema(connection: sqlite3.Connection) -> None:

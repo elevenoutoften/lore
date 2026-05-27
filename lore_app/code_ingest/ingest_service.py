@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .fastapi_ingest import ingest_fastapi_routes
@@ -28,5 +28,5 @@ def ingest_service_code(
         routes=routes,
         symbols=symbols,
         source_files=source_files,
-        ingested_at=datetime.now(timezone.utc).isoformat(),
+        ingested_at=datetime.now(UTC).isoformat(),
     )

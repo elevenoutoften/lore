@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import lore_app.rag.hybrid_retrieval as hybrid_module
 from lore_app.context_graph import build_context_graph
-from lore_app.rag.hybrid_retrieval import hybrid_retrieve, hybrid_retrieve_expanded
 from lore_app.rag.chunker import chunk_page
 from lore_app.rag.eval_retrieval import evaluate_retrieval
+from lore_app.rag.hybrid_retrieval import hybrid_retrieve, hybrid_retrieve_expanded
 from lore_app.rag.vector_store import VectorStore
-from lore_app.schemas import ContextEdgeType, ContextGraph, ContextGraphEdge, ContextGraphNode, ContextNodeType, ExtractedClaim, ExtractionResult
+from lore_app.schemas import (
+    ContextEdgeType,
+    ContextGraph,
+    ContextGraphEdge,
+    ContextGraphNode,
+    ContextNodeType,
+    ExtractedClaim,
+    ExtractionResult,
+)
 
 
 def rpc(client, method, params=None, request_id=1):
@@ -22,7 +30,11 @@ def test_chunk_page_splits_by_heading_with_overlap():
 
     chunks = chunk_page("projects/example-project", body, body, chunk_size=45, overlap=12)
 
-    assert [chunk["chunk_id"] for chunk in chunks] == ["projects/example-project#0", "projects/example-project#1", "projects/example-project#2"]
+    assert [chunk["chunk_id"] for chunk in chunks] == [
+        "projects/example-project#0",
+        "projects/example-project#1",
+        "projects/example-project#2",
+    ]
     assert chunks[1]["content"].startswith("Intro text.")
     assert "## Services" in chunks[1]["content"]
 
@@ -120,9 +132,7 @@ def test_remove_page_updates_doc_freq_incrementally(tmp_path):
 
     assert store.remove_page("a") == 1
 
-    assert store._conn.execute(
-        "SELECT COUNT(*) FROM doc_freq WHERE token IN ('hello', 'world')"
-    ).fetchone() == (0,)
+    assert store._conn.execute("SELECT COUNT(*) FROM doc_freq WHERE token IN ('hello', 'world')").fetchone() == (0,)
 
 
 def test_rag_retrieve_and_evaluate_endpoints(client):
@@ -137,7 +147,10 @@ def test_rag_retrieve_and_evaluate_endpoints(client):
 
     evaluation = client.post(
         "/api/rag/evaluate",
-        json={"queries": [{"query": "gateway service gateway", "relevant_page_ids": ["procedures/create-lore-capture"]}], "k": 3},
+        json={
+            "queries": [{"query": "gateway service gateway", "relevant_page_ids": ["procedures/create-lore-capture"]}],
+            "k": 3,
+        },
     )
     assert evaluation.status_code == 200
     assert evaluation.json()["mean_recall"] == 1.0
@@ -274,10 +287,14 @@ def test_retrieve_expanded_no_expansion_when_hops_zero(client):
     vector_store = client.app.state.vector_store
     graph = build_context_graph(repo, client.app.state.ledger_db)
 
-    expanded = hybrid_retrieve_expanded("alpha routing evidence", search_index, vector_store, graph, limit=5, expand_hops=0)
+    expanded = hybrid_retrieve_expanded(
+        "alpha routing evidence", search_index, vector_store, graph, limit=5, expand_hops=0
+    )
     base = hybrid_retrieve("alpha routing evidence", search_index, vector_store, None, limit=10)
 
-    assert [result["page_id"] for result in expanded["results"]] == [result["page_id"] for result in base["results"][:5]]
+    assert [result["page_id"] for result in expanded["results"]] == [
+        result["page_id"] for result in base["results"][:5]
+    ]
     assert all(not result["relevance_paths"] for result in expanded["results"])
 
 

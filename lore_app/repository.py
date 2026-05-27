@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 from .frontmatter import parse_frontmatter
 from .schemas import CatalogResponse, EpistemicStatus, PageDetail, PageSummary, SearchHit, SearchResponse
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from .search_index import LoreSearchIndex
 
 PAGE_SEGMENT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -63,7 +65,7 @@ class MarkdownPage:
 
 
 class LoreRepository:
-    def __init__(self, root: str | Path, search_index: "LoreSearchIndex | None" = None):
+    def __init__(self, root: str | Path, search_index: LoreSearchIndex | None = None):
         self.root = Path(root).resolve()
         self._page_cache: list[PageSummary] | None = None
         self._meta_cache: list[PageSummary] | None = None
@@ -340,7 +342,7 @@ class LoreRepository:
         frontmatter, body = parse_frontmatter(content)
         normalized_frontmatter = normalize_frontmatter(frontmatter)
         stat = path.stat()
-        updated_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
+        updated_at = datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat()
         return PageSummary(
             id=page_id,
             title=page_title(page_id, body, normalized_frontmatter),
@@ -366,7 +368,7 @@ class LoreRepository:
         frontmatter, body = parse_frontmatter(content)
         normalized_frontmatter = normalize_frontmatter(frontmatter)
         stat = path.stat()
-        updated_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
+        updated_at = datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat()
         return MarkdownPage(
             id=page_id,
             path=path,

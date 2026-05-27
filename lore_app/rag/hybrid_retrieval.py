@@ -1,4 +1,5 @@
 """Hybrid retrieval combining BM25, TF-IDF vector search, and graph expansion."""
+
 from __future__ import annotations
 
 import json
@@ -282,7 +283,9 @@ def _expanded_base_row(result: dict[str, Any], hit_page_ids: set[str]) -> dict[s
     }
 
 
-def _context_graph_adjacency(context_graph: Any, expand_edge_types: list[str] | None) -> dict[str, list[tuple[str, Any, str]]]:
+def _context_graph_adjacency(
+    context_graph: Any, expand_edge_types: list[str] | None
+) -> dict[str, list[tuple[str, Any, str]]]:
     allowed = set(expand_edge_types or [])
     adjacency: dict[str, list[tuple[str, Any, str]]] = {}
     for edge in getattr(context_graph, "edges", []):
@@ -338,7 +341,9 @@ def _relevant_because(page_id: str, result: dict[str, Any], hit_page_ids: set[st
     if page_id in hit_page_ids:
         parts.append("direct text match")
     if result.get("relevance_paths"):
-        paths_desc = ", ".join(path.get("explanation", "") for path in result["relevance_paths"][:2] if path.get("explanation"))
+        paths_desc = ", ".join(
+            path.get("explanation", "") for path in result["relevance_paths"][:2] if path.get("explanation")
+        )
         if paths_desc:
             parts.append(f"reachable via: {paths_desc}")
     if result.get("supporting_claims"):

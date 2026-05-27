@@ -5,10 +5,9 @@ import json
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .audit import AuditEntry, AuditLog, new_audit_entry
-from .config import LoreConfig
 from .extraction import extract_from_captures
 from .ledger import LedgerDB, utc_now
 from .patch_planner import PatchPlanner
@@ -22,6 +21,9 @@ from .schemas import (
     ToolRef,
     TraceEntry,
 )
+
+if TYPE_CHECKING:
+    from .config import LoreConfig
 
 
 def _content_hash(content: str) -> str:
@@ -79,10 +81,7 @@ class ConsolidationWorker:
         plans: list[PatchPlan] = []
         if extraction_result is not None and extraction_result.source_capture_ids:
             try:
-                if dry_run:
-                    plans = self._plan_dry_run(extraction_result)
-                else:
-                    plans = self.planner.plan_batch(batch_id=batch_id)
+                plans = self._plan_dry_run(extraction_result) if dry_run else self.planner.plan_batch(batch_id=batch_id)
             except Exception as exc:
                 errors.append(f"planning failed: {exc}")
 
@@ -94,18 +93,22 @@ class ConsolidationWorker:
                 for decision in plan.policies_applied:
                     if not decision.passed and decision.policy_id.startswith("epistemic:"):
                         for candidate_id in plan.candidate_ids:
-                            blocked_claims.append({
-                                "claim_id": candidate_id,
-                                "reason": decision.reason,
-                                "epistemic_status": decision.policy_id.split(":", 1)[1].split("-")[0] if ":" in decision.policy_id else "unknown",
-                            })
+                            blocked_claims.append(
+                                {
+                                    "claim_id": candidate_id,
+                                    "reason": decision.reason,
+                                    "epistemic_status": decision.policy_id.split(":", 1)[1].split("-")[0]
+                                    if ":" in decision.policy_id
+                                    else "unknown",
+                                }
+                            )
             if dry_run or auto_applied >= max_auto_apply:
                 continue
             if skip_apply:
                 continue
             try:
                 before_content = self._current_content(plan.target_page_id)
-                apply_result = self.planner.apply_plan(plan.plan_id)
+                self.planner.apply_plan(plan.plan_id)
                 after_content = self._current_content(plan.target_page_id)
                 self._record_apply_audit(plan, before_content, after_content)
                 auto_applied += 1
@@ -253,9 +256,7 @@ class ConsolidationWorker:
 
         status = self.ledger.get_consolidation_status()
         captures = self.repo.list_pages(kind="capture")
-        status["total_captures"] = len(
-            [page for page in captures if page.status in {"draft", "accepted"}]
-        )
+        status["total_captures"] = len([page for page in captures if page.status in {"draft", "accepted"}])
         status["total_draft_captures"] = len([page for page in captures if page.status == "draft"])
         status["total_extracted_captures"] = len([page for page in captures if page.status == "accepted"])
         return status

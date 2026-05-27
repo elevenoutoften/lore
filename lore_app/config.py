@@ -1,4 +1,5 @@
 """Lore product configuration - all customizable defaults in one place."""
+
 from __future__ import annotations
 
 import json
@@ -33,7 +34,7 @@ class WorkspaceConfig:
     ledger_db: Path | None = None
 
     @classmethod
-    def from_mapping(cls, payload: dict[str, Any]) -> "WorkspaceConfig":
+    def from_mapping(cls, payload: dict[str, Any]) -> WorkspaceConfig:
         return cls(
             content_dir=Path(payload["content_dir"]) if payload.get("content_dir") else None,
             search_db=Path(payload["search_db"]) if payload.get("search_db") else None,
@@ -41,7 +42,7 @@ class WorkspaceConfig:
             ledger_db=Path(payload["ledger_db"]) if payload.get("ledger_db") else None,
         )
 
-    def resolve(self, base: "LoreConfig") -> "WorkspaceConfig":
+    def resolve(self, base: LoreConfig) -> WorkspaceConfig:
         return WorkspaceConfig(
             content_dir=self.content_dir or base.content_dir,
             search_db=self.search_db or base.search_db,
@@ -87,12 +88,12 @@ class LoreConfig:
         self.trusted_headers: bool = os.environ.get("LORE_TRUSTED_HEADERS", "").lower() in ("true", "1", "yes")
         self.trusted_proxy_auth: bool = os.environ.get("LORE_TRUSTED_PROXY_AUTH", "").lower() in ("true", "1", "yes")
         self.csp_policy: str = os.environ.get("LORE_CSP_POLICY", "")
-        self.code_ingest_roots: list[Path] = self._parse_roots(
-            os.environ.get("LORE_CODE_INGEST_ROOTS", "")
-        )
+        self.code_ingest_roots: list[Path] = self._parse_roots(os.environ.get("LORE_CODE_INGEST_ROOTS", ""))
         self.code_ingest_max_files: int = int(os.environ.get("LORE_CODE_INGEST_MAX_FILES", "500"))
         self.code_ingest_max_depth: int = int(os.environ.get("LORE_CODE_INGEST_MAX_DEPTH", "10"))
-        self.code_ingest_max_total_bytes: int = int(os.environ.get("LORE_CODE_INGEST_MAX_TOTAL_BYTES", str(50 * 1024 * 1024)))  # 50 MiB
+        self.code_ingest_max_total_bytes: int = int(
+            os.environ.get("LORE_CODE_INGEST_MAX_TOTAL_BYTES", str(50 * 1024 * 1024))
+        )  # 50 MiB
         self.llm_provider: str = os.environ.get("LORE_LLM_PROVIDER", "none")
         self.llm_model: str = os.environ.get("LORE_LLM_MODEL", "")
         self.llm_base_url: str = os.environ.get("LORE_LLM_BASE_URL", "")
@@ -106,8 +107,7 @@ class LoreConfig:
         self.workspaces: dict[str, WorkspaceConfig] = parse_workspaces(os.environ.get("LORE_WORKSPACES"))
         if self.auth_mode not in VALID_AUTH_MODES:
             raise ValueError(
-                f"Unsupported LORE_AUTH_MODE={self.auth_mode!r}. "
-                f"Must be one of: {', '.join(VALID_AUTH_MODES)}."
+                f"Unsupported LORE_AUTH_MODE={self.auth_mode!r}. Must be one of: {', '.join(VALID_AUTH_MODES)}."
             )
         if self.auth_mode in ("bearer", "basic"):
             secret_lower = self.auth_secret.strip().lower()
@@ -115,7 +115,7 @@ class LoreConfig:
                 raise ValueError(
                     f"SECURITY: LORE_AUTH_SECRET is a known placeholder value ({self.auth_secret!r}). "
                     f"A non-loopback bind address ({self.host!r}) requires a strong, unique secret. "
-                    "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                    'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(32))"'
                 )
 
     def to_dict(self) -> dict[str, Any]:
@@ -160,10 +160,7 @@ class LoreConfig:
         """Parse colon/semicolon-separated rooted paths."""
         if not raw:
             return []
-        if platform.system() == "Windows":
-            parts = raw.split(";")
-        else:
-            parts = raw.replace(";", ":").split(":")
+        parts = raw.split(";") if platform.system() == "Windows" else raw.replace(";", ":").split(":")
         paths = []
         for part in parts:
             part = part.strip()

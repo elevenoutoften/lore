@@ -6,7 +6,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any
+from typing import Any, ClassVar
 
 
 class CircuitOpenError(RuntimeError):
@@ -40,7 +40,7 @@ class MemoryProvider:
     """
 
     _MAX_RETRIES = 3
-    _BACKOFF_DELAYS = [1.0, 2.0, 4.0]
+    _BACKOFF_DELAYS: ClassVar[list[float]] = [1.0, 2.0, 4.0]
     _CIRCUIT_FAILURE_THRESHOLD = 5
     _CIRCUIT_RECOVERY_SECONDS = 60.0
 
@@ -204,9 +204,7 @@ class MemoryProvider:
         if self._circuit_open_until is None:
             return
         if time.monotonic() < self._circuit_open_until:
-            raise CircuitOpenError(
-                f"Circuit breaker is open. Retry after {self._circuit_open_until:.0f}."
-            )
+            raise CircuitOpenError(f"Circuit breaker is open. Retry after {self._circuit_open_until:.0f}.")
         # recovery window elapsed — try again
         self._circuit_open_until = None
         self._consecutive_failures = 0

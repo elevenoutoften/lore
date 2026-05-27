@@ -6,6 +6,7 @@ Supports OpenAI-compatible APIs (qwen3.6-plus, GLM-5.1) with:
 - Retry with exponential backoff
 - Deterministic fallback on failure
 """
+
 from __future__ import annotations
 
 import json
@@ -41,14 +42,10 @@ class LLMProviderConfig:
     max_retries: int = 3
 
     @classmethod
-    def from_env(cls, prefix: str = "LORE_LLM") -> "LLMProviderConfig":
+    def from_env(cls, prefix: str = "LORE_LLM") -> LLMProviderConfig:
         """Load provider configuration from environment variables."""
 
-        default_model = (
-            DEFAULT_ESCALATION_MODEL
-            if prefix.endswith("_ESCALATION")
-            else DEFAULT_EXTRACTION_MODEL
-        )
+        default_model = DEFAULT_ESCALATION_MODEL if prefix.endswith("_ESCALATION") else DEFAULT_EXTRACTION_MODEL
         return cls(
             name=os.environ.get(f"{prefix}_PROVIDER", "none"),
             model=os.environ.get(f"{prefix}_MODEL", default_model),
@@ -110,9 +107,7 @@ class LLMClient:
                     try:
                         parsed = json.loads(content)
                     except json.JSONDecodeError as exc:
-                        raise LLMJsonError(
-                            f"LLM returned invalid JSON: {exc}\nContent: {content[:200]}"
-                        ) from exc
+                        raise LLMJsonError(f"LLM returned invalid JSON: {exc}\nContent: {content[:200]}") from exc
                     if isinstance(parsed, dict):
                         parsed["_lore_meta"] = {
                             "usage": data.get("usage", {}),
@@ -265,7 +260,7 @@ class FallbackLLMClient:
             self.escalation.close()
 
 
-def _primary_config_from_lore_config(config: "LoreConfig") -> LLMProviderConfig:
+def _primary_config_from_lore_config(config: LoreConfig) -> LLMProviderConfig:
     return LLMProviderConfig(
         name=config.llm_provider,
         model=config.llm_model,
@@ -278,7 +273,7 @@ def _primary_config_from_lore_config(config: "LoreConfig") -> LLMProviderConfig:
     )
 
 
-def _escalation_config_from_lore_config(config: "LoreConfig") -> LLMProviderConfig:
+def _escalation_config_from_lore_config(config: LoreConfig) -> LLMProviderConfig:
     return LLMProviderConfig(
         name=config.llm_provider,
         model=config.llm_escalation_model,
@@ -292,7 +287,7 @@ def _escalation_config_from_lore_config(config: "LoreConfig") -> LLMProviderConf
 
 
 def build_llm_client(
-    config: "LoreConfig | None" = None,
+    config: LoreConfig | None = None,
     fallback_fn: Any | None = None,
 ) -> FallbackLLMClient | NoLlmClient:
     """Build a fallback-capable LLM client from LoreConfig or environment variables."""
@@ -300,11 +295,7 @@ def build_llm_client(
     if config is not None and config.llm_provider == "none":
         return NoLlmClient()
 
-    primary_config = (
-        _primary_config_from_lore_config(config)
-        if config
-        else LLMProviderConfig.from_env("LORE_LLM")
-    )
+    primary_config = _primary_config_from_lore_config(config) if config else LLMProviderConfig.from_env("LORE_LLM")
     if primary_config.name == "none":
         return NoLlmClient()
     primary = LLMClient(primary_config)

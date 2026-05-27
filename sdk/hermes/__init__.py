@@ -20,7 +20,7 @@ import os
 import sys
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Make lore_sdk importable
@@ -30,10 +30,7 @@ from typing import Any, Dict, List, Optional
 # resolves to the real path inside the Lore repo.  From
 # sdk/hermes/__init__.py, the SDK is at
 # sdk/python/.
-_SDK_PATH = Path(
-    os.environ.get("LORE_SDK_PATH", "")
-    or str(Path(__file__).resolve().parent.parent / "python")
-)
+_SDK_PATH = Path(os.environ.get("LORE_SDK_PATH", "") or str(Path(__file__).resolve().parent.parent / "python"))
 # If LORE_SDK_PATH points to the lore_sdk package itself, use its parent.
 if _SDK_PATH.name == "lore_sdk" and _SDK_PATH.is_dir():
     _SDK_PATH = _SDK_PATH.parent
@@ -42,7 +39,6 @@ if _SDK_PATH.is_dir() and str(_SDK_PATH) not in sys.path:
     sys.path.append(str(_SDK_PATH))
 
 from agent.memory_provider import MemoryProvider  # noqa: E402
-
 from lore_sdk import LoreClient  # noqa: E402
 from lore_sdk.exceptions import LoreError  # noqa: E402
 
@@ -52,7 +48,7 @@ logger = logging.getLogger(__name__)
 # Tool schemas
 # ---------------------------------------------------------------------------
 
-LORE_SEARCH_SCHEMA: Dict[str, Any] = {
+LORE_SEARCH_SCHEMA: dict[str, Any] = {
     "name": "lore_search",
     "description": (
         "Search the Lore knowledge base for relevant context. "
@@ -80,7 +76,7 @@ LORE_SEARCH_SCHEMA: Dict[str, Any] = {
     },
 }
 
-LORE_READ_SCHEMA: Dict[str, Any] = {
+LORE_READ_SCHEMA: dict[str, Any] = {
     "name": "lore_read",
     "description": (
         "Read a full Lore page by ID. Returns the page content in Markdown "
@@ -99,7 +95,7 @@ LORE_READ_SCHEMA: Dict[str, Any] = {
     },
 }
 
-LORE_CAPTURE_SCHEMA: Dict[str, Any] = {
+LORE_CAPTURE_SCHEMA: dict[str, Any] = {
     "name": "lore_capture",
     "description": (
         "Capture an observation or insight to the Lore knowledge base. "
@@ -142,7 +138,7 @@ LORE_CAPTURE_SCHEMA: Dict[str, Any] = {
     },
 }
 
-ALL_TOOL_SCHEMAS: List[Dict[str, Any]] = [
+ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     LORE_SEARCH_SCHEMA,
     LORE_READ_SCHEMA,
     LORE_CAPTURE_SCHEMA,
@@ -152,6 +148,7 @@ ALL_TOOL_SCHEMAS: List[Dict[str, Any]] = [
 # ---------------------------------------------------------------------------
 # MemoryProvider implementation
 # ---------------------------------------------------------------------------
+
 
 class LoreMemoryProvider(MemoryProvider):
     """Lore knowledge backend — pages, wikilinks, search, and capture pipeline.
@@ -164,15 +161,15 @@ class LoreMemoryProvider(MemoryProvider):
         self._agent_name: str = "hermes"
         self._agent_context: str = ""
         self._connected: bool = False
-        self._client: Optional[LoreClient] = None
+        self._client: LoreClient | None = None
         # Prefetch cache: {query: result_string}
-        self._prefetch_cache: Dict[str, str] = {}
+        self._prefetch_cache: dict[str, str] = {}
         self._prefetch_lock = threading.Lock()
 
     # -- Identity / availability ---------------------------------------------
 
     @property
-    def name(self) -> str:  # noqa: D401
+    def name(self) -> str:
         return "lore"
 
     def is_available(self) -> bool:
@@ -181,7 +178,7 @@ class LoreMemoryProvider(MemoryProvider):
 
     # -- Config schema (for ``hermes memory setup``) -------------------------
 
-    def get_config_schema(self) -> List[Dict[str, Any]]:
+    def get_config_schema(self) -> list[dict[str, Any]]:
         return [
             {
                 "key": "base_url",
@@ -256,17 +253,16 @@ class LoreMemoryProvider(MemoryProvider):
 
     # -- Tool surface --------------------------------------------------------
 
-    def get_tool_schemas(self) -> List[Dict[str, Any]]:
+    def get_tool_schemas(self) -> list[dict[str, Any]]:
         return ALL_TOOL_SCHEMAS
 
-    def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
+    def handle_tool_call(self, tool_name: str, args: dict[str, Any], **kwargs) -> str:
         if not self._client:
             return json.dumps({"error": "Lore provider not configured"})
 
         # Lazy reconnect if disconnected.
-        if not self._connected:
-            if not self._try_reconnect():
-                return json.dumps({"error": "Lore provider not connected"})
+        if not self._connected and not self._try_reconnect():
+            return json.dumps({"error": "Lore provider not connected"})
 
         try:
             if tool_name == "lore_search":
@@ -277,13 +273,11 @@ class LoreMemoryProvider(MemoryProvider):
                 result = self._client.search(args["query"], limit=fetch_limit)
                 if kind and isinstance(result, dict):
                     hits = result.get("hits", [])
-                    result["hits"] = [
-                        h for h in hits if h.get("page", h).get("kind") == kind
-                    ][:limit]
+                    result["hits"] = [h for h in hits if h.get("page", h).get("kind") == kind][:limit]
             elif tool_name == "lore_read":
                 result = self._client.get_page(args["page_id"])
             elif tool_name == "lore_capture":
-                metadata: Dict[str, Any] = {}
+                metadata: dict[str, Any] = {}
                 if args.get("confidence"):
                     metadata["confidence"] = args["confidence"]
                 if args.get("source_task"):
@@ -339,11 +333,7 @@ class LoreMemoryProvider(MemoryProvider):
                     page = item.get("page", item)
                     title = page.get("title", "Untitled")
                     kind = page.get("kind", "")
-                    summary = (
-                        page.get("summary")
-                        or page.get("snippet")
-                        or page.get("content", "")
-                    )
+                    summary = page.get("summary") or page.get("snippet") or page.get("content", "")
                     if len(summary) > 300:
                         summary = summary[:297] + "..."
                     kind_label = f" ({kind})" if kind else ""
@@ -369,7 +359,7 @@ class LoreMemoryProvider(MemoryProvider):
         action: str,
         target: str,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Mirror built-in memory writes to Lore as captures."""
         # Skip writes for non-primary contexts (cron, subagent, etc.)
@@ -382,11 +372,7 @@ class LoreMemoryProvider(MemoryProvider):
             return
         try:
             meta = metadata or {}
-            source_task = (
-                meta.get("task_id")
-                or meta.get("source_task")
-                or meta.get("session_id")
-            )
+            source_task = meta.get("task_id") or meta.get("source_task") or meta.get("session_id")
             # Preserve provenance metadata.
             # Lore sanitizes the tags field on captures, keeping only known tags.
             # Use structured capture fields (source_task) for primary provenance
@@ -397,7 +383,7 @@ class LoreMemoryProvider(MemoryProvider):
                 if meta.get(key):
                     prov_parts.append(f"{key}={meta[key]}")
             provenance_line = f"[{' '.join(prov_parts)}]" if prov_parts else ""
-            extra: Dict[str, Any] = {}
+            extra: dict[str, Any] = {}
             if source_task:
                 extra["source_task"] = source_task
             hermes_builtin_targets = {"memory", "user"}
@@ -421,7 +407,7 @@ class LoreMemoryProvider(MemoryProvider):
         except Exception as exc:
             logger.debug("Lore on_memory_write mirror failed: %s", exc)
 
-    def on_pre_compress(self, messages: List[Dict[str, Any]]) -> str:
+    def on_pre_compress(self, messages: list[dict[str, Any]]) -> str:
         """Placeholder — future enhancement can extract key facts before compression."""
         return ""
 
@@ -429,6 +415,7 @@ class LoreMemoryProvider(MemoryProvider):
 # ---------------------------------------------------------------------------
 # Plugin entry point
 # ---------------------------------------------------------------------------
+
 
 def register(ctx) -> None:
     """Register Lore as a memory provider plugin."""

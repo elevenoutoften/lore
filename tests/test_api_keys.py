@@ -3,7 +3,7 @@ from __future__ import annotations
 
 def test_api_key_management_requires_admin(client):
     store = client.app.state.api_key_store
-    key_obj, raw_key = store.create_key(name="test-admin", role="admin")
+    _key_obj, raw_key = store.create_key(name="test-admin", role="admin")
     admin_headers = {"Authorization": f"Bearer {raw_key}"}
 
     assert client.get("/api/api-keys").status_code == 401
@@ -28,7 +28,7 @@ def test_api_key_management_requires_admin(client):
 
 def test_lore_admin_key_can_manage_keys(client):
     store = client.app.state.api_key_store
-    admin_key_obj, admin_key = store.create_key(name="key-admin", role="admin")
+    _admin_key_obj, admin_key = store.create_key(name="key-admin", role="admin")
     admin_headers = {"Authorization": f"Bearer {admin_key}"}
 
     created_writer = client.post("/api/api-keys", json={"name": "writer"}, headers=admin_headers)
@@ -42,7 +42,7 @@ def test_lore_admin_key_can_manage_keys(client):
 
 def test_lore_writer_key_cannot_manage_keys(client):
     store = client.app.state.api_key_store
-    admin_key_obj, admin_key = store.create_key(name="key-admin", role="admin")
+    _admin_key_obj, admin_key = store.create_key(name="key-admin", role="admin")
     admin_headers = {"Authorization": f"Bearer {admin_key}"}
 
     created_writer = client.post(

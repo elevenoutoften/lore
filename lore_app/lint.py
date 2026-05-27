@@ -3,17 +3,30 @@ from __future__ import annotations
 import difflib
 import re
 from collections import defaultdict
-from datetime import date, datetime, timezone
-from typing import Any
+from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING, Any
 
-from .ledger import LedgerDB
 from .link_graph import build_link_graph
 from .lint_config import LintConfig
 from .repository import LoreRepository, optional_string
-from .schemas import ContradictionMatch, ContradictionReviewResponse, LintIssue, LinkGraphResponse, LoreLintResponse, PageDetail, PageSummary, StalePageEntry, StalePagesResponse
+from .schemas import (
+    ContradictionMatch,
+    ContradictionReviewResponse,
+    LinkGraphResponse,
+    LintIssue,
+    LoreLintResponse,
+    PageDetail,
+    PageSummary,
+    StalePageEntry,
+    StalePagesResponse,
+)
+
+if TYPE_CHECKING:
+    from .ledger import LedgerDB
+
 
 def _utc_today() -> date:
-    return datetime.now(timezone.utc).date()
+    return datetime.now(UTC).date()
 
 
 RECOMMENDED_FRONTMATTER_FIELDS = ("title", "kind", "visibility", "summary")
@@ -283,7 +296,7 @@ def lint_freshness(page: PageDetail) -> list[LintIssue]:
                     page,
                     rule="invalid_valid_until",
                     severity="warning",
-                    message=f"Frontmatter field valid_until should be an ISO date.",
+                    message="Frontmatter field valid_until should be an ISO date.",
                     detail=str(valid_until),
                 )
             )

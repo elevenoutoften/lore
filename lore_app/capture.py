@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 
 from .frontmatter import frontmatter_scalar
@@ -14,8 +14,8 @@ from .schemas import (
     CaptureListResponse,
     CaptureRequest,
     PageDetail,
-    PageSummary,
     PagePromotionSource,
+    PageSummary,
     PromotionAuditResponse,
     PromotionRecord,
     SourceCapture,
@@ -29,10 +29,11 @@ ALLOWED_LANES = {"project", "procedural", "ops", "companion", "draft"}
 CAPTURE_INTAKE_SUMMARY = "Rough agent memory capture; not canonical truth."
 
 
-
 def capture_memory(repo: LoreRepository, payload: CaptureRequest) -> PageDetail:
     if payload.namespace not in ALLOWED_NAMESPACES:
-        raise InvalidPageId(f"Invalid namespace: {payload.namespace!r}. Must be one of: {', '.join(sorted(ALLOWED_NAMESPACES))}")
+        raise InvalidPageId(
+            f"Invalid namespace: {payload.namespace!r}. Must be one of: {', '.join(sorted(ALLOWED_NAMESPACES))}"
+        )
 
     lane_value = optional_string(payload.lane)
     if lane_value and lane_value not in ALLOWED_LANES:
@@ -65,7 +66,7 @@ def capture_memory(repo: LoreRepository, payload: CaptureRequest) -> PageDetail:
     content = build_capture_markdown(
         title=title,
         observation=payload.observation,
-        captured_at=datetime.now(timezone.utc).isoformat(),
+        captured_at=datetime.now(UTC).isoformat(),
         confidence=optional_string(payload.confidence) or "unknown",
         source_task=effective_source_task,
         related_pages=related_pages,
@@ -77,7 +78,7 @@ def capture_memory(repo: LoreRepository, payload: CaptureRequest) -> PageDetail:
         epistemic_status=payload.epistemic_status,
         actor=optional_string(payload.actor) or optional_string(payload.agent),
         lane=optional_string(payload.lane),
-        observed_at=optional_string(payload.observed_at) or datetime.now(timezone.utc).isoformat(),
+        observed_at=optional_string(payload.observed_at) or datetime.now(UTC).isoformat(),
         valid_from=optional_string(payload.valid_from),
         valid_until=optional_string(payload.valid_until),
         task_id=optional_string(payload.task_id),
@@ -216,7 +217,11 @@ def promote_capture(
     content: str | None = None,
 ) -> PageDetail:
     capture = repo.read_page(page_id)
-    if capture is None or capture.frontmatter.get("kind") != "capture" or not capture.id.startswith(("inbox/", "notes/")):
+    if (
+        capture is None
+        or capture.frontmatter.get("kind") != "capture"
+        or not capture.id.startswith(("inbox/", "notes/"))
+    ):
         raise InvalidPageId("Only capture pages can be promoted.")
 
     target = normalize_optional_page_id(target_page_id) or normalize_optional_page_id(
@@ -230,9 +235,13 @@ def promote_capture(
     explicit_content = optional_string(content)
     existing = repo.read_page(target)
     if existing is not None and explicit_content is None:
-        raise ValueError("Target page already exists. Provide explicit content to overwrite, or choose a different target.")
+        raise ValueError(
+            "Target page already exists. Provide explicit content to overwrite, or choose a different target."
+        )
 
-    target_content = explicit_content if explicit_content is not None else build_promoted_capture_markdown(capture, target)
+    target_content = (
+        explicit_content if explicit_content is not None else build_promoted_capture_markdown(capture, target)
+    )
     target_page = repo.upsert_page(target, target_content)
 
     updated_capture = update_frontmatter_status(capture.content, "accepted")
@@ -412,12 +421,12 @@ def build_capture_markdown(
     if suggested_target_page:
         body.extend(["", "## Suggested Target", "", f"[[{suggested_target_page}]]"])
 
-    return "\n".join(frontmatter + [""] + body).rstrip() + "\n"
+    return "\n".join([*frontmatter, "", *body]).rstrip() + "\n"
 
 
 def parse_capture_date(value: str | None) -> date:
     if not value:
-        return datetime.now(timezone.utc).date()
+        return datetime.now(UTC).date()
     try:
         return date.fromisoformat(value.strip()[:10])
     except ValueError as exc:

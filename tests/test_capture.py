@@ -394,7 +394,10 @@ def test_capture_promote_rejects_existing_without_content(client):
     promoted = client.post(f"/api/captures/{page_id}/promote", json={})
 
     assert promoted.status_code == 422
-    assert promoted.json()["detail"] == "Target page already exists. Provide explicit content to overwrite, or choose a different target."
+    assert (
+        promoted.json()["detail"]
+        == "Target page already exists. Provide explicit content to overwrite, or choose a different target."
+    )
 
 
 def test_capture_promote_overwrites_with_content(client):

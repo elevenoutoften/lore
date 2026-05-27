@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from collections import deque
 import hashlib
 import json
 import re
-from typing import Any
+from collections import deque
+from typing import TYPE_CHECKING, Any
 
-from .ledger import LedgerDB
 from .repository import LoreRepository, dict_list, optional_string, string_list
 from .schemas import (
     ContextEdgeType,
@@ -25,6 +24,9 @@ from .schemas import (
     ContextNodeType,
     ProvenanceRef,
 )
+
+if TYPE_CHECKING:
+    from .ledger import LedgerDB
 
 WIKILINK_PATTERN = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 
@@ -78,7 +80,9 @@ def build_context_graph(repo: LoreRepository, ledger: LedgerDB | None = None) ->
             nodes.append(node)
 
     def ensure_node(node_id: str, node_type: ContextNodeType, label: str | None = None, **metadata: Any) -> None:
-        add_node(ContextGraphNode(id=node_id, type=node_type, label=label or node_id, metadata=_compact_metadata(metadata)))
+        add_node(
+            ContextGraphNode(id=node_id, type=node_type, label=label or node_id, metadata=_compact_metadata(metadata))
+        )
 
     def add_edge(source: str, target: str, edge_type: ContextEdgeType, label: str = "", **metadata: Any) -> None:
         compact = _compact_metadata(metadata)
@@ -286,7 +290,7 @@ def query_paths(graph: ContextGraph, query: ContextGraphPathQuery) -> ContextGra
         for edge, node in adjacency.get(current, []):
             if node.id in seen:
                 continue
-            queue.append((node.id, steps + [ContextGraphPathStep(edge=edge, node=node)], seen | {node.id}))
+            queue.append((node.id, [*steps, ContextGraphPathStep(edge=edge, node=node)], seen | {node.id}))
 
     return ContextGraphPathResponse(source_id=query.source_id, target_id=query.target_id, paths=paths)
 
@@ -589,10 +593,7 @@ def _plan_policy_ids(value: Any) -> list[str]:
         return []
     policy_ids: list[str] = []
     for item in value:
-        if isinstance(item, dict):
-            policy_id = optional_string(item.get("policy_id"))
-        else:
-            policy_id = optional_string(item)
+        policy_id = optional_string(item.get("policy_id")) if isinstance(item, dict) else optional_string(item)
         if policy_id:
             policy_ids.append(policy_id)
     return _dedupe(policy_ids)

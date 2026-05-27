@@ -42,17 +42,20 @@ def test_cli_backup_verify_restore(tmp_path, capsys):
 
     restored = tmp_path / "restored"
     search_db = tmp_path / "restored-search.db"
-    assert main(
-        [
-            "restore",
-            "--input",
-            str(backup_file),
-            "--content-dir",
-            str(restored),
-            "--search-db",
-            str(search_db),
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "restore",
+                "--input",
+                str(backup_file),
+                "--content-dir",
+                str(restored),
+                "--search-db",
+                str(search_db),
+            ]
+        )
+        == 0
+    )
     assert (restored / "projects" / "example-project.md").is_file()
     assert search_db.is_file()
 

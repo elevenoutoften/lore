@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
 from ..deps import get_graph_cache, get_lint_config, get_repo, get_templates
-from ..link_graph import LinkGraphCache
 from ..lint import lint_contradiction_review, lint_lore, lint_stale_queue
-from ..lint_config import LintConfig
-from ..repository import LoreRepository
 from ..route_utils import template_context
 from ..schemas import ContradictionReviewResponse, LoreLintResponse, StalePagesResponse
+
+if TYPE_CHECKING:
+    from fastapi.templating import Jinja2Templates
+
+    from ..link_graph import LinkGraphCache
+    from ..lint_config import LintConfig
+    from ..repository import LoreRepository
 
 router = APIRouter()
 

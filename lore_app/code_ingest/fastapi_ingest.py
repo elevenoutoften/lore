@@ -57,11 +57,10 @@ def _parse_route_decorator(decorator: ast.expr) -> tuple[str, str] | None:
         return None
 
     func = decorator.func
-    if isinstance(func, ast.Attribute) and func.attr in METHODS:
-        if decorator.args:
-            arg = decorator.args[0]
-            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                return func.attr.upper(), arg.value
+    if isinstance(func, ast.Attribute) and func.attr in METHODS and decorator.args:
+        arg = decorator.args[0]
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            return func.attr.upper(), arg.value
 
     if isinstance(func, ast.Attribute) and func.attr == "route":
         path = ""

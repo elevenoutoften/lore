@@ -1,17 +1,23 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+# ruff: noqa: B008
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
 from ..deps import get_ledger_db, get_repo, get_retrieve_context, get_templates
-from ..ledger import LedgerDB
 from ..rag.eval_retrieval import evaluate_retrieval
-from ..repository import LoreRepository
 from ..route_utils import enrich_expanded_results, template_context
-from ..schemas import RagEvaluateRequest, RagEvaluateResult, RagExpandRequest, RagExpandedResponse, RagRetrieveRequest
+from ..schemas import RagEvaluateRequest, RagEvaluateResult, RagExpandedResponse, RagExpandRequest, RagRetrieveRequest
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from fastapi.templating import Jinja2Templates
+
+    from ..ledger import LedgerDB
+    from ..repository import LoreRepository
 
 router = APIRouter()
 
@@ -76,7 +82,9 @@ def api_rag_retrieve_expanded(
 
 
 @router.post("/api/rag/evaluate", response_model=RagEvaluateResult)
-def api_rag_evaluate(payload: RagEvaluateRequest, retrieve_context: Callable[[str, int], dict[str, Any]] = Depends(get_retrieve_context)):
+def api_rag_evaluate(
+    payload: RagEvaluateRequest, retrieve_context: Callable[[str, int], dict[str, Any]] = Depends(get_retrieve_context)
+):
     if payload.queries is not None:
         queries = payload.queries
     elif payload.query and payload.expected:

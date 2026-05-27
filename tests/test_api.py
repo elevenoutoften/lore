@@ -157,11 +157,28 @@ def test_frontmatter_spec_endpoint(client):
     assert response.status_code == 200
     payload = response.json()
 
-    assert set(payload["specs"]) == {"project", "service", "decision", "runbook", "concept", "capture", "procedure", "page"}
+    assert set(payload["specs"]) == {
+        "project",
+        "service",
+        "decision",
+        "runbook",
+        "concept",
+        "capture",
+        "procedure",
+        "page",
+    }
     assert payload["specs"]["service"]["required"] == ["title", "kind", "visibility", "summary", "owner"]
     assert payload["specs"]["procedure"]["required"] == [
-        "title", "kind", "visibility", "summary", "trigger", "steps",
-        "schema_version", "validated", "validated_at", "author",
+        "title",
+        "kind",
+        "visibility",
+        "summary",
+        "trigger",
+        "steps",
+        "schema_version",
+        "validated",
+        "validated_at",
+        "author",
     ]
     assert "sources" in payload["all_fields"]
 

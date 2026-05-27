@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
 import json
 import logging
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
@@ -19,20 +21,22 @@ from ..deps import (
     get_search_index,
     get_vector_store,
 )
-from ..audit import AuditLog
-from ..consolidation_worker import ConsolidationWorker
-from ..ledger import LedgerDB
-from ..link_graph import LinkGraphCache
 from ..mcp import dispatch as mcp_dispatch
 from ..mcp.tools import WRITE_TOOL_NAMES
-from ..observability import MetricsCollector
-from ..config import LoreConfig
-from ..patch_planner import PatchPlanner
-from ..rag.vector_store import VectorStore
-from ..repository import LoreRepository
 from ..route_utils import client_rate_limit_key
 from ..routes.admin import package_name
-from ..search_index import LoreSearchIndex
+
+if TYPE_CHECKING:
+    from ..audit import AuditLog
+    from ..config import LoreConfig
+    from ..consolidation_worker import ConsolidationWorker
+    from ..ledger import LedgerDB
+    from ..link_graph import LinkGraphCache
+    from ..observability import MetricsCollector
+    from ..patch_planner import PatchPlanner
+    from ..rag.vector_store import VectorStore
+    from ..repository import LoreRepository
+    from ..search_index import LoreSearchIndex
 
 logger = logging.getLogger("lore.mcp")
 
@@ -84,7 +88,7 @@ async def mcp(
         )
     except mcp_dispatch.JsonRpcError as exc:
         return JSONResponse(mcp_dispatch.error_response(request_id, exc), status_code=200)
-    except Exception as exc:
+    except Exception:
         logger.exception("Unexpected error in MCP handler")
         return JSONResponse(
             mcp_dispatch.exception_response(request_id, "internal error; see server logs"),

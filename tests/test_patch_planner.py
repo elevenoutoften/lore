@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 from dataclasses import dataclass
 
@@ -31,10 +32,8 @@ def patch_ledger_row_decoder(monkeypatch):
         decoded = dict(row)
         for key in ("content_json", "source_capture_ids", "source_page_ids", "candidate_ids", "policies_applied"):
             if key in decoded and isinstance(decoded[key], str):
-                try:
+                with contextlib.suppress(json.JSONDecodeError):
                     decoded[key] = json.loads(decoded[key])
-                except json.JSONDecodeError:
-                    pass
         if "auto_appliable" in decoded:
             decoded["auto_appliable"] = bool(decoded["auto_appliable"])
         return decoded
@@ -251,13 +250,21 @@ Use Docker Compose for deployment.
         ctx.ledger,
         "batch-old",
         "inbox/2026-05-10/contradiction",
-        [make_claim("procedures/deploy-lore", "Deploy Lore uses Docker Compose", source_page_ids=["procedures/deploy-lore"])],
+        [
+            make_claim(
+                "procedures/deploy-lore", "Deploy Lore uses Docker Compose", source_page_ids=["procedures/deploy-lore"]
+            )
+        ],
     )
     store_claims(
         ctx.ledger,
         "batch-new",
         "inbox/2026-05-10/contradiction",
-        [make_claim("procedures/deploy-lore", "Deploy Lore uses systemd units", source_page_ids=["procedures/deploy-lore"])],
+        [
+            make_claim(
+                "procedures/deploy-lore", "Deploy Lore uses systemd units", source_page_ids=["procedures/deploy-lore"]
+            )
+        ],
     )
 
     [plan] = ctx.planner.plan_batch(batch_id="batch-new")
@@ -332,7 +339,9 @@ Existing fact.
     history = ctx.audit_log.page_history("services/lore")
 
     assert page is not None
-    assert "services/lore states Lore stores sourced patch plans. Observed at 2026-05-10T00:00:00+00:00." in page.content
+    assert (
+        "services/lore states Lore stores sourced patch plans. Observed at 2026-05-10T00:00:00+00:00." in page.content
+    )
     assert "Source: [[inbox/2026-05-10/append]]." in page.content
     assert history
 
@@ -367,7 +376,13 @@ Current decision state.
         ctx.ledger,
         "batch-decision",
         "inbox/2026-05-10/decision",
-        [make_claim("decisions/agent-routing", "Agent routing prefers bounded retries", source_page_ids=["decisions/agent-routing"])],
+        [
+            make_claim(
+                "decisions/agent-routing",
+                "Agent routing prefers bounded retries",
+                source_page_ids=["decisions/agent-routing"],
+            )
+        ],
     )
 
     [plan] = ctx.planner.plan_batch(batch_id="batch-decision")
@@ -427,7 +442,13 @@ Current decision state.
         ctx.ledger,
         "batch-status-b",
         "inbox/2026-05-10/status-b",
-        [make_claim("decisions/agent-routing", "Agent routing uses queue arbitration", source_page_ids=["decisions/agent-routing"])],
+        [
+            make_claim(
+                "decisions/agent-routing",
+                "Agent routing uses queue arbitration",
+                source_page_ids=["decisions/agent-routing"],
+            )
+        ],
     )
 
     [apply_plan] = ctx.planner.plan_batch(batch_id="batch-status-a")
@@ -494,7 +515,13 @@ Current decision state.
         ctx.ledger,
         "batch-api-reject",
         "inbox/2026-05-10/api-reject",
-        [make_claim("decisions/agent-routing", "Agent routing must be human approved", source_page_ids=["decisions/agent-routing"])],
+        [
+            make_claim(
+                "decisions/agent-routing",
+                "Agent routing must be human approved",
+                source_page_ids=["decisions/agent-routing"],
+            )
+        ],
     )
 
     app = create_app(ctx.config, mount_workspaces=False)

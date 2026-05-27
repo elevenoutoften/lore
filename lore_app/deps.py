@@ -1,23 +1,26 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable  # noqa: TC003
+from typing import TYPE_CHECKING, Any
 
-from fastapi import Request
-from fastapi.templating import Jinja2Templates
+from fastapi import Request  # noqa: TC002
 
-from .api_keys import LoreApiKeyStore
-from .audit import AuditLog
-from .config import LoreConfig
-from .consolidation_worker import ConsolidationWorker
-from .context_graph import ContextGraphCache
-from .link_graph import LinkGraphCache
-from .lint_config import LintConfig
-from .ledger import LedgerDB
-from .observability import MetricsCollector
-from .patch_planner import PatchPlanner
-from .rag.vector_store import VectorStore
-from .repository import LoreRepository
-from .search_index import LoreSearchIndex
+if TYPE_CHECKING:
+    from fastapi.templating import Jinja2Templates
+
+    from .api_keys import LoreApiKeyStore
+    from .audit import AuditLog
+    from .config import LoreConfig
+    from .consolidation_worker import ConsolidationWorker
+    from .context_graph import ContextGraphCache
+    from .ledger import LedgerDB
+    from .link_graph import LinkGraphCache
+    from .lint_config import LintConfig
+    from .observability import MetricsCollector
+    from .patch_planner import PatchPlanner
+    from .rag.vector_store import VectorStore
+    from .repository import LoreRepository
+    from .search_index import LoreSearchIndex
 
 
 def get_config(request: Request) -> LoreConfig:

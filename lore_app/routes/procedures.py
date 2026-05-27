@@ -1,19 +1,24 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
-from ..context_graph import ContextGraphCache
-from ..deps import get_context_graph_cache, get_graph_cache, get_metrics, get_repo, get_search_index, get_templates, get_vector_store
+from ..deps import (
+    get_context_graph_cache,
+    get_graph_cache,
+    get_metrics,
+    get_repo,
+    get_search_index,
+    get_templates,
+    get_vector_store,
+)
 from ..frontmatter import update_frontmatter
-from ..link_graph import LinkGraphCache
-from ..observability import MetricsCollector
 from ..procedure_candidate import find_repeated_captures, propose_procedure_candidate
-from ..rag.vector_store import VectorStore
 from ..repository import InvalidPageId, LoreRepository
 from ..route_utils import index_vectors_for_page, template_context
 from ..schemas import (
@@ -24,7 +29,15 @@ from ..schemas import (
     ProcedureExportResponse,
     RepeatedCaptureGroup,
 )
-from ..search_index import LoreSearchIndex
+
+if TYPE_CHECKING:
+    from fastapi.templating import Jinja2Templates
+
+    from ..context_graph import ContextGraphCache
+    from ..link_graph import LinkGraphCache
+    from ..observability import MetricsCollector
+    from ..rag.vector_store import VectorStore
+    from ..search_index import LoreSearchIndex
 
 router = APIRouter()
 
@@ -80,20 +93,20 @@ def procedures_dashboard(
     groups = find_repeated_captures(repo)
 
     # List existing procedure-candidate pages.
-    candidates = [
-        page for page in repo.list_pages(kind="procedure-candidate")
-    ]
+    candidates = [page for page in repo.list_pages(kind="procedure-candidate")]
 
     enriched_candidates = []
     for candidate in candidates:
         detail = repo.read_page(candidate.id)
         if detail is None:
             continue
-        enriched_candidates.append({
-            "page": candidate,
-            "sources": [s for s in candidate.sources if s],
-            "trigger": detail.frontmatter.get("trigger", ""),
-        })
+        enriched_candidates.append(
+            {
+                "page": candidate,
+                "sources": [s for s in candidate.sources if s],
+                "trigger": detail.frontmatter.get("trigger", ""),
+            }
+        )
 
     return templates.TemplateResponse(
         request,
@@ -215,7 +228,7 @@ def api_validate_procedure(
 
     fm_updates = {
         "validated": True,
-        "validated_at": datetime.now(timezone.utc).isoformat(),
+        "validated_at": datetime.now(UTC).isoformat(),
         "schema_version": fm.get("schema_version", "1.0"),
     }
     updated = update_frontmatter(page.content, fm_updates)

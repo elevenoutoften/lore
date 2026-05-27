@@ -4,11 +4,13 @@ import re
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .db_utils import retry_on_locked
-from .repository import LoreRepository, MarkdownPage
-from .schemas import PageDetail
+
+if TYPE_CHECKING:
+    from .repository import LoreRepository, MarkdownPage
+    from .schemas import PageDetail
 
 
 class LoreSearchIndex:
@@ -188,13 +190,15 @@ class LoreSearchIndex:
             return True
         return row is not None
 
-    def search(self, query: str, *, kind: str | None = None, lane: str | None = None,
-               actor: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+    def search(
+        self, query: str, *, kind: str | None = None, lane: str | None = None, actor: str | None = None, limit: int = 20
+    ) -> list[dict[str, Any]]:
         """Search the FTS index using SQLite FTS rank ordering."""
         return self._search(query, kind=kind, lane=lane, actor=actor, limit=limit, order_expr="rank")
 
-    def search_bm25(self, query: str, *, kind: str | None = None, lane: str | None = None,
-                    actor: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+    def search_bm25(
+        self, query: str, *, kind: str | None = None, lane: str | None = None, actor: str | None = None, limit: int = 20
+    ) -> list[dict[str, Any]]:
         """Search the FTS index using the FTS5 bm25() ranking function."""
         return self._search(query, kind=kind, lane=lane, actor=actor, limit=limit, order_expr="bm25(pages_fts)")
 
@@ -216,7 +220,7 @@ class LoreSearchIndex:
         if "/" in clean or "." in clean or ":" in clean:
             fts_query = self._expand_path_query(clean)
         if len(clean) >= 4 and re.fullmatch(r"[A-Za-z0-9_]+", clean):
-            fts_query = f'{fts_query} OR {clean}*'
+            fts_query = f"{fts_query} OR {clean}*"
         kind_filter = "AND p.kind = ?" if kind else ""
         lane_filter = "AND p.lane = ?" if lane else ""
         actor_filter = "AND p.actor = ?" if actor else ""
@@ -334,11 +338,7 @@ class LoreSearchIndex:
             "sources": sources.casefold(),
         }
 
-        return [
-            field_name
-            for field_name, field_value in fields.items()
-            if any(term in field_value for term in terms)
-        ]
+        return [field_name for field_name, field_value in fields.items() if any(term in field_value for term in terms)]
 
     def close(self) -> None:
         if self._conn is not None:

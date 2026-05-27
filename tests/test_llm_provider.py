@@ -1,4 +1,5 @@
 """Tests for LLM provider config and client."""
+
 from __future__ import annotations
 
 import json

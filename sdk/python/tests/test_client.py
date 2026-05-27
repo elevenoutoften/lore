@@ -84,7 +84,9 @@ class LoreClientTests(unittest.TestCase):
         request = urlopen.call_args.args[0]
         self.assertEqual(request.full_url, "https://lore.example.test/api/pages/services/lore")
         self.assertEqual(request.get_method(), "PUT")
-        self.assertEqual(json.loads(request.data.decode("utf-8")), {"content": "# Lore", "commit_message": "Update lore"})
+        self.assertEqual(
+            json.loads(request.data.decode("utf-8")), {"content": "# Lore", "commit_message": "Update lore"}
+        )
 
     @patch("urllib.request.urlopen")
     def test_post_request_create_trace(self, urlopen):

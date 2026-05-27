@@ -61,7 +61,4 @@ def ingest_python_symbols(source_dir: str | Path) -> list[SymbolEntry]:
 
 
 def _is_method(node: ast.FunctionDef | ast.AsyncFunctionDef, tree: ast.AST) -> bool:
-    for parent in ast.walk(tree):
-        if isinstance(parent, ast.ClassDef) and node in parent.body:
-            return True
-    return False
+    return any(isinstance(parent, ast.ClassDef) and node in parent.body for parent in ast.walk(tree))

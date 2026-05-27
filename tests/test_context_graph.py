@@ -3,9 +3,11 @@ from __future__ import annotations
 from unittest import mock
 
 from lore_app.context_graph import ContextGraphCache, build_context_graph, explain_context, query_neighbors, query_paths
-from lore_app.schemas import ContextGraph, PolicyRule
-from lore_app.schemas import ContextExplainQuery, ContextGraphNeighborQuery, ContextGraphPathQuery
 from lore_app.schemas import (
+    ContextExplainQuery,
+    ContextGraph,
+    ContextGraphNeighborQuery,
+    ContextGraphPathQuery,
     ContextRef,
     ExtractedClaim,
     ExtractedEntity,
@@ -13,6 +15,7 @@ from lore_app.schemas import (
     PatchOperation,
     PatchPlan,
     PolicyDecision,
+    PolicyRule,
     RiskLevel,
     ToolRef,
     TraceEntry,
@@ -24,7 +27,10 @@ def _node(graph, node_id: str):
 
 
 def _edge(graph, source: str, target: str, edge_type: str):
-    return next((edge for edge in graph.edges if edge.source == source and edge.target == target and edge.type == edge_type), None)
+    return next(
+        (edge for edge in graph.edges if edge.source == source and edge.target == target and edge.type == edge_type),
+        None,
+    )
 
 
 def _write_context_pages(repo) -> None:
@@ -102,7 +108,9 @@ def _seed_ledger(client, capture_id: str) -> dict[str, str]:
     claims = ledger.get_candidates(candidate_type="claim", limit=200)
     entities = ledger.get_candidates(candidate_type="entity", limit=200)
     claim_id = next(candidate["candidate_id"] for candidate in claims if candidate["batch_id"] == "batch-context-graph")
-    entity_id = next(candidate["candidate_id"] for candidate in entities if candidate["batch_id"] == "batch-context-graph")
+    entity_id = next(
+        candidate["candidate_id"] for candidate in entities if candidate["batch_id"] == "batch-context-graph"
+    )
 
     ledger.store_trace(
         TraceEntry(
@@ -110,7 +118,10 @@ def _seed_ledger(client, capture_id: str) -> dict[str, str]:
             actor="nyx",
             reason_summary="Trace for context graph test.",
             status="completed",
-            context_refs=[ContextRef(type="page", id="services/context-graph-service"), ContextRef(type="candidate", id=claim_id)],
+            context_refs=[
+                ContextRef(type="page", id="services/context-graph-service"),
+                ContextRef(type="candidate", id=claim_id),
+            ],
             tool_refs=[ToolRef(tool="pytest", action="run", result_summary="passed")],
             policy_refs=["auto-apply:v1"],
             related_ids={"task_id": "flow_000586", "candidate_id": claim_id},
@@ -126,7 +137,9 @@ def _seed_ledger(client, capture_id: str) -> dict[str, str]:
             content_diff="+ Context graph fact.",
             risk_level=RiskLevel.low,
             auto_appliable=True,
-            policies_applied=[PolicyDecision(policy_id="auto-apply:v1", gate="auto-apply", passed=True, reason="allowed")],
+            policies_applied=[
+                PolicyDecision(policy_id="auto-apply:v1", gate="auto-apply", passed=True, reason="allowed")
+            ],
             status="pending",
             created_at="2026-05-01T00:00:00+00:00",
         ),
@@ -171,7 +184,7 @@ def test_context_graph_includes_capture_nodes(client):
 
 
 def test_context_graph_includes_entity_and_claim_nodes(client):
-    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    repo, ledger, _capture_id, candidate_ids = _context_graph_fixture(client)
 
     graph = build_context_graph(repo, ledger)
 
@@ -205,7 +218,8 @@ def test_candidate_nodes_include_bi_temporal_and_actor(client):
         )
     )
     candidate = next(
-        item for item in ledger.get_candidates(candidate_type="claim", status="candidate", limit=50)
+        item
+        for item in ledger.get_candidates(candidate_type="claim", status="candidate", limit=50)
         if item["batch_id"] == "test-bi-temp"
     )
 
@@ -236,7 +250,7 @@ def test_page_nodes_include_observed_at_from_frontmatter(client):
 
 
 def test_context_graph_includes_plan_and_trace_nodes(client):
-    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
 
     graph = build_context_graph(repo, ledger)
 
@@ -261,7 +275,7 @@ def test_context_graph_edges_cover_key_relationships(client):
 
 
 def test_context_graph_deterministic(client):
-    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
 
     first = build_context_graph(repo, ledger)
     second = build_context_graph(repo, ledger)
@@ -396,7 +410,7 @@ def test_context_graph_cache_invalidates_on_ledger_write(client, monkeypatch):
 
 
 def test_context_graph_stats(client):
-    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
 
     graph = build_context_graph(repo, ledger)
 
@@ -426,10 +440,12 @@ def test_context_graph_without_ledger(client):
 
 
 def test_neighbors_returns_connected_nodes(client):
-    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
     graph = build_context_graph(repo, ledger)
 
-    result = query_neighbors(graph, ContextGraphNeighborQuery(node_id="services/context-graph-service", direction="both"))
+    result = query_neighbors(
+        graph, ContextGraphNeighborQuery(node_id="services/context-graph-service", direction="both")
+    )
 
     neighbor_ids = {neighbor.node.id for neighbor in result.neighbors}
     assert "actor:nyx" in neighbor_ids
@@ -438,7 +454,7 @@ def test_neighbors_returns_connected_nodes(client):
 
 
 def test_neighbors_direction_filter(client):
-    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
     graph = build_context_graph(repo, ledger)
 
     result = query_neighbors(graph, ContextGraphNeighborQuery(node_id="actor:nyx", direction="outgoing"))
@@ -448,7 +464,7 @@ def test_neighbors_direction_filter(client):
 
 
 def test_neighbors_edge_type_filter(client):
-    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
     graph = build_context_graph(repo, ledger)
 
     result = query_neighbors(
@@ -461,7 +477,7 @@ def test_neighbors_edge_type_filter(client):
 
 
 def test_neighbors_node_type_filter(client):
-    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
     graph = build_context_graph(repo, ledger)
 
     result = query_neighbors(
@@ -474,7 +490,7 @@ def test_neighbors_node_type_filter(client):
 
 
 def test_paths_between_connected_nodes(client):
-    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
     graph = build_context_graph(repo, ledger)
 
     result = query_paths(
@@ -487,7 +503,7 @@ def test_paths_between_connected_nodes(client):
 
 
 def test_paths_multi_hop(client):
-    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
     graph = build_context_graph(repo, ledger)
 
     result = query_paths(
@@ -499,7 +515,7 @@ def test_paths_multi_hop(client):
 
 
 def test_paths_missing_target(client):
-    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
     graph = build_context_graph(repo, ledger)
 
     result = query_paths(
@@ -511,7 +527,7 @@ def test_paths_missing_target(client):
 
 
 def test_explain_context_returns_neighborhood(client):
-    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
     graph = build_context_graph(repo, ledger)
 
     result = explain_context(graph, ContextExplainQuery(node_id="services/context-graph-service", depth=1))
@@ -522,7 +538,7 @@ def test_explain_context_returns_neighborhood(client):
 
 
 def test_explain_context_missing_node(client):
-    repo, ledger, capture_id, candidate_ids = _context_graph_fixture(client)
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
     graph = build_context_graph(repo, ledger)
 
     result = explain_context(graph, ContextExplainQuery(node_id="nonexistent:node"))

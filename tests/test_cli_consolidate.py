@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from lore_app.cli import cmd_consolidate, cmd_status
 from lore_app.repository import LoreRepository
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def configure_env(tmp_path, monkeypatch) -> tuple[LoreRepository, Path]:

@@ -94,8 +94,5 @@ CONTRADICTION: this page needs a review pass.
     assert payload["low_confidence"] >= 1
     assert payload["contradictions"] >= 1
     assert payload["total_issues"] >= (
-        payload["stale_pages"]
-        + payload["missing_metadata"]
-        + payload["low_confidence"]
-        + payload["contradictions"]
+        payload["stale_pages"] + payload["missing_metadata"] + payload["low_confidence"] + payload["contradictions"]
     )

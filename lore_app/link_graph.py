@@ -98,14 +98,10 @@ def build_enriched_graph(
     all_links = [*base_graph.links, *source_edges]
 
     inbound_counts = Counter(
-        edge.target
-        for edge in base_graph.links
-        if edge.exists and not edge.external and edge.target is not None
+        edge.target for edge in base_graph.links if edge.exists and not edge.external and edge.target is not None
     )
     outbound_counts = Counter(
-        edge.source
-        for edge in base_graph.links
-        if edge.exists and not edge.external and edge.target is not None
+        edge.source for edge in base_graph.links if edge.exists and not edge.external and edge.target is not None
     )
     nodes = [
         GraphNode(
@@ -136,7 +132,9 @@ def page_links(repo: LoreRepository, page_id: str, graph: LinkGraphResponse | No
     outgoing = [edge for edge in graph.links if edge.source == page.id]
     backlinks = [edge for edge in graph.links if edge.target == page.id and edge.exists]
     missing_links = [edge for edge in outgoing if not edge.external and not edge.exists]
-    return PageLinks(page=page_summary(graph.pages, page.id), outgoing=outgoing, backlinks=backlinks, missing_links=missing_links)
+    return PageLinks(
+        page=page_summary(graph.pages, page.id), outgoing=outgoing, backlinks=backlinks, missing_links=missing_links
+    )
 
 
 def page_summary(pages: list[PageSummary], page_id: str) -> PageSummary:

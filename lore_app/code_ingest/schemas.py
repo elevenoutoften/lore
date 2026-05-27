@@ -54,4 +54,3 @@ class ServiceInventory(BaseModel):
     symbols: list[SymbolEntry] = Field(default_factory=list)
     source_files: list[SourceReference] = Field(default_factory=list)
     ingested_at: str | None = None
-

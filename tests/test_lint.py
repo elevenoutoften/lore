@@ -30,7 +30,9 @@ def test_lint_api_reports_broken_links_and_metadata(client):
 
     assert payload["checked_pages"] == 5
     assert payload["issue_count"] == len(payload["issues"])
-    assert has_issue(payload, rule="broken_internal_link", page_id="projects/example-project", target="services/missing")
+    assert has_issue(
+        payload, rule="broken_internal_link", page_id="projects/example-project", target="services/missing"
+    )
     assert has_issue(payload, rule="missing_summary", page_id="services/workflow-engine")
     assert has_issue(payload, rule="missing_sources", page_id="services/workflow-engine")
     assert payload["suppressed_count"] == 0
@@ -443,7 +445,6 @@ sources:
 ---
 # Suppressed Decision
 """
-    from pathlib import Path
 
     repo = LoreRepository(content_dir)
     repo.upsert_page(
@@ -453,18 +454,13 @@ sources:
 
     config_path = tmp_path / ".lore-lint.json"
     config_path.write_text(
-        json.dumps(
-            {"suppressions": {"decisions/suppressed-decision": {"epistemic-label": "verified later"}}}
-        ),
+        json.dumps({"suppressions": {"decisions/suppressed-decision": {"epistemic-label": "verified later"}}}),
         encoding="utf-8",
     )
     config = LintConfig(config_path)
     result = lint_lore(repo, config=config)
 
-    assert not any(
-        issue.rule == "epistemic-label" and not issue.suppressed
-        for issue in result.issues
-    )
+    assert not any(issue.rule == "epistemic-label" and not issue.suppressed for issue in result.issues)
 
 
 def test_epistemic_claim_assumption_warning(tmp_path):

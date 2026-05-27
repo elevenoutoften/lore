@@ -48,7 +48,7 @@ def build_decision_markdown(
         "## Consequences",
         consequences.strip(),
     ]
-    return "\n".join(frontmatter + [""] + body).rstrip() + "\n"
+    return "\n".join([*frontmatter, "", *body]).rstrip() + "\n"
 
 
 def build_procedure_markdown(
@@ -109,7 +109,7 @@ def build_procedure_markdown(
         body.extend(["", "## Postconditions", *[f"- {item}" for item in postconditions]])
     if error_handling:
         body.extend(["", "## Error Handling", error_handling.strip()])
-    return "\n".join(frontmatter + [""] + body).rstrip() + "\n"
+    return "\n".join([*frontmatter, "", *body]).rstrip() + "\n"
 
 
 def export_procedure_skill(page: Any) -> str:
@@ -128,22 +128,22 @@ description: {page.summary or page.title}
 
 # {page.title}
 
-{page.summary or ''}
+{page.summary or ""}
 
 ## Trigger
 {trigger}
 
 ## Preconditions
-{chr(10).join(f'- {p}' for p in preconditions) if preconditions else 'None'}
+{chr(10).join(f"- {p}" for p in preconditions) if preconditions else "None"}
 
 ## Steps
-{chr(10).join(f'{i}. {s}' for i, s in enumerate(steps, 1)) if steps else 'None'}
+{chr(10).join(f"{i}. {s}" for i, s in enumerate(steps, 1)) if steps else "None"}
 
 ## Postconditions
-{chr(10).join(f'- {p}' for p in postconditions) if postconditions else 'None'}
+{chr(10).join(f"- {p}" for p in postconditions) if postconditions else "None"}
 
 ## Error Handling
-{error_handling or 'See page body for details.'}
+{error_handling or "See page body for details."}
 
 ## Source
 Exported from [Lore]({page.id}).

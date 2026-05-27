@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 from unittest import mock
 
 import pytest
@@ -11,19 +11,14 @@ from lore_app.repository import LoreRepository
 from lore_app.schemas import PageDetail
 from lore_app.search_index import LoreSearchIndex
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
 
 def _write_page(repo: LoreRepository, page_id: str, *, title: str, kind: str = "project", body: str = "") -> None:
     repo.upsert_page(
         page_id,
-        (
-            "---\n"
-            f"title: {title}\n"
-            f"kind: {kind}\n"
-            "visibility: internal\n"
-            "---\n\n"
-            f"# {title}\n\n"
-            f"{body or title}\n"
-        ),
+        (f"---\ntitle: {title}\nkind: {kind}\nvisibility: internal\n---\n\n# {title}\n\n{body or title}\n"),
     )
 
 

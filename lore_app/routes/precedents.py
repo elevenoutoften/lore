@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends
 
 from ..deps import get_ledger_db, get_repo
-from ..ledger import LedgerDB
 from ..precedent_search import search_precedents
-from ..repository import LoreRepository
 from ..schemas import PrecedentSearchRequest, PrecedentSearchResponse
+
+if TYPE_CHECKING:
+    from ..ledger import LedgerDB
+    from ..repository import LoreRepository
 
 router = APIRouter(prefix="/api/precedents", tags=["precedents"])
 

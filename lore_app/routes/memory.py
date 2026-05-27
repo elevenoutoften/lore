@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+# ruff: noqa: B008
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 
@@ -16,17 +18,20 @@ from ..deps import (
     get_search_index,
     get_vector_store,
 )
-from ..context_graph import ContextGraphCache
 from ..heartbeat import heartbeat_review
-from ..ledger import LedgerDB
-from ..link_graph import LinkGraphCache
-from ..lint_config import LintConfig
-from ..observability import MetricsCollector
-from ..rag.vector_store import VectorStore
 from ..repository import InvalidPageId, LoreRepository
 from ..route_utils import index_vectors_for_page, record_audit, validate_content
 from ..schemas import CaptureRequest, MemoryCaptureRequest, MemoryCaptureResponse, MemoryHealthResponse
-from ..search_index import LoreSearchIndex
+
+if TYPE_CHECKING:
+    from ..audit import AuditLog
+    from ..context_graph import ContextGraphCache
+    from ..ledger import LedgerDB
+    from ..link_graph import LinkGraphCache
+    from ..lint_config import LintConfig
+    from ..observability import MetricsCollector
+    from ..rag.vector_store import VectorStore
+    from ..search_index import LoreSearchIndex
 
 router = APIRouter()
 
@@ -41,7 +46,7 @@ def api_memory_capture(
     vector_store: VectorStore = Depends(get_vector_store),
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
     context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
-    audit_log: "AuditLog" = Depends(get_audit_log),
+    audit_log: AuditLog = Depends(get_audit_log),
     metrics: MetricsCollector = Depends(get_metrics),
 ):
     """Optimized endpoint for agent memory writes.
@@ -101,7 +106,7 @@ def api_memory_capture(
 
     return MemoryCaptureResponse(
         capture_id=page.id,
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
     )
 
 

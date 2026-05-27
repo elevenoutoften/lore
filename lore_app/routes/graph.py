@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
 from ..analytics import GraphAnalytics, GraphAnalyticsResult
 from ..context_graph import build_context_graph
 from ..deps import get_graph_cache, get_ledger_db, get_repo, get_templates
-from ..ledger import LedgerDB
 from ..link_graph import LinkGraphCache, build_enriched_graph, build_source_edges, page_links
 from ..repository import InvalidPageId, LoreRepository
 from ..route_utils import template_context
 from ..schemas import EnrichedLinkGraphResponse, LinkEdge, LinkGraphResponse, PageLinks
+
+if TYPE_CHECKING:
+    from fastapi.templating import Jinja2Templates
+
+    from ..ledger import LedgerDB
 
 router = APIRouter()
 
@@ -32,7 +38,9 @@ def api_graph_stats(repo: LoreRepository = Depends(get_repo), graph_cache: LinkG
 
 
 @router.get("/api/graph/enriched", response_model=EnrichedLinkGraphResponse)
-def api_enriched_graph(repo: LoreRepository = Depends(get_repo), graph_cache: LinkGraphCache = Depends(get_graph_cache)):
+def api_enriched_graph(
+    repo: LoreRepository = Depends(get_repo), graph_cache: LinkGraphCache = Depends(get_graph_cache)
+):
     return build_enriched_graph(repo, graph_cache)
 
 

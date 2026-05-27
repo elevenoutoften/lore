@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 from lore_app.audit import AuditLog
 from lore_app.config import LoreConfig
-from lore_app.extraction import extract_from_captures
 from lore_app.ledger import LedgerDB
 from lore_app.patch_planner import PatchPlanner
 from lore_app.repository import LoreRepository
@@ -57,9 +54,14 @@ def ctx(tmp_path, monkeypatch) -> PlannerContext:
         graph_cache=graph_cache,
     )
     return PlannerContext(
-        repo=repo, ledger=ledger, planner=planner, config=config,
-        audit_log=audit_log, search_index=search_index,
-        vector_store=vector_store, graph_cache=graph_cache,
+        repo=repo,
+        ledger=ledger,
+        planner=planner,
+        config=config,
+        audit_log=audit_log,
+        search_index=search_index,
+        vector_store=vector_store,
+        graph_cache=graph_cache,
     )
 
 
@@ -208,7 +210,12 @@ def ctx_no_indexes(tmp_path, monkeypatch) -> PlannerContext:
     # No search_index, vector_store, or graph_cache — just like the old constructor
     planner = PatchPlanner(repo, ledger, audit_log=audit_log)
     return PlannerContext(
-        repo=repo, ledger=ledger, planner=planner, config=config,
-        audit_log=audit_log, search_index=MagicMock(),
-        vector_store=MagicMock(), graph_cache=MagicMock(),
+        repo=repo,
+        ledger=ledger,
+        planner=planner,
+        config=config,
+        audit_log=audit_log,
+        search_index=MagicMock(),
+        vector_store=MagicMock(),
+        graph_cache=MagicMock(),
     )

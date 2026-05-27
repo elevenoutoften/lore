@@ -1,4 +1,5 @@
 """Standalone Lore MCP server using stdio transport."""
+
 from __future__ import annotations
 
 import json

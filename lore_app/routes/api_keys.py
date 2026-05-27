@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
-from ..api_keys import LoreApiKey, LoreApiKeyStore
 from ..deps import get_api_key_store, get_templates
 from ..route_utils import template_context
 from ..schemas import LoreApiKeyCreate, LoreApiKeyCreateResponse, LoreApiKeyResponse
+
+if TYPE_CHECKING:
+    from fastapi.templating import Jinja2Templates
+
+    from ..api_keys import LoreApiKey, LoreApiKeyStore
 
 router = APIRouter(tags=["api-keys"])
 

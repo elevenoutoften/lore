@@ -8,6 +8,7 @@ Usage:
     # Live mode against specific provider:
     LORE_LLM_API_KEY=... python tests/eval_extraction.py --live --provider qwen3.6-plus
 """
+
 from __future__ import annotations
 
 import argparse
@@ -21,12 +22,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from lore_app.extraction import extract_from_captures
-from lore_app.ledger import LedgerDB
-from lore_app.llm_provider import FallbackLLMClient, LLMClient, LLMProviderConfig
-from lore_app.repository import LoreRepository
-from lore_app.schemas import ExtractedClaim
-from tests.eval_extraction_fixtures import EVAL_FIXTURES
+from tests.eval_extraction_fixtures import EVAL_FIXTURES  # noqa: E402
+
+from lore_app.extraction import extract_from_captures  # noqa: E402
+from lore_app.ledger import LedgerDB  # noqa: E402
+from lore_app.llm_provider import FallbackLLMClient, LLMClient, LLMProviderConfig  # noqa: E402
+from lore_app.repository import LoreRepository  # noqa: E402
+from lore_app.schemas import ExtractedClaim  # noqa: E402
 
 SUPPORTED_PROVIDERS = {"qwen3.6-plus", "glm-5.1", "gemma-4"}
 

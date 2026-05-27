@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends, Query
 
-from ..consolidation_worker import ConsolidationWorker
 from ..deps import get_consolidation_worker, get_ledger_db, get_patch_planner
-from ..ledger import LedgerDB
-from ..patch_planner import PatchPlanner
 from ..schemas import (
     ConsolidationPlanRequest,
     ConsolidationRunRequest,
@@ -16,6 +16,11 @@ from ..schemas import (
     PatchRejectRequest,
     RollbackResult,
 )
+
+if TYPE_CHECKING:
+    from ..consolidation_worker import ConsolidationWorker
+    from ..ledger import LedgerDB
+    from ..patch_planner import PatchPlanner
 
 consolidation_router = APIRouter(prefix="/api/consolidation", tags=["consolidation"])
 
@@ -111,16 +116,20 @@ def get_blocked_claims(ledger: LedgerDB = Depends(get_ledger_db)):
             continue
         epistemic = candidate.get("epistemic_status")
         if epistemic == "assumption":
-            blocked.append({
-                "claim_id": candidate.get("candidate_id"),
-                "reason": "Assumption-labeled claims require human review before auto-apply.",
-                "epistemic_status": epistemic,
-            })
+            blocked.append(
+                {
+                    "claim_id": candidate.get("candidate_id"),
+                    "reason": "Assumption-labeled claims require human review before auto-apply.",
+                    "epistemic_status": epistemic,
+                }
+            )
         elif epistemic == "inferred" and not candidate.get("trace_id"):
-            blocked.append({
-                "claim_id": candidate.get("candidate_id"),
-                "reason": "Inferred claims without a supporting trace require review.",
-                "epistemic_status": epistemic,
-            })
+            blocked.append(
+                {
+                    "claim_id": candidate.get("candidate_id"),
+                    "reason": "Inferred claims without a supporting trace require review.",
+                    "epistemic_status": epistemic,
+                }
+            )
 
     return {"blocked": blocked, "total": len(blocked)}

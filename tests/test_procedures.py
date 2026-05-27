@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 PROCEDURE_MD = """---
 title: Deploy Service
 kind: procedure
@@ -189,6 +188,7 @@ def test_procedure_lint_schema_version(client):
     _create_procedure(client, "procedures/no-schema-ver", schema_version=None)
     # Remove schema_version by recreating without it
     import yaml
+
     fm = {
         "title": "No Schema Ver",
         "kind": "procedure",
@@ -209,6 +209,7 @@ def test_procedure_lint_schema_version(client):
 
 def test_procedure_lint_unvalidated(client):
     import yaml
+
     fm = {
         "title": "Unvalidated Proc",
         "kind": "procedure",
@@ -233,7 +234,7 @@ def test_procedure_lint_missing_author_and_validated_at(client):
     resp = client.put(
         "/api/pages/procedures/test-no-author",
         json={
-            "content": "---\ntitle: No Author Proc\nkind: procedure\nvisibility: internal\nsummary: Test\ntrigger: test\nsteps:\n  - Do thing\nschema_version: \"1.0\"\nvalidated: true\nsources:\n  - operator note\n---\n\n# No Author Proc\n\n1. Do thing\n"
+            "content": '---\ntitle: No Author Proc\nkind: procedure\nvisibility: internal\nsummary: Test\ntrigger: test\nsteps:\n  - Do thing\nschema_version: "1.0"\nvalidated: true\nsources:\n  - operator note\n---\n\n# No Author Proc\n\n1. Do thing\n'
         },
     )
     assert resp.status_code == 200

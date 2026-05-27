@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from .ledger import LedgerDB
+from typing import TYPE_CHECKING
+
 from .schemas import PatchOperation, PolicyDecision, PolicyRule
+
+if TYPE_CHECKING:
+    from .ledger import LedgerDB
 
 
 class PolicyEngine:
@@ -92,9 +96,7 @@ class PolicyEngine:
             return page_kind in policy.condition_kind or operation.value in policy.condition_operation
         if policy.condition_kind and page_kind not in policy.condition_kind:
             return False
-        if policy.condition_operation and operation.value not in policy.condition_operation:
-            return False
-        return True
+        return not (policy.condition_operation and operation.value not in policy.condition_operation)
 
     def _evaluate_condition(
         self,

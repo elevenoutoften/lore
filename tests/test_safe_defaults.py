@@ -66,9 +66,7 @@ def test_lore_consolidation_run_tool_uses_safe_defaults_without_arguments():
         consolidation_worker=worker,
     )
 
-    assert worker.calls == [
-        {"dry_run": True, "batch_size": 10, "max_auto_apply": 0, "force_reextract": False}
-    ]
+    assert worker.calls == [{"dry_run": True, "batch_size": 10, "max_auto_apply": 0, "force_reextract": False}]
     assert result["structuredContent"]["dry_run"] is True
 
 

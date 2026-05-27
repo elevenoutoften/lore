@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_ledger_db
-from ..ledger import LedgerDB
 from ..schemas import PolicyRule
+
+if TYPE_CHECKING:
+    from ..ledger import LedgerDB
 
 router = APIRouter(prefix="/api/policies", tags=["policies"])
 

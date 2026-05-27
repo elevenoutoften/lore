@@ -8,8 +8,7 @@ def _graph(node_ids: list[str], edges: list[tuple[str, str]]) -> ContextGraph:
     return ContextGraph(
         nodes=[ContextGraphNode(id=node_id, type=ContextNodeType.page, label=node_id) for node_id in node_ids],
         edges=[
-            ContextGraphEdge(source=source, target=target, type=ContextEdgeType.mentions)
-            for source, target in edges
+            ContextGraphEdge(source=source, target=target, type=ContextEdgeType.mentions) for source, target in edges
         ],
     )
 
@@ -93,7 +92,12 @@ def test_api_graph_analytics_endpoint(client):
 def test_mcp_graph_analytics_tool(client):
     response = client.post(
         "/mcp",
-        json={"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "lore_graph_analytics", "arguments": {}}},
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "lore_graph_analytics", "arguments": {}},
+        },
         headers={"Mcp-Method": "tools/call"},
     )
 

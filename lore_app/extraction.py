@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .capture import CAPTURE_INTAKE_SUMMARY
@@ -24,9 +24,7 @@ from .schemas import (
 
 WIKILINK_PATTERN = re.compile(r"\[\[([^\]]+)\]\]")
 PAGE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-CONTRADICTION_PATTERN = re.compile(
-    r"(?im)^\s*(?:contradicts|supersedes|replaces|invalidates)\s*:\s*(.+)$"
-)
+CONTRADICTION_PATTERN = re.compile(r"(?im)^\s*(?:contradicts|supersedes|replaces|invalidates)\s*:\s*(.+)$")
 
 
 def get_unprocessed_captures(
@@ -68,7 +66,7 @@ def extract_from_captures(
 
     ledger = _ledger(ledger_db)
     selected = _select_captures(repo, ledger, capture_ids, batch_size)
-    processed_at = datetime.now(timezone.utc).isoformat()
+    processed_at = datetime.now(UTC).isoformat()
     batch_id = str(uuid.uuid4())
 
     entities: list[ExtractedEntity] = []
@@ -106,7 +104,7 @@ def extract_from_captures(
                 capture_claims = llm_result.get("claims", [])
                 capture_edges = llm_result.get("edges", [])
                 capture_invalidations = llm_result.get("invalidations", [])
-                llm_observed_at = datetime.now(timezone.utc).isoformat()
+                llm_observed_at = datetime.now(UTC).isoformat()
                 for claim in capture_claims:
                     claim.observed_at = llm_observed_at
             else:
@@ -161,9 +159,7 @@ def extract_from_captures(
     return result
 
 
-def compute_extraction_hash(
-    subject: str, predicate: str, object: str, source_page_ids: list[str]
-) -> str:
+def compute_extraction_hash(subject: str, predicate: str, object: str, source_page_ids: list[str]) -> str:
     """Deterministic SHA-256 hash for claim deduplication."""
 
     normalized = {
@@ -424,8 +420,10 @@ def _first_meaningful_line(body: str) -> str | None:
 def _is_intake_warning(line: str) -> bool:
     stripped = line.strip()
     folded = stripped.casefold()
-    return stripped.startswith(">") and "rough" in folded and (
-        "intake" in folded or "not canonical" in folded or "not accepted" in folded
+    return (
+        stripped.startswith(">")
+        and "rough" in folded
+        and ("intake" in folded or "not canonical" in folded or "not accepted" in folded)
     )
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -7,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from ..deps import get_repo
 from ..distillation import distill_daily, get_daily_captures, get_pending_days, promote_daily_note
 from ..repository import InvalidPageId, LoreRepository
-from ..schemas import DailyDistillRequest, DailyDistillResponse, PendingDaysResponse, PageSummary
+from ..schemas import DailyDistillRequest, DailyDistillResponse, PageSummary, PendingDaysResponse
 
 router = APIRouter()
 

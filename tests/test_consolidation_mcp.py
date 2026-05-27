@@ -229,7 +229,7 @@ def test_lore_review_batch_groups_plans_by_risk_and_recommends(tmp_path, monkeyp
         ctx.repo,
         "inbox/2026-05-10/review-decision",
         target="decisions/routing",
-            summary="Decision patches require audit.",
+        summary="Decision patches require audit.",
     )
     run_result = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=0)
 

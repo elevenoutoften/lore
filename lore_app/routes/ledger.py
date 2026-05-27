@@ -1,20 +1,24 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends, Query
 
 from ..deps import get_ledger_db
 from ..extraction import compute_extraction_hash
-from ..ledger import LedgerDB, _normalize
 from ..schemas import (
     ClaimReinforcementResult,
     ClaimSupersedeResult,
     DecayResult,
     ExtractedCandidateResponse,
     ExtractedClaim,
-    LedgerClaimQuery,
     LedgerReinforceRequest,
     LedgerSupersedeRequest,
 )
+
+if TYPE_CHECKING:
+    from ..ledger import LedgerDB
 
 ledger_router = APIRouter(prefix="/api/ledger", tags=["ledger"])
 
@@ -138,6 +142,7 @@ def _row_to_candidate_response(row: dict) -> ExtractedCandidateResponse:
     elif isinstance(content_json, str):
         try:
             import json as _json
+
             parsed = _json.loads(content_json)
             evidence = parsed.get("evidence") or parsed.get("object")
         except Exception:
@@ -155,7 +160,9 @@ def _row_to_candidate_response(row: dict) -> ExtractedCandidateResponse:
         valid_from=str(row.get("valid_from")) if row.get("valid_from") else None,
         valid_until=str(row.get("valid_until")) if row.get("valid_until") else None,
         strength=float(row.get("strength", 0.5)),
-        source_capture_ids=list(row.get("source_capture_ids", []) if isinstance(row.get("source_capture_ids"), list) else []),
+        source_capture_ids=list(
+            row.get("source_capture_ids", []) if isinstance(row.get("source_capture_ids"), list) else []
+        ),
         source_page_ids=list(row.get("source_page_ids", []) if isinstance(row.get("source_page_ids"), list) else []),
         evidence=evidence,
         model_version=str(row.get("model_version")) if row.get("model_version") else None,
@@ -173,8 +180,12 @@ def get_ledger_candidates(
     page_id: str | None = Query(default=None, description="Filter by source page ID."),
     lane: str | None = Query(default=None, description="Filter by retrieval lane."),
     actor: str | None = Query(default=None, description="Filter by agent actor name."),
-    status: str | None = Query(default=None, description="Filter by status (candidate, active, rejected, archived, superseded)."),
-    candidate_type: str | None = Query(default=None, alias="type", description="Filter by candidate type (claim, entity, edge, invalidation)."),
+    status: str | None = Query(
+        default=None, description="Filter by status (candidate, active, rejected, archived, superseded)."
+    ),
+    candidate_type: str | None = Query(
+        default=None, alias="type", description="Filter by candidate type (claim, entity, edge, invalidation)."
+    ),
     limit: int = Query(default=100, ge=1, le=500, description="Max results to return."),
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ) -> list[ExtractedCandidateResponse]:

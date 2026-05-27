@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 
 import pytest
@@ -19,10 +20,8 @@ def patch_ledger_row_decoder(monkeypatch):
         decoded = dict(row)
         for key in ("content_json", "source_capture_ids", "source_page_ids", "candidate_ids", "policies_applied"):
             if key in decoded and isinstance(decoded[key], str):
-                try:
+                with contextlib.suppress(json.JSONDecodeError):
                     decoded[key] = json.loads(decoded[key])
-                except json.JSONDecodeError:
-                    pass
         if "auto_appliable" in decoded:
             decoded["auto_appliable"] = bool(decoded["auto_appliable"])
         return decoded
@@ -382,10 +381,7 @@ def test_assumption_blocked_by_epistemic_gate(ledger):
         high_confidence=True,
         epistemic_status="assumption",
     )
-    assert any(
-        d.policy_id == "epistemic:assumption-block" and not d.passed
-        for d in decisions
-    )
+    assert any(d.policy_id == "epistemic:assumption-block" and not d.passed for d in decisions)
 
 
 def test_retrieved_accepted_by_epistemic_gate(ledger):
@@ -398,10 +394,7 @@ def test_retrieved_accepted_by_epistemic_gate(ledger):
         high_confidence=True,
         epistemic_status="retrieved",
     )
-    assert not any(
-        d.policy_id.startswith("epistemic:") and not d.passed
-        for d in decisions
-    )
+    assert not any(d.policy_id.startswith("epistemic:") and not d.passed for d in decisions)
 
 
 def test_inferred_without_trace_blocked(ledger):
@@ -415,10 +408,7 @@ def test_inferred_without_trace_blocked(ledger):
         epistemic_status="inferred",
         trace_id=None,
     )
-    assert any(
-        d.policy_id == "epistemic:inferred-review" and not d.passed
-        for d in decisions
-    )
+    assert any(d.policy_id == "epistemic:inferred-review" and not d.passed for d in decisions)
 
 
 def test_inferred_with_trace_accepted(ledger):
@@ -432,7 +422,4 @@ def test_inferred_with_trace_accepted(ledger):
         epistemic_status="inferred",
         trace_id="trace-001",
     )
-    assert not any(
-        d.policy_id.startswith("epistemic:") and not d.passed
-        for d in decisions
-    )
+    assert not any(d.policy_id.startswith("epistemic:") and not d.passed for d in decisions)

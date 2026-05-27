@@ -117,8 +117,7 @@ def handle_mcp_request(
     request: Any | None = None,
 ) -> dict[str, Any]:
     from .prompts import list_prompts
-    from .resources import list_resource_templates, list_resources, read_resource
-    from .resources import require_string
+    from .resources import list_resource_templates, list_resources, read_resource, require_string
     from .tools import TOOLS, call_tool
 
     if method == "initialize":

@@ -4,16 +4,20 @@ import posixpath
 import re
 from dataclasses import dataclass, field
 from html import escape
-from typing import Iterable
+from typing import TYPE_CHECKING
 from urllib.parse import urldefrag, urlparse
 
 import nh3
 from markdown_it import MarkdownIt
 from markdown_it.renderer import RendererHTML
-from markdown_it.token import Token
 
 from .repository import InvalidPageId, normalize_page_id
 from .schemas import PageDetail, RenderedLink, TocEntry
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from markdown_it.token import Token
 
 WIKI_LINK_PATTERN = re.compile(r"\[\[([^\[\]\n]+?)\]\]")
 FENCE_PATTERN = re.compile(r"^\s*(```|~~~)")

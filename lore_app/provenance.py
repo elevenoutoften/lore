@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any
 
 from .repository import LoreRepository, optional_string, string_list
 from .schemas import CaptureRequest, ContextRef, ProvenanceRef, TraceEntry
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 def merge_capture_provenance(payload: CaptureRequest, *, related_pages: list[str] | None = None) -> ProvenanceRef:
@@ -40,10 +43,7 @@ def merge_trace_provenance(trace: TraceEntry) -> ProvenanceRef:
 
 def provenance_from_frontmatter(frontmatter: dict[str, Any]) -> ProvenanceRef:
     raw = frontmatter.get("provenance")
-    if isinstance(raw, dict):
-        provenance = ProvenanceRef.model_validate(raw)
-    else:
-        provenance = ProvenanceRef()
+    provenance = ProvenanceRef.model_validate(raw) if isinstance(raw, dict) else ProvenanceRef()
     _extend_unique(provenance.page_ids, string_list(frontmatter.get("related")))
     _extend_unique(provenance.trace_ids, [frontmatter.get("trace_id")])
     _extend_unique(provenance.task_ids, [frontmatter.get("task_id"), frontmatter.get("decision_id")])

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from ..config import LoreConfig
+if TYPE_CHECKING:
+    from ..config import LoreConfig
 
 
 class IngestValidationError(ValueError):
@@ -36,9 +38,7 @@ def validate_source_dir(source_dir: str | Path, config: LoreConfig) -> Path:
 
     # Roots must be configured
     if not config.code_ingest_roots:
-        raise IngestValidationError(
-            "Code ingest is disabled. Set LORE_CODE_INGEST_ROOTS to enable."
-        )
+        raise IngestValidationError("Code ingest is disabled. Set LORE_CODE_INGEST_ROOTS to enable.")
 
     # Must be under an allowed root (resolve prevents symlink escapes)
     if not any(resolved == root or resolved.is_relative_to(root) for root in config.code_ingest_roots):
@@ -49,9 +49,7 @@ def validate_source_dir(source_dir: str | Path, config: LoreConfig) -> Path:
 
     # Must exist and be a directory
     if not resolved.is_dir():
-        raise IngestValidationError(
-            f"source_dir '{source_dir}' does not exist or is not a directory."
-        )
+        raise IngestValidationError(f"source_dir '{source_dir}' does not exist or is not a directory.")
 
     # Depth limit (count parent levels from root)
     for root in config.code_ingest_roots:
@@ -75,8 +73,8 @@ def validate_source_dir(source_dir: str | Path, config: LoreConfig) -> Path:
     total_size = sum(f.stat().st_size for f in py_files if f.is_file())
     if total_size > config.code_ingest_max_total_bytes:
         raise IngestValidationError(
-            f"source_dir contains {total_size / (1024*1024):.1f} MiB of Python files, "
-            f"exceeding the limit of {config.code_ingest_max_total_bytes / (1024*1024):.0f} MiB. "
+            f"source_dir contains {total_size / (1024 * 1024):.1f} MiB of Python files, "
+            f"exceeding the limit of {config.code_ingest_max_total_bytes / (1024 * 1024):.0f} MiB. "
             f"Set LORE_CODE_INGEST_MAX_TOTAL_BYTES to increase."
         )
 

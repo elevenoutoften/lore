@@ -1,18 +1,32 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
-from ..context_graph import ContextGraphCache
-from ..deps import get_context_graph_cache, get_graph_cache, get_ledger_db, get_repo, get_search_index, get_templates, get_vector_store
-from ..ledger import LedgerDB
-from ..link_graph import LinkGraphCache
-from ..repository import LoreRepository
+from ..deps import (
+    get_context_graph_cache,
+    get_graph_cache,
+    get_ledger_db,
+    get_repo,
+    get_search_index,
+    get_templates,
+    get_vector_store,
+)
 from ..route_utils import rebuild_vector_index, template_context
-from ..rag.vector_store import VectorStore
 from ..schemas import SearchResponse
-from ..search_index import LoreSearchIndex
+
+if TYPE_CHECKING:
+    from fastapi.templating import Jinja2Templates
+
+    from ..context_graph import ContextGraphCache
+    from ..ledger import LedgerDB
+    from ..link_graph import LinkGraphCache
+    from ..rag.vector_store import VectorStore
+    from ..repository import LoreRepository
+    from ..search_index import LoreSearchIndex
 
 router = APIRouter()
 

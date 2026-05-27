@@ -1,24 +1,47 @@
 """Find repeated captures and promote them into procedure candidates."""
+
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .capture import slugify, unique_page_id
 from .frontmatter import frontmatter_scalar
-from .repository import InvalidPageId, LoreRepository, optional_string, string_list
+from .repository import InvalidPageId, LoreRepository, optional_string
 from .schemas import (
-    PageDetail,
     PageSummary,
     ProcedureCandidateResponse,
     RepeatedCaptureGroup,
 )
 
-STOP_WORDS = frozenset({
-    "this", "that", "with", "from", "have", "been", "were", "will", "would",
-    "could", "should", "about", "which", "their", "there", "these", "those",
-    "when", "where", "what", "while", "after", "before", "between",
-})
+STOP_WORDS = frozenset(
+    {
+        "this",
+        "that",
+        "with",
+        "from",
+        "have",
+        "been",
+        "were",
+        "will",
+        "would",
+        "could",
+        "should",
+        "about",
+        "which",
+        "their",
+        "there",
+        "these",
+        "those",
+        "when",
+        "where",
+        "what",
+        "while",
+        "after",
+        "before",
+        "between",
+    }
+)
 JACCARD_THRESHOLD = 0.4
 
 
@@ -59,10 +82,7 @@ class _UnionFind:
 
 def find_repeated_captures(repo: LoreRepository) -> list[RepeatedCaptureGroup]:
     """Scan captures and group those with similar content via keyword overlap."""
-    captures = [
-        page for page in repo.list_pages(kind="capture")
-        if page.id.startswith(("inbox/", "notes/"))
-    ]
+    captures = [page for page in repo.list_pages(kind="capture") if page.id.startswith(("inbox/", "notes/"))]
     if len(captures) < 2:
         return []
 
@@ -107,20 +127,22 @@ def find_repeated_captures(repo: LoreRepository) -> list[RepeatedCaptureGroup]:
         group_key = "-".join(sorted(common)[:5]) if common else "similar-captures"
 
         # Auto-generate a title and trigger from top common keywords.
-        sorted_common = sorted(common) if common else sorted(
-            kw for i in indices for kw in keyword_sets[i]
-        )
+        sorted_common = sorted(common) if common else sorted(kw for i in indices for kw in keyword_sets[i])
         title_words = sorted_common[:5] if sorted_common else ["repeated", "pattern"]
         suggested_title = " ".join(w.title() for w in title_words) + " Procedure"
-        suggested_trigger = f"When {title_words[0]} occurs repeatedly" if title_words else "When repeated pattern detected"
+        suggested_trigger = (
+            f"When {title_words[0]} occurs repeatedly" if title_words else "When repeated pattern detected"
+        )
 
-        groups.append(RepeatedCaptureGroup(
-            group_key=group_key,
-            captures=group_captures,
-            count=len(group_captures),
-            suggested_title=suggested_title,
-            suggested_trigger=suggested_trigger,
-        ))
+        groups.append(
+            RepeatedCaptureGroup(
+                group_key=group_key,
+                captures=group_captures,
+                count=len(group_captures),
+                suggested_title=suggested_title,
+                suggested_trigger=suggested_trigger,
+            )
+        )
 
     groups.sort(key=lambda g: (-g.count, g.group_key))
     return groups
@@ -194,7 +216,7 @@ def _build_candidate_markdown(
     source_capture_ids: list[str],
     lane: str | None,
 ) -> str:
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     frontmatter_lines = [
         "---",
         f"title: {frontmatter_scalar(title)}",

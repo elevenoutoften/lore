@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+# ruff: noqa: B008
 import platform
 from dataclasses import asdict
 from importlib.metadata import PackageNotFoundError, metadata, version
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from ..audit import AuditLog
-from ..config import LoreConfig
 from ..deps import get_audit_log, get_config, get_metrics
-from ..observability import MetricsCollector
+
+if TYPE_CHECKING:
+    from ..audit import AuditLog
+    from ..config import LoreConfig
+    from ..observability import MetricsCollector
 
 PROJECT_NAME = "lore"
 API_VERSION = "1"
