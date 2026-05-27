@@ -92,28 +92,31 @@ def run_eval(mode: str = "ci", provider: str | None = None) -> list[dict[str, An
 
     llm_client = _build_eval_client(mode, provider)
     results: list[dict[str, Any]] = []
-    with tempfile.TemporaryDirectory(prefix="lore-extraction-eval-") as tmp:
-        for fixture in EVAL_FIXTURES:
-            repo = LoreRepository(Path(tmp) / fixture["name"] / "pages")
-            ledger = LedgerDB(Path(tmp) / fixture["name"] / "ledger.db")
-            ledger.initialize()
-            capture_id = _write_capture(repo, fixture)
-
-            raw_before = getattr(llm_client, "last_raw", None)
-            result = extract_from_captures(
-                repo,
-                capture_ids=[capture_id],
-                dry_run=True,
-                ledger_db=ledger,
-                llm_client=llm_client,
-            )
-            raw = getattr(llm_client, "last_raw", None)
-            json_valid = isinstance(raw, dict) if raw is not raw_before else False
-            results.append(_metrics_for_fixture(fixture, result, json_valid, llm_client))
-
-    close = getattr(llm_client, "close", None)
-    if callable(close):
-        close()
+    try:
+        with tempfile.TemporaryDirectory(prefix="lore-extraction-eval-") as tmp:
+            for fixture in EVAL_FIXTURES:
+                repo = LoreRepository(Path(tmp) / fixture["name"] / "pages")
+                ledger = LedgerDB(Path(tmp) / fixture["name"] / "ledger.db")
+                ledger.initialize()
+                try:
+                    capture_id = _write_capture(repo, fixture)
+                    raw_before = getattr(llm_client, "last_raw", None)
+                    result = extract_from_captures(
+                        repo,
+                        capture_ids=[capture_id],
+                        dry_run=True,
+                        ledger_db=ledger,
+                        llm_client=llm_client,
+                    )
+                    raw = getattr(llm_client, "last_raw", None)
+                    json_valid = isinstance(raw, dict) if raw is not raw_before else False
+                    results.append(_metrics_for_fixture(fixture, result, json_valid, llm_client))
+                finally:
+                    ledger.close()
+    finally:
+        close = getattr(llm_client, "close", None)
+        if callable(close):
+            close()
     return results
 
 
