@@ -155,6 +155,35 @@ def test_search_exact_page_id_ranks_first(client):
     assert hits[0]["page_id"] == "services/lore"
 
 
+def test_search_uses_frontmatter_validity_when_page_has_no_candidate(client):
+    """Search provenance falls back to page frontmatter when no ledger candidate exists."""
+    unique_term = "frontmatter-validity-token-1a2b3c"
+    valid_from = "2026-05-01"
+    valid_until = "2026-12-31"
+
+    resp = client.put(
+        "/api/pages/test/frontmatter-validity",
+        json={
+            "content": (
+                "---\n"
+                "title: Frontmatter Validity\n"
+                f"valid_from: {valid_from}\n"
+                f"valid_until: {valid_until}\n"
+                "---\n\n"
+                "# Frontmatter Validity\n\n"
+                f"{unique_term}"
+            )
+        },
+    )
+    assert resp.status_code == 200
+
+    resp = client.get("/api/search", params={"q": unique_term, "limit": 10})
+    assert resp.status_code == 200
+    hit = next(hit for hit in resp.json()["hits"] if hit["page"]["id"] == "test/frontmatter-validity")
+    assert hit["valid_from"] == valid_from
+    assert hit["valid_until"] == valid_until
+
+
 def test_search_service_name_ranks_high(client):
     """Service name queries rank the matching service page high."""
     client.post("/api/search/reindex")

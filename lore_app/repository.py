@@ -429,8 +429,12 @@ def page_result_provenance(
     candidate = candidates[0] if candidates else None
     return {
         "observed_at": optional_string(frontmatter.get("observed_at")),
-        "valid_from": optional_string(candidate.get("valid_from")) if candidate else None,
-        "valid_until": optional_string(candidate.get("valid_until")) if candidate else None,
+        "valid_from": optional_string(candidate.get("valid_from"))
+        if candidate
+        else optional_string(frontmatter.get("valid_from")),
+        "valid_until": optional_string(candidate.get("valid_until"))
+        if candidate
+        else optional_string(frontmatter.get("valid_until")),
         "actor": optional_string(frontmatter.get("actor")),
         "lane": optional_string(candidate.get("lane")) if candidate else optional_string(frontmatter.get("lane")),
         "source_refs": page_source_refs(frontmatter),
