@@ -59,25 +59,50 @@ def llm_extract_capture(
     )
 
     try:
-        result = llm_client.extract_json(
-            system_prompt=EXTRACTION_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-        )
-        metadata = result.pop("_lore_meta", {}) if isinstance(result, dict) else {}
-        validated = _validate_llm_output(result, page_id, title)
-        model_version = _resolve_model_version(llm_client, metadata)
-        token_usage = _resolve_token_usage(metadata)
-        for claim in validated["claims"]:
-            claim.model_version = model_version
-            claim.prompt_hash = EXTRACTION_PROMPT_HASH
-            claim.token_usage = token_usage
-        return validated
+        try:
+            return _extract_and_validate(llm_client, user_prompt, page_id, title)
+        except ValueError:
+            repair_prompt = (
+                f"{user_prompt}\n\n"
+                "IMPORTANT: Your previous response had schema validation errors. "
+                "You must respond with ONLY valid JSON matching this exact structure:\n"
+                "```json\n"
+                "{entities: [{name, kind, summary, source_page_ids, source_capture_ids}], "
+                "claims: [{claim, summary, source_page_ids, source_capture_ids}], "
+                "edges: [{source, target, relationship_type, label, source_page_ids, source_capture_ids}], "
+                "invalidations: [{original_claim, invalidation_reason, source_page_ids, source_capture_ids}]}\n"
+                "```\n"
+                "All source_page_ids and source_capture_ids must be string lists. "
+                "Do not include any additional fields or commentary."
+            )
+            return _extract_and_validate(llm_client, repair_prompt, page_id, title)
     except (LLMError, LLMJsonError) as exc:
         logger.warning("LLM extraction failed for %s: %s", page_id, exc)
         raise
     except ValueError as exc:
         logger.warning("LLM output validation failed for %s: %s", page_id, exc)
         raise
+
+
+def _extract_and_validate(
+    llm_client: FallbackLLMClient,
+    user_prompt: str,
+    page_id: str,
+    title: str,
+) -> dict[str, list]:
+    result = llm_client.extract_json(
+        system_prompt=EXTRACTION_SYSTEM_PROMPT,
+        user_prompt=user_prompt,
+    )
+    metadata = result.pop("_lore_meta", {}) if isinstance(result, dict) else {}
+    validated = _validate_llm_output(result, page_id, title)
+    model_version = _resolve_model_version(llm_client, metadata)
+    token_usage = _resolve_token_usage(metadata)
+    for claim in validated["claims"]:
+        claim.model_version = model_version
+        claim.prompt_hash = EXTRACTION_PROMPT_HASH
+        claim.token_usage = token_usage
+    return validated
 
 
 def _validate_llm_output(raw: dict[str, Any], page_id: str, title: str = "") -> dict[str, list]:

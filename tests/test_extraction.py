@@ -8,6 +8,7 @@ from unittest import mock
 from lore_app.cli import main
 from lore_app.extraction import compute_extraction_hash, extract_from_captures, get_unprocessed_captures
 from lore_app.ledger import LedgerDB
+from lore_app.llm_extractor import llm_extract_capture
 from lore_app.llm_provider import FallbackLLMClient, LLMError
 from lore_app.repository import LoreRepository
 from lore_app.schemas import (
@@ -58,6 +59,29 @@ def make_ledger(tmp_path) -> LedgerDB:
     ledger = LedgerDB(tmp_path / "ledger.db")
     ledger.initialize()
     return ledger
+
+
+def invalid_llm_schema() -> dict:
+    return {"entities": [], "claims": "not-a-list", "edges": [], "invalidations": []}
+
+
+def valid_llm_response(capture_id: str, fact: str = "Lore stores structured candidates.") -> dict:
+    return {
+        "entities": [
+            {"subject": "services/lore", "name": "Lore", "entity_type": "service"},
+        ],
+        "claims": [
+            {
+                "subject": "services/lore",
+                "predicate": "states",
+                "object": fact,
+                "confidence": "high",
+                "source_page_ids": [capture_id],
+            },
+        ],
+        "edges": [],
+        "invalidations": [],
+    }
 
 
 def extraction_result(batch_id: str, capture_id: str, fact: str) -> ExtractionResult:
@@ -311,6 +335,85 @@ The API Gateway routes requests to backends.
     assert mock_client.extract_json.call_count == 1
 
 
+def test_schema_invalid_triggers_repair_retry(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    capture_id = add_capture(repo)
+    capture = repo.read_page(capture_id)
+    mock_client = mock.MagicMock(spec=FallbackLLMClient)
+    mock_client.extract_json.side_effect = [
+        invalid_llm_schema(),
+        valid_llm_response(capture_id, "Lore repairs invalid LLM schemas."),
+    ]
+
+    result = llm_extract_capture(capture, mock_client, repo=repo)
+
+    assert mock_client.extract_json.call_count == 2
+    repair_prompt = mock_client.extract_json.call_args_list[1].kwargs["user_prompt"]
+    assert "previous response had schema validation errors" in repair_prompt
+    assert result["claims"][0].object == "Lore repairs invalid LLM schemas."
+    assert result["claims"][0].source_page_ids == [capture_id]
+
+
+def test_schema_invalid_repair_also_fails(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    capture_id = add_capture(repo)
+    capture = repo.read_page(capture_id)
+    mock_client = mock.MagicMock(spec=FallbackLLMClient)
+    mock_client.extract_json.side_effect = [invalid_llm_schema(), invalid_llm_schema()]
+
+    with pytest.raises(ValueError, match="claims must be a list"):
+        llm_extract_capture(capture, mock_client, repo=repo)
+
+    assert mock_client.extract_json.call_count == 2
+
+
+def test_schema_invalid_escalates_to_glm(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    capture_id = add_capture(repo)
+    primary = mock.MagicMock()
+    primary.extract_json.side_effect = [invalid_llm_schema(), invalid_llm_schema()]
+    escalation = mock.MagicMock()
+    escalation.extract_json.return_value = valid_llm_response(capture_id, "Escalation extracted valid schema.")
+    llm_client = FallbackLLMClient(primary=primary, escalation=escalation)
+
+    result = extract_from_captures(
+        repo,
+        capture_ids=[capture_id],
+        dry_run=True,
+        llm_client=llm_client,
+        ledger_db=make_ledger(tmp_path),
+    )
+
+    assert primary.extract_json.call_count == 2
+    assert escalation.extract_json.call_count == 1
+    assert result.claims[0].object == "Escalation extracted valid schema."
+    assert result.claims[0].source_page_ids == [capture_id]
+
+
+def test_schema_invalid_escalation_also_fails_falls_back(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    capture_id = add_capture(repo)
+    primary = mock.MagicMock()
+    primary.extract_json.side_effect = [invalid_llm_schema(), invalid_llm_schema()]
+    escalation = mock.MagicMock()
+    escalation.extract_json.side_effect = [invalid_llm_schema(), invalid_llm_schema()]
+    llm_client = FallbackLLMClient(primary=primary, escalation=escalation)
+
+    result = extract_from_captures(
+        repo,
+        capture_ids=[capture_id],
+        dry_run=True,
+        llm_client=llm_client,
+        ledger_db=make_ledger(tmp_path),
+    )
+
+    assert primary.extract_json.call_count == 2
+    assert escalation.extract_json.call_count == 2
+    assert result.claims[0].subject == "services/lore"
+    assert result.claims[0].object == "Lore stores structured extraction candidates in a SQLite ledger."
+    assert result.claims[0].source_page_ids == [capture_id]
+
+
 def test_llm_provenance_on_extracted_claims(tmp_path):
     repo = LoreRepository(tmp_path / "pages")
     repo.upsert_page(
@@ -505,6 +608,35 @@ def test_provider_none_forces_deterministic(client):
     assert extract.status_code == 200, extract.text
     assert client.app.state.llm_client.extract_json.call_count == 0
     assert extract.json()["claims"][0]["subject"] == "services/lore"
+
+
+def test_provider_escalation_forces_escalation_client(client):
+    primary = mock.MagicMock()
+    primary.extract_json.return_value = valid_llm_response("unused", "Primary should not run.")
+    escalation = mock.MagicMock()
+    client.app.state.llm_client = FallbackLLMClient(primary=primary, escalation=escalation)
+
+    response = client.post(
+        "/api/capture",
+        json={
+            "title": "Provider escalation capture",
+            "observation": "Provider escalation references [[services/workflow-engine]].",
+            "suggested_target_page": "services/lore",
+        },
+    )
+    assert response.status_code == 201, response.text
+    capture_id = response.json()["page"]["id"]
+    escalation.extract_json.return_value = valid_llm_response(capture_id, "Escalation was forced.")
+
+    extract = client.post(
+        "/api/extraction/run",
+        json={"capture_ids": [capture_id], "dry_run": True, "provider": "escalation"},
+    )
+
+    assert extract.status_code == 200, extract.text
+    assert primary.extract_json.call_count == 0
+    assert escalation.extract_json.call_count == 1
+    assert extract.json()["claims"][0]["object"] == "Escalation was forced."
 
 
 def test_extraction_api_endpoints(client):

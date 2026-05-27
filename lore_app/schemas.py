@@ -930,7 +930,15 @@ class ExtractionRequest(BaseModel):
     )
     batch_size: int = Field(default=10, ge=1, le=50)
     dry_run: bool = Field(default=True, description="If True, return extraction results without storing in the ledger.")
-    provider: str | None = Field(default=None, description="LLM provider override. Defaults to configured provider.")
+    provider: str | None = Field(
+        default=None,
+        description=(
+            "Extraction provider override. "
+            "'none' or 'deterministic' for rule-based extraction, "
+            "'escalation' for escalation-model-only extraction, "
+            "or None for default LLM extraction."
+        ),
+    )
 
 
 class ExtractionStatusResponse(BaseModel):

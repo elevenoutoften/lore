@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from ..deps import get_ledger_db, get_repo
 from ..extraction import extract_from_captures, get_unprocessed_captures
 from ..ledger import LedgerDB
+from ..llm_provider import FallbackLLMClient, NoLlmClient
 from ..repository import LoreRepository
 from ..schemas import (
     ExtractionRequest,
@@ -27,6 +28,11 @@ def api_run_extraction(
     llm_client = getattr(request.app.state, "llm_client", None)
     if payload.provider in ("none", "deterministic"):
         llm_client = None
+    elif payload.provider == "escalation":
+        if isinstance(llm_client, FallbackLLMClient) and llm_client.escalation is not None:
+            llm_client = llm_client.escalation
+        elif isinstance(llm_client, NoLlmClient):
+            pass
     return extract_from_captures(
         repo,
         capture_ids=payload.capture_ids,

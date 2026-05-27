@@ -10,7 +10,7 @@ from typing import Any
 from .capture import CAPTURE_INTAKE_SUMMARY
 from .config import LoreConfig
 from .ledger import LedgerDB
-from .llm_provider import LLMError, LLMUnavailableError, NoLlmClient
+from .llm_provider import FallbackLLMClient, LLMError, LLMUnavailableError, NoLlmClient
 from .repository import LoreRepository, optional_string, string_list
 from .schemas import (
     ExtractedClaim,
@@ -89,8 +89,16 @@ def extract_from_captures(
 
         try:
             llm_result = llm_extract_capture(capture, active_llm_client, repo=repo)
-        except (LLMError, LLMUnavailableError, ValueError) as exc:
+        except (LLMError, LLMUnavailableError) as exc:
             llm_failure = exc
+        except ValueError as exc:
+            if isinstance(active_llm_client, FallbackLLMClient) and active_llm_client.escalation is not None:
+                try:
+                    llm_result = llm_extract_capture(capture, active_llm_client.escalation, repo=repo)
+                except (LLMError, LLMUnavailableError, ValueError) as escalation_exc:
+                    llm_failure = escalation_exc
+            else:
+                llm_failure = exc
 
         try:
             if llm_result is not None:
