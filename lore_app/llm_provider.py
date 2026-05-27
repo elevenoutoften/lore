@@ -33,7 +33,7 @@ class LLMProviderConfig:
 
     name: str
     model: str
-    base_url: str = DEFAULT_BASE_URL
+    base_url: str | None = DEFAULT_BASE_URL
     api_key: str | None = None
     max_tokens: int = 4096
     temperature: float = 0.3
@@ -50,7 +50,7 @@ class LLMProviderConfig:
             else DEFAULT_EXTRACTION_MODEL
         )
         return cls(
-            name=os.environ.get(f"{prefix}_PROVIDER", "openrouter"),
+            name=os.environ.get(f"{prefix}_PROVIDER", "none"),
             model=os.environ.get(f"{prefix}_MODEL", default_model),
             base_url=os.environ.get(f"{prefix}_BASE_URL", DEFAULT_BASE_URL),
             api_key=os.environ.get(f"{prefix}_API_KEY"),
@@ -67,7 +67,7 @@ class LLMClient:
     def __init__(self, config: LLMProviderConfig):
         self.config = config
         self._client = Client(
-            base_url=config.base_url,
+            base_url=config.base_url or DEFAULT_BASE_URL,
             headers=self._build_headers(),
             timeout=config.timeout_seconds,
         )
@@ -185,8 +185,33 @@ class LLMError(Exception):
     """Permanent LLM request failure."""
 
 
+class LLMUnavailableError(Exception):
+    """Raised when LLM features are requested but no provider is configured."""
+
+
 class LLMJsonError(LLMError):
     """LLM returned invalid JSON in json_object mode."""
+
+
+class NoLlmClient:
+    """No-op LLM client returned when no provider is configured."""
+
+    def extract_json(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        del args, kwargs
+        raise LLMUnavailableError(
+            "LLM provider is 'none'; no extraction available. "
+            "Set LORE_LLM_PROVIDER and LORE_LLM_API_KEY to enable LLM features."
+        )
+
+    def chat(self, *args: Any, **kwargs: Any) -> str:
+        del args, kwargs
+        raise LLMUnavailableError(
+            "LLM provider is 'none'; no chat available. "
+            "Set LORE_LLM_PROVIDER and LORE_LLM_API_KEY to enable LLM features."
+        )
+
+    def close(self) -> None:
+        pass
 
 
 class FallbackLLMClient:
@@ -244,10 +269,12 @@ def _primary_config_from_lore_config(config: "LoreConfig") -> LLMProviderConfig:
     return LLMProviderConfig(
         name=config.llm_provider,
         model=config.llm_model,
-        base_url=config.llm_base_url,
+        base_url=config.llm_base_url or None,
         api_key=config.llm_api_key,
         max_tokens=config.llm_max_tokens,
         temperature=config.llm_temperature,
+        timeout_seconds=config.llm_timeout_seconds,
+        max_retries=config.llm_max_retries,
     )
 
 
@@ -255,24 +282,31 @@ def _escalation_config_from_lore_config(config: "LoreConfig") -> LLMProviderConf
     return LLMProviderConfig(
         name=config.llm_provider,
         model=config.llm_escalation_model,
-        base_url=config.llm_base_url,
+        base_url=config.llm_base_url or None,
         api_key=config.llm_escalation_api_key,
         max_tokens=config.llm_max_tokens,
         temperature=config.llm_temperature,
+        timeout_seconds=config.llm_timeout_seconds,
+        max_retries=config.llm_max_retries,
     )
 
 
 def build_llm_client(
     config: "LoreConfig | None" = None,
     fallback_fn: Any | None = None,
-) -> FallbackLLMClient:
+) -> FallbackLLMClient | NoLlmClient:
     """Build a fallback-capable LLM client from LoreConfig or environment variables."""
+
+    if config is not None and config.llm_provider == "none":
+        return NoLlmClient()
 
     primary_config = (
         _primary_config_from_lore_config(config)
         if config
         else LLMProviderConfig.from_env("LORE_LLM")
     )
+    if primary_config.name == "none":
+        return NoLlmClient()
     primary = LLMClient(primary_config)
 
     if config:

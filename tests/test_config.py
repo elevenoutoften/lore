@@ -44,6 +44,11 @@ def test_config_defaults(monkeypatch):
     assert config.write_rate_window_seconds == 60
     assert config.audit_retention_days == 365
     assert config.csp_policy == ""
+    assert config.llm_provider == "none"
+    assert config.llm_model == ""
+    assert config.llm_base_url == ""
+    assert config.llm_timeout_seconds == 60.0
+    assert config.llm_max_retries == 3
 
 
 def test_config_env_overrides(monkeypatch, tmp_path):
@@ -73,6 +78,8 @@ def test_config_env_overrides(monkeypatch, tmp_path):
     assert payload["write_rate_window_seconds"] == 34
     assert payload["audit_retention_days"] == 56
     assert payload["csp_policy"] == "default-src 'none'"
+    assert payload["llm_timeout_seconds"] == 60.0
+    assert payload["llm_max_retries"] == 3
 
 
 def test_config_workspaces_env(monkeypatch, tmp_path):

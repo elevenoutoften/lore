@@ -10,7 +10,7 @@ from typing import Any
 from .capture import CAPTURE_INTAKE_SUMMARY
 from .config import LoreConfig
 from .ledger import LedgerDB
-from .llm_provider import LLMError
+from .llm_provider import LLMError, LLMUnavailableError, NoLlmClient
 from .repository import LoreRepository, optional_string, string_list
 from .schemas import (
     ExtractedClaim,
@@ -79,18 +79,18 @@ def extract_from_captures(
 
     seen_entities: set[tuple[str, str | None]] = set()
     seen_edges: set[tuple[str, str, str, tuple[str, ...]]] = set()
+    active_llm_client = llm_client or NoLlmClient()
 
     for capture in selected:
         source_capture_ids.append(capture.id)
         llm_result = None
         llm_failure: Exception | None = None
-        if llm_client is not None:
-            from .llm_extractor import llm_extract_capture
+        from .llm_extractor import llm_extract_capture
 
-            try:
-                llm_result = llm_extract_capture(capture, llm_client, repo=repo)
-            except (LLMError, ValueError) as exc:
-                llm_failure = exc
+        try:
+            llm_result = llm_extract_capture(capture, active_llm_client, repo=repo)
+        except (LLMError, LLMUnavailableError, ValueError) as exc:
+            llm_failure = exc
 
         try:
             if llm_result is not None:
@@ -107,7 +107,7 @@ def extract_from_captures(
             if llm_failure is not None:
                 ledger.store_deadletter(
                     capture_id=capture.id,
-                    provider=_deadletter_provider(llm_client, fallback_failed=True),
+                    provider=_deadletter_provider(active_llm_client, fallback_failed=True),
                     failure_kind=_deadletter_failure_kind(llm_failure, fallback_exc),
                     failure_detail=_deadletter_failure_detail(llm_failure, fallback_exc),
                     payload=_deadletter_payload(capture),
@@ -295,14 +295,14 @@ def _extract_capture(
     return entities, claims, edges, invalidations
 
 
-def _deadletter_provider(llm_client: Any | None, *, fallback_failed: bool) -> str:
+def _deadletter_provider(llm_client: Any, *, fallback_failed: bool) -> str:
     if fallback_failed:
         return "fallback"
     model = getattr(getattr(llm_client, "primary", None), "config", None)
     provider = getattr(model, "model", None)
     if provider:
         return str(provider)
-    return llm_client.__class__.__name__ if llm_client is not None else "unknown"
+    return llm_client.__class__.__name__
 
 
 def _deadletter_failure_kind(llm_failure: Exception, fallback_exc: Exception | None) -> str:

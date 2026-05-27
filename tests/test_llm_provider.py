@@ -7,6 +7,7 @@ from unittest import mock
 
 import pytest
 
+from lore_app.config import LoreConfig
 from lore_app.llm_provider import (
     DEFAULT_BASE_URL,
     DEFAULT_ESCALATION_MODEL,
@@ -16,6 +17,8 @@ from lore_app.llm_provider import (
     LLMError,
     LLMJsonError,
     LLMProviderConfig,
+    LLMUnavailableError,
+    NoLlmClient,
     build_llm_client,
 )
 
@@ -200,7 +203,14 @@ class TestFallbackLLMClient:
 
 
 class TestBuildLLMClient:
+    def test_default_lore_config_is_safe(self):
+        config = LoreConfig()
+        assert config.llm_provider == "none"
+        assert config.llm_model == ""
+        assert config.llm_base_url == ""
+
     def test_build_with_env(self, monkeypatch):
+        monkeypatch.setenv("LORE_LLM_PROVIDER", "openrouter")
         monkeypatch.setenv("LORE_LLM_API_KEY", "sk-test")
         monkeypatch.setenv("LORE_LLM_MODEL", "qwen3.6-plus")
         client = build_llm_client()
@@ -214,6 +224,44 @@ class TestBuildLLMClient:
             if key.startswith("LORE_LLM"):
                 monkeypatch.delenv(key, raising=False)
         client = build_llm_client()
+        assert isinstance(client, NoLlmClient)
+        client.close()
+
+    def test_no_llm_client_extract_json_raises(self):
+        client = NoLlmClient()
+        with pytest.raises(LLMUnavailableError, match="provider is 'none'"):
+            client.extract_json("sys", "user")
+
+    def test_no_llm_client_chat_raises(self):
+        client = NoLlmClient()
+        with pytest.raises(LLMUnavailableError, match="provider is 'none'"):
+            client.chat([{"role": "user", "content": "hi"}])
+
+    def test_no_llm_client_close_is_noop(self):
+        NoLlmClient().close()
+
+    def test_build_from_default_lore_config_returns_no_llm_client(self):
+        client = build_llm_client(config=LoreConfig())
+        assert isinstance(client, NoLlmClient)
+        client.close()
+
+    def test_build_from_explicit_provider_returns_real_client(self):
+        config = LoreConfig()
+        config.llm_provider = "openrouter"
+        config.llm_model = "qwen3.6-plus"
+        config.llm_base_url = DEFAULT_BASE_URL
+        config.llm_api_key = "sk-test"
+        config.llm_timeout_seconds = 12.5
+        config.llm_max_retries = 7
+        config.llm_escalation_api_key = "sk-escalation"
+
+        client = build_llm_client(config=config)
+
         assert isinstance(client, FallbackLLMClient)
-        assert client.primary.config.api_key is None
+        assert client.primary.config.model == "qwen3.6-plus"
+        assert client.primary.config.timeout_seconds == 12.5
+        assert client.primary.config.max_retries == 7
+        assert client.escalation is not None
+        assert client.escalation.config.timeout_seconds == 12.5
+        assert client.escalation.config.max_retries == 7
         client.close()

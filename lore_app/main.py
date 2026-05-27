@@ -107,9 +107,7 @@ def create_app(
     app.state.metrics = metrics
     app.state.templates = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
     app.state.code_inventories = {}
-    app.state.llm_client = (
-        build_llm_client(config=lore_config) if lore_config.llm_api_key else None
-    )
+    app.state.llm_client = build_llm_client(config=lore_config)
     app.state.write_rate_limiter = RateLimiter(
         max_requests=lore_config.write_rate_limit,
         window_seconds=lore_config.write_rate_window_seconds,
@@ -178,8 +176,7 @@ def create_app(
         vector_store.close()
         ledger_db.close()
         api_key_store.close()
-        if app.state.llm_client:
-            app.state.llm_client.close()
+        app.state.llm_client.close()
 
     if mount_workspaces:
         for workspace_name, workspace in lore_config.workspaces.items():
