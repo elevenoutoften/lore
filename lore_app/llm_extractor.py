@@ -27,7 +27,7 @@ EXTRACTION_SYSTEM_PROMPT = """You are a knowledge extraction engine. Given a mar
 
 Output a JSON object with keys "entities", "claims", "edges", "invalidations".
 Each entity has: subject (page ID like "services/api"), name (human-readable label), entity_type (service/concept/person/tool/system).
-Each claim has: subject (page ID), predicate, object, confidence (high/medium/low), source_page_ids (list), observed_at, valid_from, valid_until, actor.
+Each claim has: subject (page ID), predicate, object, confidence (high/medium/low), source_page_ids (list), observed_at, valid_from, valid_until, actor, section (the ## heading where this claim was found, e.g. "Summary" or "Architecture" -- include the heading text without the ## prefix).
 Each edge has: source (page ID), target (page ID), edge_type (mentions/depends_on/contradicts/supports/supersedes).
 Each invalidation has: target_claim (page ID or claim text), reason, source_page_ids.
 Only extract what is explicitly stated. Do not infer unstated relationships."""
@@ -170,6 +170,7 @@ def _validate_llm_output(raw: dict[str, Any], page_id: str, title: str = "") -> 
                     trace_id=_clean_string(item.get("trace_id")),
                     policies_applied=string_list(item.get("policies_applied")),
                     evidence=_clean_string(item.get("evidence")),
+                    section=_clean_string(item.get("section")),
                     source_page_ids=_source_pages(item.get("source_page_ids"), page_id),
                     epistemic_status=item.get("epistemic_status"),
                 )

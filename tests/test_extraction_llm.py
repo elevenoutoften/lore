@@ -138,6 +138,7 @@ def test_deterministic_only_extraction_has_no_llm_provenance(tmp_path):
     }
     claim = result.claims[0]
     assert claim.subject == "services/lore"
+    assert claim.section is None
     assert claim.model_version is None
     assert claim.prompt_hash is None
     assert claim.token_usage is None
@@ -192,6 +193,7 @@ def test_llm_success_populates_provenance_and_merges_results(tmp_path, monkeypat
                             "predicate": "depends_on",
                             "object": "Workflow Engine",
                             "confidence": "high",
+                            "section": "Architecture",
                             "source_page_ids": [first_capture],
                         }
                     ],
@@ -261,6 +263,8 @@ def test_llm_success_populates_provenance_and_merges_results(tmp_path, monkeypat
         assert claim.prompt_hash is not None
         assert claim.token_usage is not None
         assert claim.observed_at == observed_at.isoformat()
+    sections_by_claim = {(claim.predicate, claim.object): claim.section for claim in result.claims}
+    assert sections_by_claim[("depends_on", "Workflow Engine")] == "Architecture"
 
 
 def test_llm_failure_falls_back_to_deterministic_without_deadletter(tmp_path, fake_llm_client):

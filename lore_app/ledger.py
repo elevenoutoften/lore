@@ -145,6 +145,7 @@ class LedgerDB:
             ("superseded_by", "TEXT DEFAULT NULL"),
             ("invalidation_reason", "TEXT DEFAULT NULL"),
             ("epistemic_status", "TEXT DEFAULT NULL"),
+            ("target_section", "TEXT DEFAULT NULL"),
             ("model_version", "TEXT DEFAULT NULL"),
             ("prompt_hash", "TEXT DEFAULT NULL"),
             ("token_usage", "TEXT DEFAULT NULL"),
@@ -245,6 +246,7 @@ class LedgerDB:
                 dedupe_hash TEXT NOT NULL,
                 source_capture_ids TEXT NOT NULL,
                 source_page_ids TEXT DEFAULT '[]',
+                target_section TEXT,
                 observed_at TEXT,
                 valid_from TEXT,
                 valid_until TEXT,
@@ -506,9 +508,9 @@ class LedgerDB:
                         INSERT INTO extraction_candidates (
                             candidate_id, batch_id, candidate_type, status, confidence, epistemic_status,
                             actor, lane, content_json, dedupe_hash, source_capture_ids,
-                            source_page_ids, observed_at, valid_from, valid_until,
+                            source_page_ids, target_section, observed_at, valid_from, valid_until,
                             strength, model_version, prompt_hash, token_usage, created_at, updated_at
-                        ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             str(uuid.uuid4()),
@@ -522,6 +524,7 @@ class LedgerDB:
                             dedupe_hash,
                             json.dumps(result.source_capture_ids),
                             json.dumps(source_page_ids),
+                            metadata.get("target_section"),
                             metadata.get("observed_at"),
                             metadata.get("valid_from"),
                             metadata.get("valid_until"),
@@ -619,6 +622,7 @@ class LedgerDB:
                     UPDATE extraction_candidates
                     SET strength = ?, confidence = ?, epistemic_status = ?, source_capture_ids = ?,
                         source_page_ids = ?, valid_from = ?, valid_until = ?,
+                        target_section = COALESCE(?, target_section),
                         model_version = COALESCE(?, model_version),
                         prompt_hash = COALESCE(?, prompt_hash),
                         token_usage = COALESCE(?, token_usage),
@@ -633,6 +637,7 @@ class LedgerDB:
                         json.dumps(merged_pages),
                         existing_valid_from,
                         existing_valid_until,
+                        metadata.get("target_section"),
                         metadata.get("model_version"),
                         metadata.get("prompt_hash"),
                         json.dumps(metadata["token_usage"]) if metadata.get("token_usage") is not None else None,
@@ -663,10 +668,10 @@ class LedgerDB:
                 INSERT INTO extraction_candidates (
                     candidate_id, batch_id, candidate_type, status, confidence, epistemic_status,
                     actor, lane, content_json, dedupe_hash, source_capture_ids,
-                    source_page_ids, observed_at, valid_from, valid_until,
+                    source_page_ids, target_section, observed_at, valid_from, valid_until,
                     strength, normalized_subject, normalized_predicate, normalized_object,
                     model_version, prompt_hash, token_usage, created_at, updated_at
-                ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     candidate_id,
@@ -680,6 +685,7 @@ class LedgerDB:
                     dedupe_hash,
                     json.dumps(source_capture_ids),
                     json.dumps(source_page_ids),
+                    metadata.get("target_section"),
                     metadata.get("observed_at"),
                     metadata.get("valid_from"),
                     metadata.get("valid_until"),
@@ -1484,6 +1490,7 @@ def _candidate_metadata(candidate: Any) -> dict[str, Any]:
             "observed_at": candidate.observed_at,
             "valid_from": candidate.valid_from,
             "valid_until": candidate.valid_until,
+            "target_section": candidate.section,
             "model_version": candidate.model_version,
             "prompt_hash": candidate.prompt_hash,
             "token_usage": candidate.token_usage,

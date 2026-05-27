@@ -274,6 +274,7 @@ def _extract_capture(
             trace_id=trace_id,
             policies_applied=policies_applied,
             evidence=evidence,
+            section=None,
             source_page_ids=source_pages,
             epistemic_status=epistemic_status,
         )

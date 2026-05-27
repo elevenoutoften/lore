@@ -675,3 +675,87 @@ services:
     # Should NOT change code block
     assert "Docker Compose configuration" in result.content
     assert "Docker Compose app" in result.content
+
+
+def test_replace_in_target_section_skips_other_sections():
+    """Replace old_object only within the named section."""
+    from lore_app.patch_planner import _replace_old_object_in_section
+    from lore_app.schemas import PatchPlanStatus
+
+    content = "---\ntitle: Test\n---\n## Summary\nOld fact here.\n\n## Architecture\nOld fact here."
+    result = _replace_old_object_in_section(
+        content,
+        "Old fact here.",
+        "New fact.",
+        section_title="Summary",
+    )
+
+    assert result.status != PatchPlanStatus.needs_manual_review
+    assert "New fact." in result.content
+    assert result.content.count("Old fact here.") == 1
+
+
+def test_replace_without_section_returns_manual_review():
+    """Without a section title, replacement returns needs_manual_review."""
+    from lore_app.patch_planner import _replace_old_object_in_section
+    from lore_app.schemas import PatchPlanStatus
+
+    content = "---\ntitle: Test\n---\n## Summary\nOld fact here."
+    result = _replace_old_object_in_section(
+        content,
+        "Old fact here.",
+        "New fact.",
+        section_title=None,
+    )
+
+    assert result.status == PatchPlanStatus.needs_manual_review
+
+
+def test_replace_in_wrong_section_returns_manual_review():
+    """If old_object is not in the named section, return needs_manual_review."""
+    from lore_app.patch_planner import _replace_old_object_in_section
+    from lore_app.schemas import PatchPlanStatus
+
+    content = "---\ntitle: Test\n---\n## Summary\nSome text.\n\n## Architecture\nOld fact here."
+    result = _replace_old_object_in_section(
+        content,
+        "Old fact here.",
+        "New fact.",
+        section_title="Summary",
+    )
+
+    assert result.status == PatchPlanStatus.needs_manual_review
+
+
+def test_replace_skips_code_blocks():
+    """Replacement inside a target section skips code blocks."""
+    from lore_app.patch_planner import _replace_old_object_in_section
+    from lore_app.schemas import PatchPlanStatus
+
+    content = "---\ntitle: Test\n---\n## Summary\n```\nOld fact here.\n```\nOld fact here.\n"
+    result = _replace_old_object_in_section(
+        content,
+        "Old fact here.",
+        "New fact.",
+        section_title="Summary",
+    )
+
+    assert result.status != PatchPlanStatus.needs_manual_review
+    assert "New fact." in result.content
+    assert "Old fact here." in result.content
+
+
+def test_replace_multiple_matching_sections_returns_manual_review():
+    """If section title matches multiple sections, return needs_manual_review."""
+    from lore_app.patch_planner import _replace_old_object_in_section
+    from lore_app.schemas import PatchPlanStatus
+
+    content = "## Summary\nText 1.\n\n## Summary\nText 2.\n"
+    result = _replace_old_object_in_section(
+        content,
+        "Text 1.",
+        "New text.",
+        section_title="Summary",
+    )
+
+    assert result.status == PatchPlanStatus.needs_manual_review

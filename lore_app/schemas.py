@@ -905,6 +905,7 @@ class ExtractedClaim(BaseModel):
     trace_id: str | None = None
     policies_applied: list[str] = Field(default_factory=list)
     evidence: str | None = None
+    section: str | None = None
     source_page_ids: list[str] = Field(default_factory=list)
     epistemic_status: EpistemicStatus | None = None
     model_version: str | None = None

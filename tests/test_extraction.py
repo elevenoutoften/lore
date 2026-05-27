@@ -184,6 +184,7 @@ def test_ledger_store_extraction_result_stores_all_candidate_types(tmp_path):
                 confidence="high",
                 actor="nyx",
                 lane="project",
+                section="Facts",
                 source_page_ids=["inbox/capture"],
             )
         ],
@@ -215,6 +216,8 @@ def test_ledger_store_extraction_result_stores_all_candidate_types(tmp_path):
         "invalidation",
     }
     assert len(ledger.get_candidates(candidate_type="claim", status="candidate")) == 1
+    [claim_candidate] = ledger.get_candidates(candidate_type="claim", status="candidate")
+    assert claim_candidate["target_section"] == "Facts"
 
 
 def test_ledger_reset_extraction_for_specific_capture_ids(tmp_path):
