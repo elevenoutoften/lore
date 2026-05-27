@@ -122,9 +122,15 @@ def extract_from_captures(
                 continue
             raise
 
-        if llm_failure is not None and llm_result is None:
-            # Deterministic fallback succeeded, so continue without writing a dead-letter.
-            pass
+        if llm_failure is not None and llm_result is None and llm_client is not None:
+            ledger.store_deadletter(
+                capture_id=capture.id,
+                provider=_deadletter_provider(active_llm_client, fallback_failed=False),
+                failure_kind=_deadletter_failure_kind(llm_failure, None),
+                failure_detail=_deadletter_failure_detail(llm_failure, None),
+                payload=_deadletter_payload(capture),
+                batch_id=batch_id,
+            )
 
         for entity in capture_entities:
             key = (entity.name.casefold(), entity.target_page_hint)
@@ -314,7 +320,7 @@ def _deadletter_failure_kind(llm_failure: Exception, fallback_exc: Exception | N
     if fallback_exc is not None:
         return "fallback_exhausted"
     if isinstance(llm_failure, ValueError):
-        return "schema_error"
+        return "schema_invalid"
     message = str(llm_failure).casefold()
     if "timeout" in message:
         return "timeout"

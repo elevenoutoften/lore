@@ -79,6 +79,8 @@ class FakeLlmClient:
         mode = self.modes.get(page_id, "success")
         if mode == "error":
             raise LLMError(f"fake llm failure for {page_id}")
+        if mode == "timeout":
+            raise LLMError(f"fake timeout while extracting {page_id}")
         if mode == "invalid":
             return "not-json"  # type: ignore[return-value]
 
@@ -267,7 +269,7 @@ def test_llm_success_populates_provenance_and_merges_results(tmp_path, monkeypat
     assert sections_by_claim[("depends_on", "Workflow Engine")] == "Architecture"
 
 
-def test_llm_failure_falls_back_to_deterministic_without_deadletter(tmp_path, fake_llm_client):
+def test_llm_failure_records_deadletter_even_when_deterministic_succeeds(tmp_path, fake_llm_client):
     repo = LoreRepository(tmp_path / "pages")
     ledger = make_ledger(tmp_path)
     capture_id = add_capture(
@@ -295,10 +297,76 @@ def test_llm_failure_falls_back_to_deterministic_without_deadletter(tmp_path, fa
     assert claim.model_version is None
     assert claim.prompt_hash is None
     assert claim.token_usage is None
-    assert ledger.list_deadletters(status="unresolved") == []
+    deadletters = ledger.list_deadletters(status="unresolved")
+    assert len(deadletters) == 1
+    assert deadletters[0]["capture_id"] == capture_id
+    assert deadletters[0]["provider"] == "fake-test-model"
+    assert deadletters[0]["failure_kind"] == "llm_error"
+    assert f"fake llm failure for {capture_id}" in str(deadletters[0]["failure_detail"])
 
 
-def test_llm_and_deterministic_failure_creates_deadletter_and_continues_batch(tmp_path, fake_llm_client):
+def test_schema_invalid_records_deadletter_on_deterministic_success(tmp_path, fake_llm_client):
+    repo = LoreRepository(tmp_path / "pages")
+    ledger = make_ledger(tmp_path)
+    capture_id = add_capture(
+        repo,
+        "inbox/2026-05-26/schema-invalid",
+        title="Schema Invalid",
+        summary="Lore mentions auth.",
+        suggested_target_page="services/lore",
+        body="Lore mentions [[services/auth]].",
+    )
+    llm_client = fake_llm_client(modes={capture_id: "invalid"})
+
+    result = extract_from_captures(
+        repo,
+        capture_ids=[capture_id],
+        dry_run=True,
+        ledger_db=ledger,
+        llm_client=llm_client,
+    )
+
+    assert result.source_capture_ids == [capture_id]
+    assert any(entity.target_page_hint == "services/auth" for entity in result.entities)
+    deadletters = ledger.list_deadletters(status="unresolved")
+    assert len(deadletters) == 1
+    assert deadletters[0]["capture_id"] == capture_id
+    assert deadletters[0]["provider"] == "fake-test-model"
+    assert deadletters[0]["failure_kind"] == "schema_invalid"
+    assert "expected object, got str" in str(deadletters[0]["failure_detail"])
+
+
+def test_llm_timeout_records_deadletter_with_kind_timeout(tmp_path, fake_llm_client):
+    repo = LoreRepository(tmp_path / "pages")
+    ledger = make_ledger(tmp_path)
+    capture_id = add_capture(
+        repo,
+        "inbox/2026-05-26/llm-timeout",
+        title="LLM Timeout",
+        summary="Lore mentions auth.",
+        suggested_target_page="services/lore",
+        body="Lore mentions [[services/auth]].",
+    )
+    llm_client = fake_llm_client(modes={capture_id: "timeout"})
+
+    result = extract_from_captures(
+        repo,
+        capture_ids=[capture_id],
+        dry_run=True,
+        ledger_db=ledger,
+        llm_client=llm_client,
+    )
+
+    assert result.source_capture_ids == [capture_id]
+    assert any(entity.target_page_hint == "services/auth" for entity in result.entities)
+    deadletters = ledger.list_deadletters(status="unresolved")
+    assert len(deadletters) == 1
+    assert deadletters[0]["capture_id"] == capture_id
+    assert deadletters[0]["provider"] == "fake-test-model"
+    assert deadletters[0]["failure_kind"] == "timeout"
+
+
+def test_both_fail_records_deadletter_with_kind_fallback_exhausted(tmp_path, fake_llm_client):
     repo = LoreRepository(tmp_path / "pages")
     ledger = make_ledger(tmp_path)
     failed_capture = add_capture(
