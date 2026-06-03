@@ -38,7 +38,7 @@ def llm_extract_capture(
     page_detail: Any,
     llm_client: FallbackLLMClient,
     repo: LoreRepository | None = None,
-) -> dict[str, list] | None:
+) -> dict[str, Any] | None:
     """Extract entities, claims, edges, and invalidations from a capture using an LLM."""
 
     del repo
@@ -90,7 +90,7 @@ def _extract_and_validate(
     user_prompt: str,
     page_id: str,
     title: str,
-) -> dict[str, list]:
+) -> dict[str, Any]:
     result = llm_client.extract_json(
         system_prompt=EXTRACTION_SYSTEM_PROMPT,
         user_prompt=user_prompt,
@@ -106,7 +106,7 @@ def _extract_and_validate(
     return validated
 
 
-def _validate_llm_output(raw: dict[str, Any], page_id: str, title: str = "") -> dict[str, list]:
+def _validate_llm_output(raw: dict[str, Any], page_id: str, title: str = "") -> dict[str, Any]:
     """Validate and normalize LLM JSON into extraction schema instances."""
 
     if not isinstance(raw, dict):
@@ -127,9 +127,14 @@ def _validate_llm_output(raw: dict[str, Any], page_id: str, title: str = "") -> 
     claims: list[ExtractedClaim] = []
     edges: list[ExtractedEdge] = []
     invalidations: list[ExtractedInvalidation] = []
+    total_counts = {"entities": 0, "claims": 0, "edges": 0, "invalidations": 0}
+    dropped_counts = {"entities": 0, "claims": 0, "edges": 0, "invalidations": 0}
 
     for item in raw.get("entities", []):
+        total_counts["entities"] += 1
         if not isinstance(item, dict):
+            dropped_counts["entities"] += 1
+            logger.debug("Skipping non-dict LLM entity for %s", page_id)
             continue
         subject = _clean_string(item.get("subject")) or _clean_string(item.get("target_page_hint"))
         name = _clean_string(item.get("name")) or _entity_name(subject) or title or page_id
@@ -144,14 +149,20 @@ def _validate_llm_output(raw: dict[str, Any], page_id: str, title: str = "") -> 
                 )
             )
         except ValidationError as exc:
+            dropped_counts["entities"] += 1
             logger.debug("Skipping invalid LLM entity for %s: %s", page_id, exc)
 
     for item in raw.get("claims", []):
+        total_counts["claims"] += 1
         if not isinstance(item, dict):
+            dropped_counts["claims"] += 1
+            logger.debug("Skipping non-dict LLM claim for %s", page_id)
             continue
         predicate = _clean_string(item.get("predicate"))
         obj = _clean_string(item.get("object"))
         if not predicate or not obj:
+            dropped_counts["claims"] += 1
+            logger.debug("Skipping incomplete LLM claim for %s", page_id)
             continue
         try:
             claims.append(
@@ -176,14 +187,20 @@ def _validate_llm_output(raw: dict[str, Any], page_id: str, title: str = "") -> 
                 )
             )
         except ValidationError as exc:
+            dropped_counts["claims"] += 1
             logger.debug("Skipping invalid LLM claim for %s: %s", page_id, exc)
 
     for item in raw.get("edges", []):
+        total_counts["edges"] += 1
         if not isinstance(item, dict):
+            dropped_counts["edges"] += 1
+            logger.debug("Skipping non-dict LLM edge for %s", page_id)
             continue
         source = _clean_string(item.get("source")) or _clean_string(item.get("source_entity")) or page_id
         target = _clean_string(item.get("target")) or _clean_string(item.get("target_entity"))
         if not target:
+            dropped_counts["edges"] += 1
+            logger.debug("Skipping incomplete LLM edge for %s", page_id)
             continue
         try:
             edges.append(
@@ -201,14 +218,20 @@ def _validate_llm_output(raw: dict[str, Any], page_id: str, title: str = "") -> 
                 )
             )
         except ValidationError as exc:
+            dropped_counts["edges"] += 1
             logger.debug("Skipping invalid LLM edge for %s: %s", page_id, exc)
 
     for item in raw.get("invalidations", []):
+        total_counts["invalidations"] += 1
         if not isinstance(item, dict):
+            dropped_counts["invalidations"] += 1
+            logger.debug("Skipping non-dict LLM invalidation for %s", page_id)
             continue
         old_fact = _clean_string(item.get("target_claim")) or _clean_string(item.get("old_fact"))
         reason = _clean_string(item.get("reason"))
         if not old_fact or not reason:
+            dropped_counts["invalidations"] += 1
+            logger.debug("Skipping incomplete LLM invalidation for %s", page_id)
             continue
         try:
             invalidations.append(
@@ -222,13 +245,39 @@ def _validate_llm_output(raw: dict[str, Any], page_id: str, title: str = "") -> 
                 )
             )
         except ValidationError as exc:
+            dropped_counts["invalidations"] += 1
             logger.debug("Skipping invalid LLM invalidation for %s: %s", page_id, exc)
+
+    low_confidence_claims = sum(1 for claim in claims if claim.confidence == "low")
+    if len(claims) >= 3 and low_confidence_claims / len(claims) > 0.8:
+        raise ValueError(
+            "LLM output quality too low: "
+            f"{low_confidence_claims}/{len(claims)} claims have low confidence (>=80% threshold)"
+        )
+
+    total_received = sum(total_counts.values())
+    total_validated = total_received - sum(dropped_counts.values())
+    if total_received > 0 and total_validated == 0:
+        raise ValueError(f"LLM output produced zero valid items from {total_received} total")
+
+    for type_name in ("entities", "claims", "edges", "invalidations"):
+        total = total_counts[type_name]
+        dropped = dropped_counts[type_name]
+        if total > 0 and dropped / total > 0.5:
+            percentage = dropped / total * 100
+            raise ValueError(
+                "LLM output quality too low: "
+                f"{type_name} dropped {dropped}/{total} ({percentage:.1f}%), threshold is 50%. "
+                f"Detail: {type_name} {dropped}/{total} items failed validation"
+            )
 
     return {
         "entities": entities,
         "claims": claims,
         "edges": edges,
         "invalidations": invalidations,
+        "dropped": dropped_counts,
+        "total": total_counts,
     }
 
 

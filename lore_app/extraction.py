@@ -122,6 +122,8 @@ def extract_from_captures(
                 continue
             raise
 
+        # Record LLM quality failures even when deterministic fallback succeeds.
+        # This preserves invalid or low-quality provider output for review.
         if llm_failure is not None and llm_result is None and llm_client is not None:
             ledger.store_deadletter(
                 capture_id=capture.id,

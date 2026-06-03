@@ -132,6 +132,27 @@ def _page_id_from_prompt(user_prompt: str) -> str:
     return match.group(1).strip()
 
 
+def quality_drop_response(capture_id: str) -> dict:
+    return {
+        "entities": [
+            None,
+            None,
+            {"subject": "services/lore", "name": "Lore", "entity_type": "service"},
+        ],
+        "claims": [
+            {
+                "subject": "services/lore",
+                "predicate": "states",
+                "object": "Lore has one valid claim.",
+                "confidence": "high",
+                "source_page_ids": [capture_id],
+            },
+        ],
+        "edges": [],
+        "invalidations": [],
+    }
+
+
 class SequencedLlmClient:
     def __init__(self, responses: list[dict | object], *, model: str = "sequenced-test-model"):
         self._responses = list(responses)
@@ -156,6 +177,55 @@ class SequencedLlmClient:
 
     def close(self) -> None:
         pass
+
+
+def test_quality_drops_trigger_value_error():
+    raw = {
+        "entities": [
+            None,
+            None,
+            {"subject": "services/lore", "name": "Lore", "entity_type": "service"},
+        ],
+        "claims": [],
+        "edges": [],
+        "invalidations": [],
+    }
+
+    with pytest.raises(ValueError, match="dropped"):
+        llm_extractor_module._validate_llm_output(raw, "inbox/quality-drops", "Quality Drops")
+
+
+def test_all_items_dropped_triggers_value_error():
+    raw = {
+        "entities": [None],
+        "claims": [None],
+        "edges": [None],
+        "invalidations": [None],
+    }
+
+    with pytest.raises(ValueError, match="zero valid items"):
+        llm_extractor_module._validate_llm_output(raw, "inbox/all-dropped", "All Dropped")
+
+
+def test_low_confidence_triggers_value_error():
+    raw = {
+        "entities": [],
+        "claims": [
+            {
+                "subject": "services/lore",
+                "predicate": "states",
+                "object": f"Low confidence claim {index}.",
+                "confidence": "low",
+                "source_page_ids": ["inbox/low-confidence"],
+            }
+            for index in range(5)
+        ],
+        "edges": [],
+        "invalidations": [],
+    }
+
+    with pytest.raises(ValueError, match="low confidence"):
+        llm_extractor_module._validate_llm_output(raw, "inbox/low-confidence", "Low Confidence")
 
 
 def test_deterministic_only_extraction_has_no_llm_provenance(tmp_path):
@@ -596,6 +666,52 @@ def test_repair_retry_on_schema_invalid(tmp_path):
     assert result["claims"][0].prompt_hash is not None
 
 
+def test_quality_error_triggers_repair_retry(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    capture_id = add_capture(
+        repo,
+        "inbox/2026-05-26/quality-repair-retry",
+        title="Quality Repair Retry",
+        summary="Lore uses auth.",
+        suggested_target_page="services/lore",
+        body="Lore uses [[Auth Service|services/auth]].",
+    )
+    capture = repo.read_page(capture_id)
+    assert capture is not None
+    llm_client = SequencedLlmClient(
+        responses=[
+            quality_drop_response(capture_id),
+            {
+                "entities": [
+                    {"subject": "services/lore", "name": "Lore", "entity_type": "service"},
+                ],
+                "claims": [
+                    {
+                        "subject": "services/lore",
+                        "predicate": "uses",
+                        "object": "Auth Service",
+                        "confidence": "high",
+                        "source_page_ids": [capture_id],
+                    }
+                ],
+                "edges": [],
+                "invalidations": [],
+            },
+        ],
+        model="quality-repair-model",
+    )
+
+    result = llm_extractor_module.llm_extract_capture(capture, llm_client, repo=repo)
+
+    assert len(llm_client.prompts) == 2
+    assert "IMPORTANT: Your previous response had schema validation errors." in llm_client.prompts[1]
+    assert len(result["entities"]) == 1
+    assert result["claims"][0].predicate == "uses"
+    assert result["claims"][0].model_version == "quality-repair-model"
+    assert result["dropped"] == {"entities": 0, "claims": 0, "edges": 0, "invalidations": 0}
+    assert result["total"] == {"entities": 1, "claims": 1, "edges": 0, "invalidations": 0}
+
+
 def test_escalation_on_schema_invalid_failure(tmp_path):
     repo = LoreRepository(tmp_path / "pages")
     ledger = make_ledger(tmp_path)
@@ -660,6 +776,53 @@ def test_escalation_on_schema_invalid_failure(tmp_path):
     assert result.claims[0].predicate == "depends_on"
     assert result.claims[0].model_version == "escalation-model"
     assert ledger.list_deadletters(status="unresolved") == []
+
+
+def test_quality_error_triggers_escalation_via_extraction(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    ledger = make_ledger(tmp_path)
+    capture_id = add_capture(
+        repo,
+        "inbox/2026-05-26/quality-escalation",
+        title="Quality Escalation",
+        summary="Lore depends on auth.",
+        suggested_target_page="services/lore",
+        body="Lore depends on [[Auth Service|services/auth]].",
+    )
+    primary = SequencedLlmClient(
+        responses=[
+            quality_drop_response(capture_id),
+            quality_drop_response(capture_id),
+        ],
+        model="primary-quality-model",
+    )
+    escalation = SequencedLlmClient(
+        responses=[
+            quality_drop_response(capture_id),
+            quality_drop_response(capture_id),
+        ],
+        model="escalation-quality-model",
+    )
+    llm_client = FallbackLLMClient(primary=primary, escalation=escalation)
+
+    result = extract_from_captures(
+        repo,
+        capture_ids=[capture_id],
+        dry_run=True,
+        ledger_db=ledger,
+        llm_client=llm_client,
+    )
+
+    assert result.source_capture_ids == [capture_id]
+    assert len(primary.prompts) == 2
+    assert len(escalation.prompts) == 2
+    assert result.claims[0].model_version is None
+    assert any(entity.target_page_hint == "services/auth" for entity in result.entities)
+    deadletters = ledger.list_deadletters(status="unresolved")
+    assert len(deadletters) == 1
+    assert deadletters[0]["capture_id"] == capture_id
+    assert deadletters[0]["failure_kind"] == "schema_invalid"
+    assert "dropped" in str(deadletters[0]["failure_detail"])
 
 
 def test_both_fail_records_deadletter_with_kind_fallback_exhausted(tmp_path, fake_llm_client):
