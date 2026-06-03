@@ -17,5 +17,5 @@ Gemma 4 is available via a local endpoint but **must not** be promoted to produc
 ## Eval Metrics Thresholds
 - JSON validity: 100%
 - Schema validity: 100%
-- Provenance completeness: ≥50% per fixture
+- Provenance completeness: >=50% per fixture
 - Hallucination rate: 0 for must_not_contain_entities

@@ -38,6 +38,12 @@ jobs:
           mkdir -p /tmp/lore-ci-db /tmp/lore-ci-pages
           python -m pytest tests/ eval --timeout=60
 
+      - name: Extraction eval gate
+        run: |
+          rm -rf /tmp/lore-ci-db /tmp/lore-ci-pages
+          mkdir -p /tmp/lore-ci-db /tmp/lore-ci-pages
+          python -m pytest tests/test_eval_extraction.py -v
+
   lint:
     runs-on: ubuntu-latest
     steps:
