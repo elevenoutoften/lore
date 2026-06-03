@@ -429,17 +429,25 @@ def page_result_provenance(
     frontmatter = page.frontmatter
     candidates = (ledger_candidates_by_page or {}).get(page.id, [])
     candidate = candidates[0] if candidates else None
+    refs = list(page_source_refs(frontmatter))
+    if candidate:
+        refs.extend(string_list(candidate.get("source_capture_ids")))
+        refs.extend(string_list(candidate.get("source_page_ids")))
     return {
-        "observed_at": optional_string(frontmatter.get("observed_at")),
+        "observed_at": optional_string(candidate.get("observed_at"))
+        if candidate
+        else optional_string(frontmatter.get("observed_at")),
         "valid_from": optional_string(candidate.get("valid_from"))
         if candidate
         else optional_string(frontmatter.get("valid_from")),
         "valid_until": optional_string(candidate.get("valid_until"))
         if candidate
         else optional_string(frontmatter.get("valid_until")),
-        "actor": optional_string(frontmatter.get("actor")),
+        "actor": optional_string(candidate.get("actor"))
+        if candidate
+        else optional_string(frontmatter.get("actor")),
         "lane": optional_string(candidate.get("lane")) if candidate else optional_string(frontmatter.get("lane")),
-        "source_refs": page_source_refs(frontmatter),
+        "source_refs": list(dict.fromkeys(refs)),
     }
 
 
