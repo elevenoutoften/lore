@@ -12,7 +12,7 @@ import lore_app.llm_extractor as llm_extractor_module
 from lore_app.cli import main as cli_main
 from lore_app.extraction import extract_from_captures
 from lore_app.ledger import LedgerDB
-from lore_app.llm_provider import FallbackLLMClient, LLMError
+from lore_app.llm_provider import FallbackLLMClient, LLMError, NoLlmClient
 from lore_app.repository import LoreRepository
 
 
@@ -918,14 +918,22 @@ def test_retry_cli_resolves_deadletter(tmp_path, monkeypatch, capsys):
         payload="{}",
         batch_id="batch-retry",
     )
-    calls: list[list[str]] = []
+    llm_client = object()
+    calls: list[dict[str, object]] = []
 
     def fake_extract_from_captures(repo_arg, capture_ids=None, batch_size=10, dry_run=True, *, ledger_db=None, llm_client=None):
-        del repo_arg, batch_size, dry_run, ledger_db, llm_client
-        calls.append(list(capture_ids or []))
+        del repo_arg, batch_size, ledger_db
+        calls.append(
+            {
+                "capture_ids": list(capture_ids or []),
+                "dry_run": dry_run,
+                "llm_client": llm_client,
+            }
+        )
         return SimpleNamespace(source_capture_ids=list(capture_ids or []))
 
     monkeypatch.setattr(extraction_module, "extract_from_captures", fake_extract_from_captures)
+    monkeypatch.setattr("lore_app.llm_provider.build_llm_client", lambda *, config: llm_client)
     monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
     monkeypatch.setenv("LORE_LEDGER_DB", str(tmp_path / "ledger.db"))
 
@@ -936,11 +944,55 @@ def test_retry_cli_resolves_deadletter(tmp_path, monkeypatch, capsys):
     resolved_deadletters = ledger.list_deadletters(status="resolved")
     assert len(resolved_deadletters) == 1
     assert resolved_deadletters[0]["deadletter_id"] == deadletter_id
+    assert resolved_deadletters[0]["resolved_by"] == "llm"
+    assert resolved_deadletters[0]["retry_count"] == 1
+    assert resolved_deadletters[0]["attempted_at"] is not None
+    assert resolved_deadletters[0]["last_retry_at"] is not None
     assert ledger.list_deadletters(status="unresolved") == []
-    assert calls == [[capture_id]]
+    assert calls == [{"capture_ids": [capture_id], "dry_run": False, "llm_client": llm_client}]
 
     assert cli_main(["extraction", "retry", "--limit", "1"]) == 0
     second_output = capsys.readouterr().out
     assert '"retried": 0' in second_output
     assert '"resolved": 0' in second_output
-    assert calls == [[capture_id]]
+    assert calls == [{"capture_ids": [capture_id], "dry_run": False, "llm_client": llm_client}]
+
+
+def test_retry_cli_marks_no_provider_resolution_as_deterministic(tmp_path, monkeypatch, capsys):
+    repo = LoreRepository(tmp_path / "pages")
+    ledger = make_ledger(tmp_path)
+    capture_id = add_capture(
+        repo,
+        "inbox/2026-05-26/retry-cli-no-provider",
+        title="Retry CLI No Provider",
+        summary="Lore mentions auth.",
+        suggested_target_page="services/lore",
+        body="Lore mentions [[services/auth]].",
+    )
+    deadletter_id = ledger.store_deadletter(
+        capture_id=capture_id,
+        provider="fake-test-model",
+        failure_kind="llm_error",
+        failure_detail="boom",
+        payload="{}",
+        batch_id="batch-retry",
+    )
+
+    def fake_extract_from_captures(repo_arg, capture_ids=None, batch_size=10, dry_run=True, *, ledger_db=None, llm_client=None):
+        del repo_arg, batch_size, dry_run, ledger_db
+        assert isinstance(llm_client, NoLlmClient)
+        return SimpleNamespace(source_capture_ids=list(capture_ids or []))
+
+    monkeypatch.setattr(extraction_module, "extract_from_captures", fake_extract_from_captures)
+    monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
+    monkeypatch.setenv("LORE_LEDGER_DB", str(tmp_path / "ledger.db"))
+    monkeypatch.setenv("LORE_LLM_PROVIDER", "none")
+
+    assert cli_main(["extraction", "retry", "--limit", "1"]) == 0
+    output = capsys.readouterr().out
+    assert '"retried": 1' in output
+    assert '"resolved": 1' in output
+    resolved_deadletters = ledger.list_deadletters(status="resolved")
+    assert len(resolved_deadletters) == 1
+    assert resolved_deadletters[0]["deadletter_id"] == deadletter_id
+    assert resolved_deadletters[0]["resolved_by"] == "deterministic"

@@ -344,28 +344,36 @@ def cmd_extraction_retry(args: argparse.Namespace) -> int:
     from .config import LoreConfig
     from .extraction import extract_from_captures
     from .ledger import LedgerDB
+    from .llm_provider import NoLlmClient, build_llm_client
     from .repository import LoreRepository
 
     config = LoreConfig()
     repo = LoreRepository(config.content_dir)
     ledger = LedgerDB(config.ledger_db)
     ledger.initialize()
+    llm_client = build_llm_client(config=config)
+    resolved_by = "deterministic" if isinstance(llm_client, NoLlmClient) else "llm"
 
     retried = 0
     resolved = 0
     deadletters = ledger.list_deadletters(status="unresolved", limit=args.limit)
     for deadletter in deadletters:
         retried += 1
+        ledger.increment_retry(str(deadletter["deadletter_id"]))
         try:
             result = extract_from_captures(
                 repo,
                 capture_ids=[str(deadletter["capture_id"])],
-                dry_run=True,
+                dry_run=False,
                 ledger_db=ledger,
+                llm_client=llm_client,
             )
         except Exception:
             continue
-        if result.source_capture_ids and ledger.resolve_deadletter(str(deadletter["deadletter_id"])):
+        if result.source_capture_ids and ledger.resolve_deadletter(
+            str(deadletter["deadletter_id"]),
+            resolved_by=resolved_by,
+        ):
             resolved += 1
 
     print(json.dumps({"retried": retried, "resolved": resolved}, indent=2))

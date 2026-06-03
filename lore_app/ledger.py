@@ -135,7 +135,11 @@ class LedgerDB:
             ("batch_id", "TEXT"),
             ("status", "TEXT NOT NULL DEFAULT 'unresolved'"),
             ("resolved_at", "TEXT"),
+            ("resolved_by", "TEXT DEFAULT NULL"),
             ("created_at", "TEXT NOT NULL DEFAULT ''"),
+            ("attempted_at", "TEXT DEFAULT NULL"),
+            ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
+            ("last_retry_at", "TEXT DEFAULT NULL"),
         ],
         "extraction_candidates": [
             ("normalized_subject", "TEXT DEFAULT NULL"),
@@ -278,7 +282,11 @@ class LedgerDB:
                 batch_id TEXT,
                 status TEXT NOT NULL DEFAULT 'unresolved',
                 resolved_at TEXT,
-                created_at TEXT NOT NULL
+                resolved_by TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                attempted_at TEXT DEFAULT NULL,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                last_retry_at TEXT DEFAULT NULL
             );
 
             CREATE TABLE IF NOT EXISTS patch_plans (
@@ -950,8 +958,9 @@ class LedgerDB:
                 """
                 INSERT INTO extraction_deadletters (
                     deadletter_id, capture_id, provider, failure_kind, failure_detail,
-                    payload, batch_id, status, resolved_at, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'unresolved', NULL, ?)
+                    payload, batch_id, status, resolved_at, resolved_by, created_at,
+                    attempted_at, retry_count, last_retry_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'unresolved', NULL, NULL, ?, NULL, 0, NULL)
                 """,
                 (
                     deadletter_id,
@@ -993,15 +1002,39 @@ class LedgerDB:
         return [dict(row) for row in rows]
 
     @retry_on_locked()
-    def resolve_deadletter(self, deadletter_id: str) -> bool:
+    def resolve_deadletter(self, deadletter_id: str, *, resolved_by: str | None = None) -> bool:
         with self._lock:
             cursor = self.connection.execute(
                 """
                 UPDATE extraction_deadletters
-                SET status = 'resolved', resolved_at = ?
+                SET status = 'resolved', resolved_at = ?, resolved_by = ?
                 WHERE deadletter_id = ? AND status != 'resolved'
                 """,
-                (utc_now(), deadletter_id),
+                (utc_now(), resolved_by, deadletter_id),
+            )
+            self.connection.commit()
+            if cursor.rowcount > 0:
+                self._bump_generation()
+            return cursor.rowcount > 0
+
+    @retry_on_locked()
+    def increment_retry(self, deadletter_id: str) -> bool:
+        """Increment retry metadata for a dead-letter."""
+        now = utc_now()
+        with self._lock:
+            cursor = self.connection.execute(
+                """
+                UPDATE extraction_deadletters
+                SET retry_count = retry_count + 1,
+                    last_retry_at = ?,
+                    attempted_at = ?,
+                    status = CASE
+                        WHEN status = 'unresolved' THEN 'retried'
+                        ELSE status
+                    END
+                WHERE deadletter_id = ?
+                """,
+                (now, now, deadletter_id),
             )
             self.connection.commit()
             if cursor.rowcount > 0:
