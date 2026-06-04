@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} - {{ app_name }}</title>
+  <meta name="description" content="Configure Lore extraction LLM provider settings.">
+  <meta name="theme-color" content="#431741">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="{{ favicon_url }}">
+  <link rel="stylesheet" href="/static/lore.css?v=20260604-settings">
+  <style>
+    .settings-page {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .settings-header,
+    .settings-panel,
+    .settings-status {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: 0 18px 60px rgba(9, 3, 7, 0.34);
+    }
+
+    .settings-header,
+    .settings-panel {
+      padding: 1rem;
+    }
+
+    .settings-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .settings-title {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-top: 0.18rem;
+    }
+
+    .settings-state,
+    .settings-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 1.7rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+      color: var(--muted);
+      font-size: 0.62rem;
+      padding: 0 0.5rem;
+      text-transform: uppercase;
+    }
+
+    .settings-state {
+      gap: 0.45rem;
+    }
+
+    .settings-state-dot {
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    .settings-state.is-configured .settings-state-dot {
+      background: var(--green);
+      box-shadow: 0 0 0.5rem rgba(125, 232, 170, 0.55);
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: minmax(18rem, 0.9fr) minmax(0, 1.1fr);
+      gap: 1rem;
+      align-items: start;
+    }
+
+    .settings-panel h3 {
+      margin: 0 0 0.85rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .settings-panel p {
+      color: var(--muted);
+    }
+
+    .settings-panel form {
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .settings-panel label {
+      display: grid;
+      gap: 0.35rem;
+    }
+
+    .settings-panel input {
+      width: 100%;
+    }
+
+    .settings-form-grid,
+    .settings-summary {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .settings-summary {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+    }
+
+    .settings-field {
+      display: grid;
+      gap: 0.2rem;
+      padding: 0.75rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(9, 3, 7, 0.42);
+      min-height: 5rem;
+    }
+
+    .settings-field dt {
+      color: var(--pink);
+      font-size: 0.62rem;
+      text-transform: uppercase;
+    }
+
+    .settings-field dd {
+      margin: 0;
+      color: var(--text);
+      overflow-wrap: anywhere;
+    }
+
+    .settings-form-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .settings-form-grid .settings-form-full {
+      grid-column: 1 / -1;
+    }
+
+    .settings-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .settings-actions button {
+      justify-self: start;
+    }
+
+    .settings-actions button[data-reset] {
+      background: transparent;
+      color: #fecaca;
+      border-color: rgba(248, 113, 113, 0.42);
+    }
+
+    .settings-actions button[data-reset]:hover {
+      background: rgba(248, 113, 113, 0.12);
+      border-color: rgba(248, 113, 113, 0.6);
+    }
+
+    .settings-status {
+      display: none;
+      padding: 0.85rem;
+      color: var(--muted);
+    }
+
+    .settings-status.is-visible {
+      display: block;
+    }
+
+    .settings-status.is-success {
+      border-color: rgba(125, 232, 170, 0.42);
+      background: rgba(125, 232, 170, 0.12);
+      color: #d7ffe5;
+    }
+
+    .settings-status.is-error {
+      border-color: rgba(248, 113, 113, 0.42);
+      background: rgba(248, 113, 113, 0.12);
+      color: #fecaca;
+    }
+
+    @media (max-width: 860px) {
+      .settings-header,
+      .settings-grid,
+      .settings-form-grid {
+        display: grid;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .settings-form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell settings-page">
+    <header class="topbar">
+      <div>
+        <p class="wordmark">{{ brand_title }}</p>
+        <h1>{{ app_name }}</h1>
+      </div>
+      <nav class="topbar-links" aria-label="Lore endpoints">
+        <a href="/">Pages</a>
+        <a href="/api/pages">API</a>
+        <a href="/captures">Captures</a>
+        <a href="/api-keys">Keys</a>
+        <a href="/settings">Settings</a>
+        <a href="/mcp">MCP</a>
+      </nav>
+    </header>
+
+    <main class="settings-page">
+      <section class="settings-header" aria-labelledby="settings-title">
+        <div>
+          <p class="eyebrow">Runtime Configuration</p>
+          <div class="settings-title">
+            <h2 id="settings-title">LLM Provider Settings</h2>
+            <span class="settings-state" data-provider-state>
+              <span class="settings-state-dot" aria-hidden="true"></span>
+              <span data-provider-state-label>Loading</span>
+            </span>
+          </div>
+          <p>Configure the extraction LLM provider at runtime. Changes take effect immediately.</p>
+        </div>
+      </section>
+
+      <div class="settings-status" data-status role="status" aria-live="polite"></div>
+
+      <section class="settings-grid">
+        <article class="settings-panel">
+          <h3>Bearer Token</h3>
+          <form data-token-form>
+            <label>
+              <span>Admin API key</span>
+              <input name="bearer_token" type="password" autocomplete="off" placeholder="Paste an admin bearer token">
+            </label>
+          </form>
+
+          <h3>Current Configuration</h3>
+          <dl class="settings-summary" data-current-settings>
+            <div class="settings-field">
+              <dt>Provider</dt>
+              <dd data-field="provider">Loading...</dd>
+            </div>
+            <div class="settings-field">
+              <dt>Model</dt>
+              <dd data-field="model">Loading...</dd>
+            </div>
+            <div class="settings-field">
+              <dt>Base URL</dt>
+              <dd data-field="base_url">Loading...</dd>
+            </div>
+            <div class="settings-field">
+              <dt>API Key</dt>
+              <dd data-field="api_key">Loading...</dd>
+            </div>
+            <div class="settings-field">
+              <dt>Escalation Model</dt>
+              <dd data-field="escalation_model">Loading...</dd>
+            </div>
+            <div class="settings-field">
+              <dt>Escalation Key</dt>
+              <dd data-field="escalation_api_key">Loading...</dd>
+            </div>
+            <div class="settings-field">
+              <dt>Max Tokens</dt>
+              <dd data-field="max_tokens">Loading...</dd>
+            </div>
+            <div class="settings-field">
+              <dt>Temperature</dt>
+              <dd data-field="temperature">Loading...</dd>
+            </div>
+            <div class="settings-field">
+              <dt>Timeout</dt>
+              <dd data-field="timeout_seconds">Loading...</dd>
+            </div>
+            <div class="settings-field">
+              <dt>Retries</dt>
+              <dd data-field="max_retries">Loading...</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="settings-panel">
+          <h3>Edit Settings</h3>
+          <form data-settings-form>
+            <div class="settings-form-grid">
+              <label>
+                <span>Provider</span>
+                <input name="provider" autocomplete="off" placeholder="openai">
+              </label>
+              <label>
+                <span>Model</span>
+                <input name="model" autocomplete="off" placeholder="gpt-4.1-mini">
+              </label>
+              <label class="settings-form-full">
+                <span>Base URL</span>
+                <input name="base_url" autocomplete="off" placeholder="https://api.openai.com/v1">
+              </label>
+              <label>
+                <span>API Key</span>
+                <input name="api_key" type="password" autocomplete="new-password" placeholder="Enter new API key">
+              </label>
+              <label>
+                <span>Escalation Model</span>
+                <input name="escalation_model" autocomplete="off" placeholder="gpt-5">
+              </label>
+              <label>
+                <span>Escalation API Key</span>
+                <input name="escalation_api_key" type="password" autocomplete="new-password" placeholder="Enter new key">
+              </label>
+              <label>
+                <span>Max Tokens</span>
+                <input name="max_tokens" type="number" min="1" inputmode="numeric" placeholder="4000">
+              </label>
+              <label>
+                <span>Temperature</span>
+                <input name="temperature" type="number" step="0.1" min="0" inputmode="decimal" placeholder="0.0">
+              </label>
+              <label>
+                <span>Timeout</span>
+                <input name="timeout_seconds" type="number" min="0" step="0.1" inputmode="decimal" placeholder="60">
+              </label>
+              <label>
+                <span>Retries</span>
+                <input name="max_retries" type="number" min="0" inputmode="numeric" placeholder="2">
+              </label>
+            </div>
+
+            <div class="settings-actions">
+              <button type="submit">Save</button>
+              <button type="button" data-reset>Reset to Defaults</button>
+            </div>
+          </form>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script nonce="{{ csp_nonce }}">
+    const apiPath = "/api/settings/llm";
+    const statusEl = document.querySelector("[data-status]");
+    const providerStateEl = document.querySelector("[data-provider-state]");
+    const providerStateLabelEl = document.querySelector("[data-provider-state-label]");
+    const settingsForm = document.querySelector("[data-settings-form]");
+    const tokenForm = document.querySelector("[data-token-form]");
+    const tokenInput = tokenForm.elements.bearer_token;
+    const resetButton = document.querySelector("[data-reset]");
+    const currentFields = new Map(
+      Array.from(document.querySelectorAll("[data-field]")).map((element) => [element.dataset.field, element])
+    );
+
+    const textFields = ["provider", "model", "base_url", "escalation_model"];
+    const secretFields = ["api_key", "escalation_api_key"];
+    const numberFields = {
+      max_tokens: Number.parseInt,
+      temperature: Number.parseFloat,
+      timeout_seconds: Number.parseFloat,
+      max_retries: Number.parseInt
+    };
+
+    let currentSettings = null;
+
+    function bearerToken() {
+      return tokenInput.value.trim();
+    }
+
+    function authHeaders(includeJson = false) {
+      const headers = {};
+      const token = bearerToken();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      if (includeJson) {
+        headers["Content-Type"] = "application/json";
+      }
+      return headers;
+    }
+
+    function showStatus(message, kind = "success") {
+      statusEl.textContent = message;
+      statusEl.classList.add("is-visible");
+      statusEl.classList.toggle("is-success", kind === "success");
+      statusEl.classList.toggle("is-error", kind === "error");
+    }
+
+    function describeSecret(configured, hint) {
+      if (!configured) {
+        return "Not configured";
+      }
+      return hint ? `Configured (${hint})` : "Configured";
+    }
+
+    function formatValue(value) {
+      if (value === null || value === undefined) {
+        return "Not set";
+      }
+      if (typeof value === "string") {
+        return value.trim() ? value : "Not set";
+      }
+      return String(value);
+    }
+
+    function updateProviderState(provider) {
+      const active = Boolean(provider && provider !== "none");
+      providerStateEl.classList.toggle("is-configured", active);
+      providerStateLabelEl.textContent = active ? "Configured" : "No provider";
+    }
+
+    function updateCurrentConfiguration(data) {
+      currentSettings = data;
+      updateProviderState(data.provider);
+      currentFields.get("provider").textContent = formatValue(data.provider);
+      currentFields.get("model").textContent = formatValue(data.model);
+      currentFields.get("base_url").textContent = formatValue(data.base_url);
+      currentFields.get("api_key").textContent = describeSecret(data.api_key_configured, data.api_key_hint);
+      currentFields.get("escalation_model").textContent = formatValue(data.escalation_model);
+      currentFields.get("escalation_api_key").textContent = describeSecret(
+        data.escalation_api_key_configured,
+        data.escalation_api_key_hint
+      );
+      currentFields.get("max_tokens").textContent = formatValue(data.max_tokens);
+      currentFields.get("temperature").textContent = formatValue(data.temperature);
+      currentFields.get("timeout_seconds").textContent = formatValue(data.timeout_seconds);
+      currentFields.get("max_retries").textContent = formatValue(data.max_retries);
+
+      for (const name of textFields) {
+        settingsForm.elements[name].value = data[name] || "";
+      }
+      for (const name of Object.keys(numberFields)) {
+        settingsForm.elements[name].value = data[name] ?? "";
+      }
+      for (const name of secretFields) {
+        settingsForm.elements[name].value = "";
+      }
+    }
+
+    async function parseError(response) {
+      try {
+        const payload = await response.json();
+        if (typeof payload.detail === "string" && payload.detail.trim()) {
+          return payload.detail;
+        }
+      } catch {
+        return `Request failed with status ${response.status}`;
+      }
+      return `Request failed with status ${response.status}`;
+    }
+
+    async function loadSettings(options = {}) {
+      const { message } = options;
+      const response = await fetch(apiPath, { headers: authHeaders() });
+      if (!response.ok) {
+        throw new Error(await parseError(response));
+      }
+      const data = await response.json();
+      updateCurrentConfiguration(data);
+      if (message) {
+        showStatus(message, "success");
+      }
+    }
+
+    function buildPayload() {
+      if (!currentSettings) {
+        return {};
+      }
+
+      const payload = {};
+
+      for (const name of textFields) {
+        const nextValue = settingsForm.elements[name].value.trim();
+        const currentValue = (currentSettings[name] || "").trim();
+        if (nextValue !== currentValue) {
+          payload[name] = nextValue;
+        }
+      }
+
+      for (const name of secretFields) {
+        const nextValue = settingsForm.elements[name].value;
+        if (nextValue.trim()) {
+          payload[name] = nextValue;
+        }
+      }
+
+      for (const [name, parser] of Object.entries(numberFields)) {
+        const rawValue = settingsForm.elements[name].value.trim();
+        if (!rawValue) {
+          continue;
+        }
+        const nextValue = parser(rawValue);
+        if (Number.isNaN(nextValue)) {
+          continue;
+        }
+        if (nextValue !== currentSettings[name]) {
+          payload[name] = nextValue;
+        }
+      }
+
+      return payload;
+    }
+
+    settingsForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const payload = buildPayload();
+        if (!Object.keys(payload).length) {
+          showStatus("No changes to save.", "success");
+          return;
+        }
+        const response = await fetch(apiPath, {
+          method: "PUT",
+          headers: authHeaders(true),
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          throw new Error(await parseError(response));
+        }
+        await loadSettings({ message: "Settings saved." });
+      } catch (error) {
+        showStatus(error.message || "Failed to save settings.", "error");
+      }
+    });
+
+    resetButton.addEventListener("click", async () => {
+      try {
+        const response = await fetch(apiPath, {
+          method: "DELETE",
+          headers: authHeaders()
+        });
+        if (!response.ok) {
+          throw new Error(await parseError(response));
+        }
+        const data = await response.json();
+        updateCurrentConfiguration(data);
+        showStatus("Stored settings cleared. Showing environment defaults.", "success");
+      } catch (error) {
+        showStatus(error.message || "Failed to reset settings.", "error");
+      }
+    });
+
+    loadSettings().catch((error) => {
+      updateProviderState("none");
+      for (const element of currentFields.values()) {
+        element.textContent = "Unavailable";
+      }
+      showStatus(error.message || "Failed to load settings.", "error");
+    });
+  </script>
+</body>
+</html>

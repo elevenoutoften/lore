@@ -5,9 +5,11 @@ import logging
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi.responses import HTMLResponse
 
 from ..config import LoreConfig, merged_llm_config
-from ..deps import get_api_key_store, get_config, get_settings_store
+from ..deps import get_api_key_store, get_config, get_settings_store, get_templates
+from ..route_utils import template_context
 from ..schemas import LlmSettingsResponse, LlmSettingsUpdate
 from ..settings_store import (
     LLM_SETTINGS_KEYS,
@@ -28,10 +30,20 @@ from ..settings_store import (
 from .api_keys import _extract_bearer_token, require_lore_key_admin
 
 if TYPE_CHECKING:
+    from fastapi.templating import Jinja2Templates
+
     from ..api_keys import LoreApiKeyStore
 
 logger = logging.getLogger(__name__)
 settings_router = APIRouter(tags=["settings"])
+
+
+@settings_router.get("/settings", response_class=HTMLResponse)
+async def settings_page(
+    request: Request,
+    templates: Jinja2Templates = Depends(get_templates),
+):
+    return templates.TemplateResponse(request, "settings.html", template_context(request, title="Settings"))
 
 
 def require_lore_key(

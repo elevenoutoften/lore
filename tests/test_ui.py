@@ -18,6 +18,17 @@ def test_api_key_page_renders(client):
     assert "/api/api-keys" in response.text
 
 
+def test_settings_page_renders(client):
+    response = client.get("/settings")
+    assert response.status_code == 200
+    assert "LLM Provider Settings" in response.text
+    assert "data-settings-form" in response.text
+    assert "/api/settings/llm" in response.text
+    assert 'name="api_key" type="password"' in response.text
+    assert 'name="escalation_api_key" type="password"' in response.text
+    assert 'name="bearer_token" type="password"' in response.text
+
+
 def test_page_view_renders_markdown(client):
     response = client.get("/projects/example-project")
     assert response.status_code == 200
