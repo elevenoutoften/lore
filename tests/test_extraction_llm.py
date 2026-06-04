@@ -656,10 +656,20 @@ def test_repair_retry_on_schema_invalid(tmp_path):
         model="repair-model",
     )
 
-    result = llm_extractor_module.llm_extract_capture(capture, llm_client, repo=repo)
+    result = llm_extractor_module.llm_extract_capture(capture, llm_client)
 
     assert len(llm_client.prompts) == 2
     assert "IMPORTANT: Your previous response had schema validation errors." in llm_client.prompts[1]
+    repair_prompt = llm_client.prompts[1]
+    assert "predicate" in repair_prompt
+    assert "object" in repair_prompt
+    assert "entity_type" in repair_prompt
+    assert "target_claim" in repair_prompt
+    assert "reason" in repair_prompt
+    assert "edge_type" in repair_prompt
+    assert "kind" not in repair_prompt or "entity_type" in repair_prompt
+    assert "invalidation_reason" not in repair_prompt
+    assert "original_claim" not in repair_prompt
     assert len(result["claims"]) == 1
     assert result["claims"][0].predicate == "uses"
     assert result["claims"][0].model_version == "repair-model"
@@ -701,7 +711,7 @@ def test_quality_error_triggers_repair_retry(tmp_path):
         model="quality-repair-model",
     )
 
-    result = llm_extractor_module.llm_extract_capture(capture, llm_client, repo=repo)
+    result = llm_extractor_module.llm_extract_capture(capture, llm_client)
 
     assert len(llm_client.prompts) == 2
     assert "IMPORTANT: Your previous response had schema validation errors." in llm_client.prompts[1]

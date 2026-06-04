@@ -14,7 +14,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from .llm_provider import FallbackLLMClient, LLMError, LLMJsonError
-from .repository import LoreRepository, string_list
+from .repository import string_list
 from .schemas import ExtractedClaim, ExtractedEdge, ExtractedEntity, ExtractedInvalidation
 
 logger = logging.getLogger(__name__)
@@ -37,11 +37,9 @@ EXTRACTION_PROMPT_HASH = hashlib.sha256(EXTRACTION_SYSTEM_PROMPT.encode()).hexdi
 def llm_extract_capture(
     page_detail: Any,
     llm_client: FallbackLLMClient,
-    repo: LoreRepository | None = None,
 ) -> dict[str, Any] | None:
     """Extract entities, claims, edges, and invalidations from a capture using an LLM."""
 
-    del repo
     page_id = getattr(page_detail, "id", "") or ""
     title = getattr(page_detail, "title", "") or ""
     body = getattr(page_detail, "body", "") or ""
@@ -68,12 +66,12 @@ def llm_extract_capture(
                 "IMPORTANT: Your previous response had schema validation errors. "
                 "You must respond with ONLY valid JSON matching this exact structure:\n"
                 "```json\n"
-                "{entities: [{name, kind, summary, source_page_ids, source_capture_ids}], "
-                "claims: [{claim, summary, source_page_ids, source_capture_ids}], "
-                "edges: [{source, target, relationship_type, label, source_page_ids, source_capture_ids}], "
-                "invalidations: [{original_claim, invalidation_reason, source_page_ids, source_capture_ids}]}\n"
+                '{"entities": [{"subject": "page id", "name": "label", "entity_type": "service|concept|person|tool|system"}], '
+                '"claims": [{"subject": "page id", "predicate": "verb", "object": "value", "confidence": "high|medium|low", "section": "heading", "source_page_ids": [], "observed_at": "ISO date", "valid_from": "ISO date", "valid_until": "ISO date", "actor": "name"}], '
+                '"edges": [{"source": "page id", "target": "page id", "edge_type": "mentions|depends_on|contradicts|supports|supersedes", "source_page_ids": []}], '
+                '"invalidations": [{"target_claim": "page id or claim text", "reason": "explanation", "source_page_ids": []}]}\n'
                 "```\n"
-                "All source_page_ids and source_capture_ids must be string lists. "
+                "All source_page_ids must be string lists. "
                 "Do not include any additional fields or commentary."
             )
             return _extract_and_validate(llm_client, repair_prompt, page_id, title)

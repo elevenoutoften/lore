@@ -86,13 +86,13 @@ def extract_from_captures(
         from .llm_extractor import llm_extract_capture
 
         try:
-            llm_result = llm_extract_capture(capture, active_llm_client, repo=repo)
+            llm_result = llm_extract_capture(capture, active_llm_client)
         except (LLMError, LLMUnavailableError) as exc:
             llm_failure = exc
         except ValueError as exc:
             if isinstance(active_llm_client, FallbackLLMClient) and active_llm_client.escalation is not None:
                 try:
-                    llm_result = llm_extract_capture(capture, active_llm_client.escalation, repo=repo)
+                    llm_result = llm_extract_capture(capture, active_llm_client.escalation)
                 except (LLMError, LLMUnavailableError, ValueError) as escalation_exc:
                     llm_failure = escalation_exc
             else:
@@ -106,7 +106,8 @@ def extract_from_captures(
                 capture_invalidations = llm_result.get("invalidations", [])
                 llm_observed_at = datetime.now(UTC).isoformat()
                 for claim in capture_claims:
-                    claim.observed_at = llm_observed_at
+                    if not claim.observed_at:
+                        claim.observed_at = llm_observed_at
             else:
                 capture_entities, capture_claims, capture_edges, capture_invalidations = _extract_capture(repo, capture)
         except Exception as fallback_exc:

@@ -339,7 +339,7 @@ def test_schema_invalid_triggers_repair_retry(tmp_path):
         valid_llm_response(capture_id, "Lore repairs invalid LLM schemas."),
     ]
 
-    result = llm_extract_capture(capture, mock_client, repo=repo)
+    result = llm_extract_capture(capture, mock_client)
 
     assert mock_client.extract_json.call_count == 2
     repair_prompt = mock_client.extract_json.call_args_list[1].kwargs["user_prompt"]
@@ -356,7 +356,7 @@ def test_schema_invalid_repair_also_fails(tmp_path):
     mock_client.extract_json.side_effect = [invalid_llm_schema(), invalid_llm_schema()]
 
     with pytest.raises(ValueError, match="claims must be a list"):
-        llm_extract_capture(capture, mock_client, repo=repo)
+        llm_extract_capture(capture, mock_client)
 
     assert mock_client.extract_json.call_count == 2
 
@@ -454,7 +454,7 @@ The API Gateway routes requests to backends.
     assert claim.token_usage == {"prompt": 42, "completion": 13}
     assert claim.observed_at is not None
     assert claim.observed_at != "2026-05-10T00:00:00+00:00"
-    assert claim.observed_at != "2025-01-01T00:00:00+00:00"
+    assert claim.observed_at == "2025-01-01T00:00:00+00:00"
 
 
 def test_deterministic_claims_have_no_provenance(tmp_path):
