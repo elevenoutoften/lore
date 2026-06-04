@@ -153,6 +153,23 @@ def quality_drop_response(capture_id: str) -> dict:
     }
 
 
+def valid_llm_response(capture_id: str, fact: str = "Lore stores structured candidates.") -> dict:
+    return {
+        "entities": [],
+        "claims": [
+            {
+                "subject": "services/lore",
+                "predicate": "states",
+                "object": fact,
+                "confidence": "high",
+                "source_page_ids": [capture_id],
+            },
+        ],
+        "edges": [],
+        "invalidations": [],
+    }
+
+
 class SequencedLlmClient:
     def __init__(self, responses: list[dict | object], *, model: str = "sequenced-test-model"):
         self._responses = list(responses)
@@ -909,41 +926,40 @@ def test_both_fail_records_deadletter_with_kind_fallback_exhausted(tmp_path, fak
     assert failed_capture in result.source_capture_ids
 
 
-def test_retry_cli_resolves_deadletter(tmp_path, monkeypatch, capsys):
+def test_e2e_retry_resolves_deadletter(tmp_path, fake_llm_client, monkeypatch, capsys):
     repo = LoreRepository(tmp_path / "pages")
     ledger = make_ledger(tmp_path)
     capture_id = add_capture(
         repo,
         "inbox/2026-05-26/retry-cli",
         title="Retry CLI",
-        summary="Lore mentions auth.",
+        summary="Lore stores retry candidates.",
         suggested_target_page="services/lore",
-        body="Lore mentions [[services/auth]].",
+        body="Lore stores retry candidates.",
     )
-    deadletter_id = ledger.store_deadletter(
-        capture_id=capture_id,
-        provider="fake-test-model",
-        failure_kind="llm_error",
-        failure_detail="boom",
-        payload="{}",
-        batch_id="batch-retry",
+
+    first_client = fake_llm_client(modes={capture_id: "error"})
+    first_result = extract_from_captures(
+        repo,
+        capture_ids=[capture_id],
+        dry_run=False,
+        ledger_db=ledger,
+        llm_client=first_client,
     )
-    llm_client = object()
-    calls: list[dict[str, object]] = []
+    assert first_result.source_capture_ids == [capture_id]
+    [deadletter] = ledger.list_deadletters(status="unresolved")
+    candidate_count_after_failure = len(ledger.get_candidates(capture_id=capture_id, limit=20))
 
-    def fake_extract_from_captures(repo_arg, capture_ids=None, batch_size=10, dry_run=True, *, ledger_db=None, llm_client=None):
-        del repo_arg, batch_size, ledger_db
-        calls.append(
-            {
-                "capture_ids": list(capture_ids or []),
-                "dry_run": dry_run,
-                "llm_client": llm_client,
-            }
-        )
-        return SimpleNamespace(source_capture_ids=list(capture_ids or []))
+    retry_client = fake_llm_client(
+        responses={
+            capture_id: valid_llm_response(
+                capture_id,
+                fact="Lore stores retry candidates.",
+            )
+        }
+    )
 
-    monkeypatch.setattr(extraction_module, "extract_from_captures", fake_extract_from_captures)
-    monkeypatch.setattr("lore_app.llm_provider.build_llm_client", lambda *, config: llm_client)
+    monkeypatch.setattr("lore_app.llm_provider.build_llm_client", lambda *, config: retry_client)
     monkeypatch.setenv("LORE_CONTENT_DIR", str(tmp_path / "pages"))
     monkeypatch.setenv("LORE_LEDGER_DB", str(tmp_path / "ledger.db"))
 
@@ -953,19 +969,27 @@ def test_retry_cli_resolves_deadletter(tmp_path, monkeypatch, capsys):
     assert '"resolved": 1' in first_output
     resolved_deadletters = ledger.list_deadletters(status="resolved")
     assert len(resolved_deadletters) == 1
-    assert resolved_deadletters[0]["deadletter_id"] == deadletter_id
+    assert resolved_deadletters[0]["deadletter_id"] == deadletter["deadletter_id"]
     assert resolved_deadletters[0]["resolved_by"] == "llm"
     assert resolved_deadletters[0]["retry_count"] == 1
     assert resolved_deadletters[0]["attempted_at"] is not None
     assert resolved_deadletters[0]["last_retry_at"] is not None
+    assert resolved_deadletters[0]["resolved_at"] is not None
     assert ledger.list_deadletters(status="unresolved") == []
-    assert calls == [{"capture_ids": [capture_id], "dry_run": False, "llm_client": llm_client}]
+
+    candidates_after_retry = ledger.get_candidates(capture_id=capture_id, limit=20)
+    assert len(candidates_after_retry) == candidate_count_after_failure
+    claim_candidates = [
+        candidate for candidate in candidates_after_retry if candidate["candidate_type"] == "claim"
+    ]
+    assert len(claim_candidates) == 1
+    assert claim_candidates[0]["source_capture_ids"] == [capture_id]
 
     assert cli_main(["extraction", "retry", "--limit", "1"]) == 0
     second_output = capsys.readouterr().out
     assert '"retried": 0' in second_output
     assert '"resolved": 0' in second_output
-    assert calls == [{"capture_ids": [capture_id], "dry_run": False, "llm_client": llm_client}]
+    assert len(ledger.get_candidates(capture_id=capture_id, limit=20)) == candidate_count_after_failure
 
 
 def test_retry_cli_marks_no_provider_resolution_as_deterministic(tmp_path, monkeypatch, capsys):

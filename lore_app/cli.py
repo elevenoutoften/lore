@@ -360,10 +360,12 @@ def cmd_extraction_retry(args: argparse.Namespace) -> int:
     for deadletter in deadletters:
         retried += 1
         ledger.increment_retry(str(deadletter["deadletter_id"]))
+        capture_id = str(deadletter["capture_id"])
+        ledger.reset_extraction(capture_ids=[capture_id])
         try:
             result = extract_from_captures(
                 repo,
-                capture_ids=[str(deadletter["capture_id"])],
+                capture_ids=[capture_id],
                 dry_run=False,
                 ledger_db=ledger,
                 llm_client=llm_client,
