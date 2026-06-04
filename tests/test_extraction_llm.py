@@ -933,9 +933,9 @@ def test_e2e_retry_resolves_deadletter(tmp_path, fake_llm_client, monkeypatch, c
         repo,
         "inbox/2026-05-26/retry-cli",
         title="Retry CLI",
-        summary="Lore stores retry candidates.",
+        summary="Lore mentions [[Auth|services/auth]] and [[services/billing]].",
         suggested_target_page="services/lore",
-        body="Lore stores retry candidates.",
+        body="Lore mentions [[Auth|services/auth]] and [[services/billing]].",
     )
 
     first_client = fake_llm_client(modes={capture_id: "error"})
@@ -948,14 +948,47 @@ def test_e2e_retry_resolves_deadletter(tmp_path, fake_llm_client, monkeypatch, c
     )
     assert first_result.source_capture_ids == [capture_id]
     [deadletter] = ledger.list_deadletters(status="unresolved")
-    candidate_count_after_failure = len(ledger.get_candidates(capture_id=capture_id, limit=20))
+    fallback_candidates = ledger.get_candidates(capture_id=capture_id, limit=20)
+    assert {candidate["candidate_type"] for candidate in fallback_candidates} == {"entity", "claim", "edge"}
+    fallback_entity_targets = {
+        candidate["content_json"]["target_page_hint"]
+        for candidate in fallback_candidates
+        if candidate["candidate_type"] == "entity"
+    }
+    assert fallback_entity_targets == {"services/auth", "services/billing", "services/lore"}
+    fallback_edge_targets = {
+        candidate["content_json"]["target_entity"]
+        for candidate in fallback_candidates
+        if candidate["candidate_type"] == "edge"
+    }
+    assert fallback_edge_targets == {"services/auth", "services/billing"}
 
     retry_client = fake_llm_client(
         responses={
-            capture_id: valid_llm_response(
-                capture_id,
-                fact="Lore stores retry candidates.",
-            )
+            capture_id: {
+                "entities": [
+                    {"subject": "services/lore", "name": "Lore", "entity_type": "service"},
+                    {"subject": "services/search", "name": "Search", "entity_type": "service"},
+                ],
+                "claims": [
+                    {
+                        "subject": "services/lore",
+                        "predicate": "states",
+                        "object": "Lore now indexes retrieval through Search.",
+                        "confidence": "high",
+                        "source_page_ids": [capture_id],
+                    },
+                ],
+                "edges": [
+                    {
+                        "source_entity": "services/lore",
+                        "relationship_type": "depends_on",
+                        "target_entity": "services/search",
+                        "source_page_ids": [capture_id],
+                    },
+                ],
+                "invalidations": [],
+            }
         }
     )
 
@@ -978,16 +1011,33 @@ def test_e2e_retry_resolves_deadletter(tmp_path, fake_llm_client, monkeypatch, c
     assert ledger.list_deadletters(status="unresolved") == []
 
     candidates_after_retry = ledger.get_candidates(capture_id=capture_id, limit=20)
-    assert len(candidates_after_retry) == candidate_count_after_failure
+    assert len(candidates_after_retry) == 4
     claim_candidates = [candidate for candidate in candidates_after_retry if candidate["candidate_type"] == "claim"]
     assert len(claim_candidates) == 1
     assert claim_candidates[0]["source_capture_ids"] == [capture_id]
+    assert claim_candidates[0]["content_json"]["object"] == "Lore now indexes retrieval through Search."
+    entity_targets_after_retry = {
+        candidate["content_json"]["target_page_hint"]
+        for candidate in candidates_after_retry
+        if candidate["candidate_type"] == "entity"
+    }
+    assert entity_targets_after_retry == {"services/lore", "services/search"}
+    edge_targets_after_retry = {
+        candidate["content_json"]["target_entity"]
+        for candidate in candidates_after_retry
+        if candidate["candidate_type"] == "edge"
+    }
+    assert edge_targets_after_retry == {"services/search"}
+    assert "services/auth" not in entity_targets_after_retry
+    assert "services/billing" not in entity_targets_after_retry
+    assert "services/auth" not in edge_targets_after_retry
+    assert "services/billing" not in edge_targets_after_retry
 
     assert cli_main(["extraction", "retry", "--limit", "1"]) == 0
     second_output = capsys.readouterr().out
     assert '"retried": 0' in second_output
     assert '"resolved": 0' in second_output
-    assert len(ledger.get_candidates(capture_id=capture_id, limit=20)) == candidate_count_after_failure
+    assert len(ledger.get_candidates(capture_id=capture_id, limit=20)) == 4
 
 
 def test_retry_cli_marks_no_provider_resolution_as_deterministic(tmp_path, monkeypatch, capsys):

@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from .rag.vector_store import VectorStore
     from .repository import LoreRepository
     from .search_index import LoreSearchIndex
+    from .settings_store import SettingsStore
 
 
 def get_config(request: Request) -> LoreConfig:
@@ -85,3 +86,7 @@ def get_consolidation_worker(request: Request) -> ConsolidationWorker:
 
 def get_api_key_store(request: Request) -> LoreApiKeyStore:
     return request.app.state.api_key_store
+
+
+def get_settings_store(request: Request) -> SettingsStore:
+    return request.app.state.settings_store

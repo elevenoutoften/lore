@@ -59,6 +59,34 @@ class LoreApiKeyCreateResponse(LoreApiKeyResponse):
     api_key: str
 
 
+class LlmSettingsUpdate(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    escalation_model: str | None = None
+    escalation_api_key: str | None = None
+    max_tokens: int | None = None
+    temperature: float | None = None
+    timeout_seconds: float | None = None
+    max_retries: int | None = None
+
+
+class LlmSettingsResponse(BaseModel):
+    provider: str
+    model: str
+    base_url: str
+    api_key_configured: bool
+    api_key_hint: str
+    escalation_model: str
+    escalation_api_key_configured: bool
+    escalation_api_key_hint: str
+    max_tokens: int
+    temperature: float
+    timeout_seconds: float
+    max_retries: int
+
+
 class FrontmatterKindSpec(BaseModel):
     kind: str
     required: list[str]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+import threading
 import time
 from pathlib import Path
 
@@ -12,13 +13,13 @@ from fastapi.templating import Jinja2Templates
 from .api_keys import LoreApiKeyStore
 from .audit import AuditLog
 from .auth import AuthMiddleware
-from .config import VALID_AUTH_MODES, LoreConfig
+from .config import VALID_AUTH_MODES, LoreConfig, merged_llm_config
 from .consolidation_worker import ConsolidationWorker
 from .context_graph import ContextGraphCache
 from .ledger import LedgerDB
 from .link_graph import LinkGraphCache
 from .lint_config import LintConfig
-from .llm_provider import build_llm_client
+from .llm_provider import build_llm_client_from_config
 from .observability import MetricsCollector, log_request
 from .patch_planner import PatchPlanner
 from .policy_engine import PolicyEngine
@@ -53,17 +54,31 @@ from .routes import (
     provenance_router,
     rag_router,
     search_router,
+    settings_router,
     trace_router,
 )
 from .routes.admin import package_version
 from .search_index import LoreSearchIndex
 from .security import RateLimiter
+from .settings_store import SettingsStore
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 
 
 def default_content_dir() -> Path:
     return LoreConfig().content_dir
+
+
+def rebuild_llm_client(app: FastAPI) -> None:
+    """Rebuild app.state.llm_client from merged config and runtime settings."""
+
+    if not hasattr(app.state, "_llm_lock"):
+        app.state._llm_lock = threading.Lock()
+    with app.state._llm_lock:
+        old_client = app.state.llm_client
+        provider_config = merged_llm_config(app.state.config, app.state.settings_store)
+        app.state.llm_client = build_llm_client_from_config(provider_config)
+        old_client.close()
 
 
 def create_app(
@@ -107,6 +122,8 @@ def create_app(
     policy_engine = PolicyEngine(ledger_db)
     api_key_store = LoreApiKeyStore(lore_config.api_keys_db)
     api_key_store.initialize()
+    settings_store = SettingsStore(lore_config.settings_db)
+    settings_store.initialize()
     audit_log = AuditLog(
         Path(lore_config.content_dir) / ".lore" / "audit", retention_days=lore_config.audit_retention_days
     )
@@ -126,6 +143,7 @@ def create_app(
     app.state.ledger_db = ledger_db
     app.state.policy_engine = policy_engine
     app.state.api_key_store = api_key_store
+    app.state.settings_store = settings_store
     app.state.audit_log = audit_log
     app.state.patch_planner = PatchPlanner(repo, ledger_db, audit_log, policy_engine=policy_engine)
     app.state.consolidation_worker = ConsolidationWorker(
@@ -138,7 +156,7 @@ def create_app(
     app.state.metrics = metrics
     app.state.templates = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
     app.state.code_inventories = {}
-    app.state.llm_client = build_llm_client(config=lore_config)
+    app.state.llm_client = build_llm_client_from_config(merged_llm_config(lore_config, settings_store))
     app.state.write_rate_limiter = RateLimiter(
         max_requests=lore_config.write_rate_limit,
         window_seconds=lore_config.write_rate_window_seconds,
@@ -209,6 +227,7 @@ def create_app(
         vector_store.close()
         ledger_db.close()
         api_key_store.close()
+        settings_store.close()
         app.state.llm_client.close()
 
     if mount_workspaces:
@@ -229,6 +248,7 @@ def create_app(
     app.include_router(consolidation_router)
     app.include_router(memory_router)
     app.include_router(search_router)
+    app.include_router(settings_router)
     app.include_router(trace_router)
     app.include_router(rag_router)
     app.include_router(lint_router)

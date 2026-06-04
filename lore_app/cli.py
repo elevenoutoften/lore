@@ -361,7 +361,7 @@ def cmd_extraction_retry(args: argparse.Namespace) -> int:
         retried += 1
         ledger.increment_retry(str(deadletter["deadletter_id"]))
         capture_id = str(deadletter["capture_id"])
-        ledger.reset_extraction(capture_ids=[capture_id])
+        ledger.reset_extraction(capture_ids=[capture_id], delete_candidates=True)
         try:
             result = extract_from_captures(
                 repo,

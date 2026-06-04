@@ -1042,7 +1042,7 @@ class LedgerDB:
             return cursor.rowcount > 0
 
     @retry_on_locked()
-    def reset_extraction(self, capture_ids: list[str] | None = None) -> int:
+    def reset_extraction(self, capture_ids: list[str] | None = None, *, delete_candidates: bool = False) -> int:
         """Reset extraction state so captures can be re-processed.
 
         If capture_ids is None, reset all successful extraction records.
@@ -1054,18 +1054,25 @@ class LedgerDB:
         if capture_ids is None:
             with self._lock:
                 cursor = self.connection.execute("DELETE FROM extraction_log WHERE success = 1")
-                self.connection.execute(
-                    """
-                    UPDATE extraction_candidates
-                    SET status = 'candidate',
-                        supersedes = NULL,
-                        superseded_by = NULL,
-                        invalidation_reason = NULL,
-                        updated_at = ?
-                    WHERE status IN (?, ?, ?, ?)
-                    """,
-                    (now, *reset_statuses),
-                )
+                if delete_candidates:
+                    self.connection.execute(
+                        """
+                        DELETE FROM extraction_candidates
+                        """,
+                    )
+                else:
+                    self.connection.execute(
+                        """
+                        UPDATE extraction_candidates
+                        SET status = 'candidate',
+                            supersedes = NULL,
+                            superseded_by = NULL,
+                            invalidation_reason = NULL,
+                            updated_at = ?
+                        WHERE status IN (?, ?, ?, ?)
+                        """,
+                        (now, *reset_statuses),
+                    )
                 self.connection.commit()
                 if cursor.rowcount > 0:
                     self._bump_generation()
@@ -1082,14 +1089,22 @@ class LedgerDB:
                 normalized_capture_ids,
             )
 
-            candidate_rows = self.connection.execute(
-                """
-                SELECT candidate_id, source_capture_ids
-                FROM extraction_candidates
-                WHERE status IN (?, ?, ?, ?)
-                """,
-                reset_statuses,
-            ).fetchall()
+            if delete_candidates:
+                candidate_rows = self.connection.execute(
+                    """
+                    SELECT candidate_id, source_capture_ids
+                    FROM extraction_candidates
+                    """
+                ).fetchall()
+            else:
+                candidate_rows = self.connection.execute(
+                    """
+                    SELECT candidate_id, source_capture_ids
+                    FROM extraction_candidates
+                    WHERE status IN (?, ?, ?, ?)
+                    """,
+                    reset_statuses,
+                ).fetchall()
             reset_ids = [
                 str(row["candidate_id"])
                 for row in candidate_rows
@@ -1097,18 +1112,27 @@ class LedgerDB:
             ]
             if reset_ids:
                 id_placeholders = ", ".join("?" for _ in reset_ids)
-                self.connection.execute(
-                    f"""
-                    UPDATE extraction_candidates
-                    SET status = 'candidate',
-                        supersedes = NULL,
-                        superseded_by = NULL,
-                        invalidation_reason = NULL,
-                        updated_at = ?
-                    WHERE candidate_id IN ({id_placeholders})
-                    """,
-                    (now, *reset_ids),
-                )
+                if delete_candidates:
+                    self.connection.execute(
+                        f"""
+                        DELETE FROM extraction_candidates
+                        WHERE candidate_id IN ({id_placeholders})
+                        """,
+                        reset_ids,
+                    )
+                else:
+                    self.connection.execute(
+                        f"""
+                        UPDATE extraction_candidates
+                        SET status = 'candidate',
+                            supersedes = NULL,
+                            superseded_by = NULL,
+                            invalidation_reason = NULL,
+                            updated_at = ?
+                        WHERE candidate_id IN ({id_placeholders})
+                        """,
+                        (now, *reset_ids),
+                    )
             self.connection.commit()
             if cursor.rowcount > 0 or reset_ids:
                 self._bump_generation()
