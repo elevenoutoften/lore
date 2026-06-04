@@ -401,8 +401,23 @@ def build_candidate_page_index(ledger: Any | None, *, limit: int = 500) -> dict[
         return {}
     indexed: dict[str, list[dict[str, Any]]] = {}
     for candidate in candidates:
-        for page_id in string_list(candidate.get("source_page_ids")):
-            indexed.setdefault(page_id, []).append(candidate)
+        refs = list(
+            dict.fromkeys(
+                string_list(candidate.get("source_page_ids")) + string_list(candidate.get("source_capture_ids"))
+            )
+        )
+        has_provenance = any(
+            optional_string(candidate.get(field))
+            for field in ("observed_at", "valid_from", "valid_until", "actor", "lane")
+        )
+        for ref_id in refs:
+            bucket = indexed.setdefault(ref_id, [])
+            if any(existing.get("candidate_id") == candidate.get("candidate_id") for existing in bucket):
+                continue
+            if has_provenance:
+                bucket.insert(0, candidate)
+            else:
+                bucket.append(candidate)
     return indexed
 
 
