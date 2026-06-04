@@ -40,6 +40,8 @@ class LLMProviderConfig:
     temperature: float = 0.3
     timeout_seconds: float = 60.0
     max_retries: int = 3
+    escalation_model: str | None = None
+    escalation_api_key: str | None = None
 
     @classmethod
     def from_env(cls, prefix: str = "LORE_LLM") -> LLMProviderConfig:
@@ -292,18 +294,45 @@ def build_llm_client(
 ) -> FallbackLLMClient | NoLlmClient:
     """Build a fallback-capable LLM client from LoreConfig or environment variables."""
 
-    if config is not None and config.llm_provider == "none":
-        return NoLlmClient()
-
     primary_config = _primary_config_from_lore_config(config) if config else LLMProviderConfig.from_env("LORE_LLM")
-    if primary_config.name == "none":
-        return NoLlmClient()
-    primary = LLMClient(primary_config)
-
     if config:
         escalation_config = _escalation_config_from_lore_config(config)
     else:
         escalation_config = LLMProviderConfig.from_env("LORE_LLM_ESCALATION")
-    escalation = LLMClient(escalation_config) if escalation_config.api_key else None
+    if not escalation_config.api_key:
+        escalation_config = None
 
-    return FallbackLLMClient(primary=primary, escalation=escalation, fallback_fn=fallback_fn)
+    return build_llm_client_from_config(
+        primary_config,
+        escalation_config=escalation_config,
+        fallback_fn=fallback_fn,
+    )
+
+
+def build_llm_client_from_config(
+    provider_config: LLMProviderConfig,
+    *,
+    escalation_config: LLMProviderConfig | None = None,
+    fallback_fn: Any | None = None,
+) -> FallbackLLMClient | LLMClient | NoLlmClient:
+    """Build an LLM client from a resolved provider config."""
+
+    if provider_config.name == "none" or not provider_config.name:
+        return NoLlmClient()
+
+    primary = LLMClient(provider_config)
+    if escalation_config is None and provider_config.escalation_model:
+        escalation_config = LLMProviderConfig(
+            name=f"{provider_config.name}-escalation",
+            model=provider_config.escalation_model,
+            base_url=provider_config.base_url,
+            api_key=provider_config.escalation_api_key or provider_config.api_key,
+            max_tokens=provider_config.max_tokens,
+            temperature=provider_config.temperature,
+            timeout_seconds=provider_config.timeout_seconds,
+            max_retries=provider_config.max_retries,
+        )
+
+    if escalation_config and escalation_config.api_key:
+        return FallbackLLMClient(primary=primary, escalation=LLMClient(escalation_config), fallback_fn=fallback_fn)
+    return FallbackLLMClient(primary=primary, escalation=None, fallback_fn=fallback_fn)

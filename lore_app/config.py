@@ -9,6 +9,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .llm_provider import LLMProviderConfig
+from .settings_store import (
+    SETTINGS_LLM_API_KEY,
+    SETTINGS_LLM_BASE_URL,
+    SETTINGS_LLM_ESCALATION_API_KEY,
+    SETTINGS_LLM_ESCALATION_MODEL,
+    SETTINGS_LLM_MAX_RETRIES,
+    SETTINGS_LLM_MAX_TOKENS,
+    SETTINGS_LLM_MODEL,
+    SETTINGS_LLM_PROVIDER,
+    SETTINGS_LLM_TEMPERATURE,
+    SETTINGS_LLM_TIMEOUT_SECONDS,
+    SettingsStore,
+)
+
 VALID_AUTH_MODES = ("none", "bearer", "basic", "api_key")
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 KNOWN_INSECURE_SECRETS = frozenset(
@@ -63,7 +78,8 @@ class LoreConfig:
     """Centralized configuration with env-var overrides."""
 
     def __init__(self) -> None:
-        default_db_dir = Path("./data/db")
+        self.data_dir: Path = Path(os.environ.get("LORE_DATA_DIR", "./data"))
+        default_db_dir = self.data_dir / "db"
         self.app_name: str = os.environ.get("LORE_APP_NAME", "Lore")
         self.app_description: str = os.environ.get(
             "LORE_APP_DESCRIPTION",
@@ -74,6 +90,7 @@ class LoreConfig:
         self.vector_db: Path = Path(os.environ.get("LORE_VECTOR_DB", str(default_db_dir / "vectors.db")))
         self.ledger_db: Path = Path(os.environ.get("LORE_LEDGER_DB", str(default_db_dir / "ledger.db")))
         self.api_keys_db: Path = Path(os.environ.get("LORE_API_KEYS_DB", str(default_db_dir / "api_keys.db")))
+        self.settings_db: Path = Path(os.environ.get("LORE_SETTINGS_DB", str(default_db_dir / "settings.db")))
         self.host: str = os.environ.get("LORE_HOST", "0.0.0.0")
         self.port: int = int(os.environ.get("LORE_PORT", "8000"))
         self.auth_mode: str = os.environ.get("LORE_AUTH_MODE", "none")
@@ -185,3 +202,32 @@ def parse_workspaces(raw_value: str | None) -> dict[str, WorkspaceConfig]:
             raise ValueError(f"Workspace {clean_name!r} must be a JSON object.")
         workspaces[clean_name] = WorkspaceConfig.from_mapping(workspace_payload)
     return workspaces
+
+
+def merged_llm_config(config: LoreConfig, settings_store: SettingsStore) -> LLMProviderConfig:
+    """Build LLM config with runtime settings overriding env-derived config."""
+
+    provider = settings_store.get(SETTINGS_LLM_PROVIDER) or config.llm_provider
+    model = settings_store.get(SETTINGS_LLM_MODEL) or config.llm_model
+    base_url = settings_store.get(SETTINGS_LLM_BASE_URL) or config.llm_base_url
+    api_key = settings_store.get(SETTINGS_LLM_API_KEY) or config.llm_api_key
+    escalation_model = settings_store.get(SETTINGS_LLM_ESCALATION_MODEL) or config.llm_escalation_model
+    escalation_api_key = settings_store.get(SETTINGS_LLM_ESCALATION_API_KEY) or config.llm_escalation_api_key
+
+    max_tokens_setting = settings_store.get(SETTINGS_LLM_MAX_TOKENS)
+    temperature_setting = settings_store.get(SETTINGS_LLM_TEMPERATURE)
+    timeout_setting = settings_store.get(SETTINGS_LLM_TIMEOUT_SECONDS)
+    max_retries_setting = settings_store.get(SETTINGS_LLM_MAX_RETRIES)
+
+    return LLMProviderConfig(
+        name=provider,
+        model=model,
+        base_url=base_url or None,
+        api_key=api_key or None,
+        max_tokens=int(max_tokens_setting) if max_tokens_setting else config.llm_max_tokens,
+        temperature=float(temperature_setting) if temperature_setting else config.llm_temperature,
+        timeout_seconds=float(timeout_setting) if timeout_setting else config.llm_timeout_seconds,
+        max_retries=int(max_retries_setting) if max_retries_setting else config.llm_max_retries,
+        escalation_model=escalation_model or None,
+        escalation_api_key=escalation_api_key or None,
+    )

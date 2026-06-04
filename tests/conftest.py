@@ -204,6 +204,7 @@ def client(content_dir, search_db):
     lore_config.vector_db = search_db.with_name("vectors.db")
     lore_config.ledger_db = search_db.with_name("ledger.db")
     lore_config.api_keys_db = search_db.with_name("api_keys.db")
+    lore_config.settings_db = search_db.with_name("settings.db")
     lore_config.trusted_headers = True
     lore_config.code_ingest_roots = [content_dir.parent]  # allow ingest for tests
     app = create_app(lore_config)

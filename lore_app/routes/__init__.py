@@ -21,6 +21,7 @@ from .procedures import router as procedures_router
 from .provenance import router as provenance_router
 from .rag import router as rag_router
 from .search import router as search_router
+from .settings import settings_router
 from .traces import router as trace_router
 
 __all__ = [
@@ -45,5 +46,6 @@ __all__ = [
     "provenance_router",
     "rag_router",
     "search_router",
+    "settings_router",
     "trace_router",
 ]
