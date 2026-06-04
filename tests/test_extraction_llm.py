@@ -979,9 +979,7 @@ def test_e2e_retry_resolves_deadletter(tmp_path, fake_llm_client, monkeypatch, c
 
     candidates_after_retry = ledger.get_candidates(capture_id=capture_id, limit=20)
     assert len(candidates_after_retry) == candidate_count_after_failure
-    claim_candidates = [
-        candidate for candidate in candidates_after_retry if candidate["candidate_type"] == "claim"
-    ]
+    claim_candidates = [candidate for candidate in candidates_after_retry if candidate["candidate_type"] == "claim"]
     assert len(claim_candidates) == 1
     assert claim_candidates[0]["source_capture_ids"] == [capture_id]
 
@@ -1012,7 +1010,9 @@ def test_retry_cli_marks_no_provider_resolution_as_deterministic(tmp_path, monke
         batch_id="batch-retry",
     )
 
-    def fake_extract_from_captures(repo_arg, capture_ids=None, batch_size=10, dry_run=True, *, ledger_db=None, llm_client=None):
+    def fake_extract_from_captures(
+        repo_arg, capture_ids=None, batch_size=10, dry_run=True, *, ledger_db=None, llm_client=None
+    ):
         del repo_arg, batch_size, dry_run, ledger_db
         assert isinstance(llm_client, NoLlmClient)
         return SimpleNamespace(source_capture_ids=list(capture_ids or []))

@@ -458,9 +458,7 @@ def page_result_provenance(
         "valid_until": optional_string(candidate.get("valid_until"))
         if candidate
         else optional_string(frontmatter.get("valid_until")),
-        "actor": optional_string(candidate.get("actor"))
-        if candidate
-        else optional_string(frontmatter.get("actor")),
+        "actor": optional_string(candidate.get("actor")) if candidate else optional_string(frontmatter.get("actor")),
         "lane": optional_string(candidate.get("lane")) if candidate else optional_string(frontmatter.get("lane")),
         "source_refs": list(dict.fromkeys(refs)),
     }

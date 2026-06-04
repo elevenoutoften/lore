@@ -90,12 +90,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install pip-audit
+      - name: Install project with dev deps
         run: |
           python -m pip install --upgrade pip
+          pip install -e ".[dev]"
           pip install pip-audit
       - name: pip-audit
-        run: pip-audit --desc
+        run: pip-audit --local --desc
 
   package:
     runs-on: ubuntu-latest
