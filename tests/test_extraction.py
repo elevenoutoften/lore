@@ -254,6 +254,29 @@ def test_ledger_reset_extraction_without_capture_ids_resets_all(tmp_path):
     assert {candidate["status"] for candidate in ledger.get_candidates(limit=10)} == {"candidate"}
 
 
+def test_ledger_reset_extraction_delete_candidates_removes_candidates_and_logs(tmp_path):
+    ledger = make_ledger(tmp_path)
+    capture_id = "inbox/2026-05-10/delete-me"
+    other_capture_id = "inbox/2026-05-10/keep-me"
+    ledger.store_extraction_result(extraction_result("batch-1", capture_id, "Lore stores reset state."))
+    ledger.store_extraction_result(extraction_result("batch-2", other_capture_id, "Lore keeps other captures."))
+    deleted_candidate = candidate_for_capture(ledger, capture_id)
+    kept_candidate = candidate_for_capture(ledger, other_capture_id)
+    ledger.activate_candidate(deleted_candidate["candidate_id"])
+    ledger.reject_candidate(kept_candidate["candidate_id"])
+
+    reset_count = ledger.reset_extraction(capture_ids=[capture_id], delete_candidates=True)
+
+    assert reset_count == 1
+    assert ledger.is_capture_extracted(capture_id) is False
+    assert ledger.is_capture_extracted(other_capture_id) is True
+    assert ledger.get_candidates(capture_id=capture_id, limit=10) == []
+    remaining_candidates = ledger.get_candidates(limit=10)
+    assert len(remaining_candidates) == 1
+    assert remaining_candidates[0]["source_capture_ids"] == [other_capture_id]
+    assert remaining_candidates[0]["status"] == "rejected"
+
+
 def test_extraction_request_validation():
     assert ExtractionRequest().dry_run is True
     assert ExtractionRequest(batch_size=50).batch_size == 50
