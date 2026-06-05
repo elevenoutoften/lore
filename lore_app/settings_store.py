@@ -111,6 +111,7 @@ class SettingsStore:
                 (key, value, 1 if secret else 0, utc_now()),
             )
             self.connection.commit()
+            self._set_db_permissions()
 
     def get_all(self) -> dict[str, str]:
         rows = self.connection.execute(
@@ -140,3 +141,8 @@ class SettingsStore:
     def _set_db_permissions(self) -> None:
         if self.db_path.exists():
             os.chmod(self.db_path, 0o600)
+        wal_path = self.db_path.with_suffix(".db-wal")
+        shm_path = self.db_path.with_suffix(".db-shm")
+        for sidecar_path in (wal_path, shm_path):
+            if sidecar_path.exists():
+                os.chmod(sidecar_path, 0o600)

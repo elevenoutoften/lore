@@ -37,7 +37,8 @@ def test_settings_store_crud_and_masking(tmp_path):
     assert store.get_masked(SETTINGS_LLM_API_KEY) == "****b1f3"
     assert store.get_all() == {SETTINGS_LLM_MODEL: "qwen3.6-plus"}
     assert store.get_all_masked()[SETTINGS_LLM_API_KEY] == "****b1f3"
-    assert oct(os.stat(db_path).st_mode & 0o777) == "0o600"
+    if os.name != "nt":
+        assert oct(os.stat(db_path).st_mode & 0o777) == "0o600"
 
     with sqlite3.connect(db_path) as conn:
         secret = conn.execute(
