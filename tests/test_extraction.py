@@ -277,6 +277,57 @@ def test_ledger_reset_extraction_delete_candidates_removes_candidates_and_logs(t
     assert remaining_candidates[0]["status"] == "rejected"
 
 
+def test_reset_extraction_preserves_shared_candidate_provenance(tmp_path):
+    ledger = make_ledger(tmp_path)
+    capture_a = "inbox/2026-05-10/a"
+    capture_b = "inbox/2026-05-10/b"
+
+    ledger.store_extraction_result(extraction_result("batch-1", capture_a, "A fact"))
+    ledger.store_extraction_result(extraction_result("batch-1", capture_b, "B fact"))
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-1",
+            processed_at="2026-05-10T00:00:00+00:00",
+            source_capture_ids=[capture_a, capture_b],
+            claims=[
+                ExtractedClaim(
+                    subject="services/lore",
+                    predicate="states",
+                    object="Shared fact from A and B",
+                    confidence="high",
+                    source_page_ids=[capture_a, capture_b],
+                )
+            ],
+        )
+    )
+
+    shared_candidates = [
+        candidate
+        for candidate in ledger.get_candidates(limit=10)
+        if set(candidate["source_capture_ids"]) == {capture_a, capture_b}
+    ]
+    assert len(shared_candidates) == 1
+
+    reset_count = ledger.reset_extraction(capture_ids=[capture_a], delete_candidates=True)
+
+    assert reset_count >= 1
+    assert ledger.is_capture_extracted(capture_a) is False
+    assert ledger.is_capture_extracted(capture_b) is True
+    assert ledger.get_candidates(capture_id=capture_a, limit=10) == []
+
+    remaining = ledger.get_candidates(limit=10)
+    shared_remaining = [
+        candidate
+        for candidate in remaining
+        if candidate["content_json"].get("object") == "Shared fact from A and B"
+    ]
+    assert len(shared_remaining) == 1
+    assert shared_remaining[0]["source_capture_ids"] == [capture_b]
+    assert [
+        candidate for candidate in remaining if candidate["source_capture_ids"] == [capture_a]
+    ] == []
+
+
 def test_extraction_request_validation():
     assert ExtractionRequest().dry_run is True
     assert ExtractionRequest(batch_size=50).batch_size == 50

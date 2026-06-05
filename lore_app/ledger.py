@@ -1105,11 +1105,28 @@ class LedgerDB:
                     """,
                     reset_statuses,
                 ).fetchall()
-            reset_ids = [
-                str(row["candidate_id"])
-                for row in candidate_rows
-                if _candidate_has_source_capture(row["source_capture_ids"], normalized_capture_ids)
-            ]
+            reset_ids: list[str] = []
+            shared_candidate_updates: list[tuple[str, list[str]]] = []
+            if delete_candidates:
+                normalized_capture_ids_set = set(normalized_capture_ids)
+                for row in candidate_rows:
+                    sources = _parse_source_capture_ids(row["source_capture_ids"])
+                    if sources is None:
+                        continue
+                    retried_sources = [source for source in sources if source in normalized_capture_ids_set]
+                    if not retried_sources:
+                        continue
+                    remaining_sources = [source for source in sources if source not in normalized_capture_ids_set]
+                    if remaining_sources:
+                        shared_candidate_updates.append((str(row["candidate_id"]), remaining_sources))
+                    else:
+                        reset_ids.append(str(row["candidate_id"]))
+            else:
+                reset_ids = [
+                    str(row["candidate_id"])
+                    for row in candidate_rows
+                    if _candidate_has_source_capture(row["source_capture_ids"], normalized_capture_ids)
+                ]
             if reset_ids:
                 id_placeholders = ", ".join("?" for _ in reset_ids)
                 if delete_candidates:
@@ -1133,8 +1150,17 @@ class LedgerDB:
                         """,
                         (now, *reset_ids),
                     )
+            for candidate_id, source_capture_ids in shared_candidate_updates:
+                self.connection.execute(
+                    """
+                    UPDATE extraction_candidates
+                    SET source_capture_ids = ?
+                    WHERE candidate_id = ?
+                    """,
+                    (json.dumps(source_capture_ids), candidate_id),
+                )
             self.connection.commit()
-            if cursor.rowcount > 0 or reset_ids:
+            if cursor.rowcount > 0 or reset_ids or shared_candidate_updates:
                 self._bump_generation()
         return int(cursor.rowcount)
 
@@ -1620,6 +1646,16 @@ def _candidate_has_source_capture(source_capture_ids: Any, capture_ids: list[str
         return False
     requested = set(capture_ids)
     return any(isinstance(source, str) and source in requested for source in sources)
+
+
+def _parse_source_capture_ids(source_capture_ids: Any) -> list[str] | None:
+    try:
+        sources = json.loads(str(source_capture_ids))
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(sources, list):
+        return None
+    return [source for source in sources if isinstance(source, str)]
 
 
 def _decode_consolidation_run(row: sqlite3.Row) -> dict[str, Any]:
