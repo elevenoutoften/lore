@@ -19,7 +19,38 @@ It is intentionally small in v1:
 python -m venv .venv
 . .venv/bin/activate
 pip install -e ".[test]"
+```
+
+### Running tests
+
+```bash
 pytest
+```
+
+### Lint and format checks
+
+```bash
+pip install -e ".[dev]"
+ruff check .
+ruff format --check .
+```
+
+### Coverage
+
+```bash
+pytest --cov=lore_app --cov-report=term-missing --cov-fail-under=50
+```
+
+### Dependency audit
+
+```bash
+pip install pip-audit
+pip-audit --local --desc
+```
+
+### Starting the server
+
+```bash
 LORE_CONTENT_DIR=../../lore uvicorn lore_app.asgi:app --reload --port 8078
 ```
 
