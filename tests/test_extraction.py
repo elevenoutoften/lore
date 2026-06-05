@@ -317,15 +317,11 @@ def test_reset_extraction_preserves_shared_candidate_provenance(tmp_path):
 
     remaining = ledger.get_candidates(limit=10)
     shared_remaining = [
-        candidate
-        for candidate in remaining
-        if candidate["content_json"].get("object") == "Shared fact from A and B"
+        candidate for candidate in remaining if candidate["content_json"].get("object") == "Shared fact from A and B"
     ]
     assert len(shared_remaining) == 1
     assert shared_remaining[0]["source_capture_ids"] == [capture_b]
-    assert [
-        candidate for candidate in remaining if candidate["source_capture_ids"] == [capture_a]
-    ] == []
+    assert [candidate for candidate in remaining if candidate["source_capture_ids"] == [capture_a]] == []
 
 
 def test_extraction_request_validation():
