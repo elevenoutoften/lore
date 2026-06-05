@@ -44,7 +44,7 @@ pytest --cov=lore_app --cov-report=term-missing --cov-fail-under=50
 ### Dependency audit
 
 ```bash
-pip install pip-audit
+pip install -e ".[dev]" pip-audit
 pip-audit --local --desc
 ```
 
