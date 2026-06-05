@@ -19,6 +19,8 @@ docker run -d --name lore \
   -e LORE_CONTENT_DIR=/data/pages \
   -e LORE_SEARCH_DB=/data/db/search.db \
   -e LORE_VECTOR_DB=/data/db/vectors.db \
+  -e LORE_LEDGER_DB=/data/db/ledger.db \
+  -e LORE_SETTINGS_DB=/data/db/settings.db \
   -e LORE_API_KEYS_DB=/data/db/api_keys.db \
   -e LORE_AUTH_MODE=bearer \
   -e LORE_AUTH_SECRET=your-secret-here \
@@ -71,6 +73,8 @@ WorkingDirectory=/opt/lore
 Environment=LORE_CONTENT_DIR=/var/lib/lore/pages
 Environment=LORE_SEARCH_DB=/var/lib/lore/search.db
 Environment=LORE_VECTOR_DB=/var/lib/lore/vectors.db
+Environment=LORE_LEDGER_DB=/var/lib/lore/ledger.db
+Environment=LORE_SETTINGS_DB=/var/lib/lore/settings.db
 Environment=LORE_API_KEYS_DB=/var/lib/lore/api_keys.db
 Environment=LORE_AUTH_MODE=bearer
 Environment=LORE_AUTH_SECRET=your-secret-here
@@ -97,12 +101,17 @@ Set these for production:
 LORE_CONTENT_DIR=/var/lib/lore/pages
 LORE_SEARCH_DB=/var/lib/lore/search.db
 LORE_VECTOR_DB=/var/lib/lore/vectors.db
+LORE_LEDGER_DB=/var/lib/lore/ledger.db
+LORE_SETTINGS_DB=/var/lib/lore/settings.db
 LORE_API_KEYS_DB=/var/lib/lore/api_keys.db
 LORE_AUTH_MODE=bearer
 LORE_AUTH_SECRET=changeme
 LORE_BRAND_TITLE=LORE
 LORE_BRAND_URL=/
 ```
+
+`LORE_SETTINGS_DB` controls the path to the runtime settings database used for
+LLM provider configuration.
 
 When `LORE_AUTH_MODE` is `bearer` or `basic`, `LORE_AUTH_SECRET` must be a
 non-empty string. If it is unset, empty, or whitespace-only, the application

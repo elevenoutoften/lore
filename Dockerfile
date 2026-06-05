@@ -6,6 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     LORE_SEARCH_DB=/data/db/search.db \
     LORE_VECTOR_DB=/data/db/vectors.db \
     LORE_LEDGER_DB=/data/db/ledger.db \
+    LORE_SETTINGS_DB=/data/db/settings.db \
     LORE_API_KEYS_DB=/data/db/api-keys.db \
     LORE_AUTH_MODE=bearer \
     LORE_HOST=0.0.0.0 \

@@ -1,11 +1,39 @@
 from pathlib import Path
 
 
-def test_deploy_passes_auth_env_vars():
+def test_deploy_passes_all_db_env_vars():
+    """Regression: every persistent DB path must be passed to the Docker container."""
     service_path = Path(__file__).parent.parent / "deploy" / "axis-lore.service"
     content = service_path.read_text()
-    for var in ["LORE_AUTH_MODE", "LORE_AUTH_SECRET", "LORE_API_KEYS_DB"]:
-        assert f"-e {var}=${{{var}}}" in content, f"Missing -e {var}=${{{var}}} in deploy/axis-lore.service"
+    expected_env_vars = {
+        "LORE_SEARCH_DB": "/data/db/search.db",
+        "LORE_VECTOR_DB": "/data/db/vectors.db",
+        "LORE_LEDGER_DB": "/data/db/ledger.db",
+        "LORE_SETTINGS_DB": "/data/db/settings.db",
+        "LORE_API_KEYS_DB": "/data/db/api-keys.db",
+        "LORE_AUTH_MODE": "${LORE_AUTH_MODE}",
+        "LORE_AUTH_SECRET": "${LORE_AUTH_SECRET}",
+    }
+    for var, value in expected_env_vars.items():
+        assert f"-e {var}={value}" in content, f"Missing -e {var}={value} in deploy/axis-lore.service"
+
+
+def test_deploy_passes_settings_db():
+    """Regression: LORE_SETTINGS_DB must be passed in deploy/axis-lore.service."""
+    service_path = Path(__file__).parent.parent / "deploy" / "axis-lore.service"
+    content = service_path.read_text()
+    assert "-e LORE_SETTINGS_DB=/data/db/settings.db" in content, (
+        "Missing -e LORE_SETTINGS_DB=/data/db/settings.db in deploy/axis-lore.service"
+    )
+
+
+def test_dockerfile_sets_settings_db():
+    """Regression: Dockerfile must set LORE_SETTINGS_DB to /data/db/settings.db."""
+    dockerfile = Path(__file__).parent.parent / "Dockerfile"
+    content = dockerfile.read_text()
+    assert "LORE_SETTINGS_DB=/data/db/settings.db" in content, (
+        "Missing LORE_SETTINGS_DB=/data/db/settings.db in Dockerfile"
+    )
 
 
 def test_release_gate_port_and_version_consistency():
