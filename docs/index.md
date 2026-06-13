@@ -34,6 +34,8 @@ patterns.
 - [Analytics](analytics-design.md): graph analytics, centrality, and community
   detection.
 - [Policies](policies.md): policy engine, epistemic gates, and rule evaluation.
+- [Design Department Brief](design-department-brief.md): concise product,
+  feature, user-flow, and roadmap context for Web UI/UX design.
 
 ## SDKs
 
