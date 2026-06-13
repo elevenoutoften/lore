@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -130,7 +131,22 @@ def create_app(
     metrics = MetricsCollector()
     metrics.set_index_size(len(repo.list_pages()))
 
-    app = FastAPI(title=lore_config.app_name, description=lore_config.app_description, version=package_version())
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        yield
+        search_idx.close()
+        vector_store.close()
+        ledger_db.close()
+        api_key_store.close()
+        settings_store.close()
+        app.state.llm_client.close()
+
+    app = FastAPI(
+        title=lore_config.app_name,
+        description=lore_config.app_description,
+        version=package_version(),
+        lifespan=lifespan,
+    )
     app.state.config = lore_config
     app.state.trusted_headers = lore_config.trusted_headers
     app.state.trusted_proxy_auth = lore_config.trusted_proxy_auth
@@ -234,15 +250,6 @@ def create_app(
             response.headers["X-Frame-Options"] = "DENY"
         response.headers["Content-Security-Policy"] = csp
         return response
-
-    @app.on_event("shutdown")
-    def close_db_connections() -> None:
-        search_idx.close()
-        vector_store.close()
-        ledger_db.close()
-        api_key_store.close()
-        settings_store.close()
-        app.state.llm_client.close()
 
     if mount_workspaces:
         for workspace_name, workspace in lore_config.workspaces.items():
