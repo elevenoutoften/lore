@@ -44,6 +44,10 @@ def utc_now() -> str:
 def mask_secret(value: str | None) -> str | None:
     if not value:
         return None
+    # Fully mask short secrets: value[-4:] on a <=4-char secret would echo the
+    # whole thing, and 5-8 chars exposes most of it.
+    if len(value) <= 8:
+        return "****"
     return "****" + value[-4:]
 
 

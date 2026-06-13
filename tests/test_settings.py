@@ -11,7 +11,17 @@ from lore_app.settings_store import (
     SETTINGS_LLM_MAX_TOKENS,
     SETTINGS_LLM_MODEL,
     SettingsStore,
+    mask_secret,
 )
+
+
+def test_mask_secret_fully_masks_short_values():
+    assert mask_secret("abc") == "****"
+    assert mask_secret("sk12") == "****"
+    assert mask_secret("12345678") == "****"
+    assert mask_secret("sk-runtime-b1f3") == "****b1f3"
+    assert mask_secret("") is None
+    assert mask_secret(None) is None
 
 
 def admin_headers(client) -> dict[str, str]:
