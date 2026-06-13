@@ -257,10 +257,15 @@ class VectorStore:
         with self._cache_lock:
             cache = dict(self._idf_cache)
         if not cache:
-            total_docs = self._conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
-            if total_docs == 0:
-                return {token: 0.0 for token in tokens}
-            rows = self._conn.execute("SELECT token, df FROM doc_freq").fetchall()
+            # Serialize the shared-connection reads under the same lock writers
+            # use. search() calls this before acquiring _lock, so there is no
+            # reentrancy; without it a concurrent writer on the same sqlite3
+            # connection can raise or return a partially-updated cache.
+            with self._lock:
+                total_docs = self._conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+                if total_docs == 0:
+                    return {token: 0.0 for token in tokens}
+                rows = self._conn.execute("SELECT token, df FROM doc_freq").fetchall()
             cache = {token: math.log((total_docs + 1) / (df + 1)) + 1 for token, df in rows}
             with self._cache_lock:
                 self._idf_cache = dict(cache)
