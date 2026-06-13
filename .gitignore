@@ -44,6 +44,11 @@ uv.lock
 # Test artifacts
 .pytest_cache/
 .pytest-tmp/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.gitignore_status
 
 # Lore runtime
 tmp/
