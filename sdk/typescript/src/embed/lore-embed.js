@@ -16,6 +16,7 @@
       authToken: config.authToken,
       mode: config.mode,
       pageId: config.pageId,
+      query: config.query,
       container: config.container || "#lore-embed",
       theme: config.theme || "auto"
     };
@@ -28,6 +29,9 @@
     url.searchParams.set("hideChrome", "true");
     if (config.pageId) {
       url.searchParams.set("pageId", config.pageId);
+    }
+    if (config.mode === "search" && config.query) {
+      url.searchParams.set("q", config.query);
     }
     return url.toString();
   }

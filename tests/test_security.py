@@ -114,6 +114,14 @@ def test_security_headers_present_on_responses(client):
     )
 
 
+def test_embed_route_is_framable(client):
+    """The /embed widget must be loadable in an iframe (no XFO: DENY; frame-ancestors set)."""
+    response = client.get("/embed", params={"mode": "search"})
+    assert response.status_code == 200
+    assert response.headers.get("X-Frame-Options") != "DENY"
+    assert "frame-ancestors" in response.headers["Content-Security-Policy"]
+
+
 def test_template_scripts_use_csp_nonce(client):
     response = client.get("/projects/example-project")
     assert response.status_code == 200

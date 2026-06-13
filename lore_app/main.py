@@ -213,12 +213,26 @@ def create_app(
         request.state.csp_nonce = secrets.token_urlsafe(16)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Content-Security-Policy"] = lore_config.csp_policy or (
+        csp = lore_config.csp_policy or (
             f"default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-{request.state.csp_nonce}'"
         )
+        # The /embed widget is designed to load inside an iframe; X-Frame-Options:
+        # DENY would block it (even same-origin). Relax it for /embed only and use
+        # CSP frame-ancestors, which also expresses cross-origin embedders.
+        path = request.url.path
+        if path == "/embed" or path.endswith("/embed"):
+            ancestors = lore_config.embed_frame_ancestors
+            if ancestors:
+                # Cross-origin embedding: rely on frame-ancestors (XFO has no allowlist).
+                csp = f"{csp}; frame-ancestors 'self' {' '.join(ancestors)}"
+            else:
+                response.headers["X-Frame-Options"] = "SAMEORIGIN"
+                csp = f"{csp}; frame-ancestors 'self'"
+        else:
+            response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Content-Security-Policy"] = csp
         return response
 
     @app.on_event("shutdown")

@@ -3,6 +3,7 @@ export interface LoreEmbedConfig {
   authToken?: string;
   mode: "page" | "search" | "capture";
   pageId?: string;
+  query?: string;
   container?: string;
   theme?: "light" | "dark" | "auto";
 }
@@ -89,6 +90,9 @@ function embedUrl(config: LoreEmbedConfig): string {
   url.searchParams.set("hideChrome", "true");
   if (config.pageId) {
     url.searchParams.set("pageId", config.pageId);
+  }
+  if (config.mode === "search" && config.query) {
+    url.searchParams.set("q", config.query);
   }
   return url.toString();
 }

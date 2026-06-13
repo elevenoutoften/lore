@@ -54,6 +54,7 @@ mountLoreEmbed({
 | `baseUrl` | Yes | Lore server origin, without a trailing path. |
 | `mode` | Yes | `page`, `search`, or `capture`. |
 | `pageId` | For `page` | Lore page ID to render. |
+| `query` | No | Initial search term for `mode: "search"` embeds. |
 | `container` | No | CSS selector for the mount target. Defaults to `#lore-embed`. |
 | `theme` | No | `light`, `dark`, or `auto`. Defaults to `auto`. |
 | `authToken` | No | Bearer token passed to the iframe with `postMessage`. |

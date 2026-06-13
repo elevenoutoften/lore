@@ -105,6 +105,11 @@ class LoreConfig:
         self.trusted_headers: bool = os.environ.get("LORE_TRUSTED_HEADERS", "").lower() in ("true", "1", "yes")
         self.trusted_proxy_auth: bool = os.environ.get("LORE_TRUSTED_PROXY_AUTH", "").lower() in ("true", "1", "yes")
         self.csp_policy: str = os.environ.get("LORE_CSP_POLICY", "")
+        self.embed_frame_ancestors: list[str] = [
+            origin.strip()
+            for origin in os.environ.get("LORE_EMBED_FRAME_ANCESTORS", "").replace(",", " ").split()
+            if origin.strip()
+        ]
         self.code_ingest_roots: list[Path] = self._parse_roots(os.environ.get("LORE_CODE_INGEST_ROOTS", ""))
         self.code_ingest_max_files: int = int(os.environ.get("LORE_CODE_INGEST_MAX_FILES", "500"))
         self.code_ingest_max_depth: int = int(os.environ.get("LORE_CODE_INGEST_MAX_DEPTH", "10"))
@@ -155,6 +160,7 @@ class LoreConfig:
             "trusted_proxy_auth": self.trusted_proxy_auth,
             "allow_insecure_bind": self.allow_insecure_bind,
             "csp_policy": self.csp_policy,
+            "embed_frame_ancestors": list(self.embed_frame_ancestors),
             "code_ingest_roots": [str(r) for r in self.code_ingest_roots],
             "code_ingest_max_files": self.code_ingest_max_files,
             "code_ingest_max_depth": self.code_ingest_max_depth,
