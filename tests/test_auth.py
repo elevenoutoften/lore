@@ -329,6 +329,38 @@ def test_revoked_lore_api_key_is_rejected(content_dir, search_db, tmp_path):
     assert rejected.status_code == 401
 
 
+def test_public_path_prefix_does_not_leak_pages(content_dir, search_db, tmp_path):
+    """Page ids that merely start with 'static'/'healthz' must not bypass auth.
+
+    Regression for the prefix-match auth bypass: a substring prefix check on the
+    public-path whitelist let GET /staticsecret and GET /healthznotes (served by
+    the catch-all reader route) skip authentication entirely.
+    """
+    (content_dir / "staticsecret.md").write_text(
+        "---\ntitle: Static Secret\nkind: note\nvisibility: internal\n---\n\n# top secret\n",
+        encoding="utf-8",
+    )
+    (content_dir / "healthznotes.md").write_text(
+        "---\ntitle: Healthz Notes\nkind: note\nvisibility: internal\n---\n\n# private\n",
+        encoding="utf-8",
+    )
+    app = create_app(make_config(content_dir, search_db, tmp_path, "bearer", "secret-token"))
+
+    with TestClient(app) as client:
+        leaked_static = client.get("/staticsecret")
+        leaked_healthz = client.get("/healthznotes")
+        real_static = client.get("/static/lore.css")
+        health = client.get("/healthz")
+        authorized = client.get("/staticsecret", headers={"Authorization": "Bearer secret-token"})
+
+    assert leaked_static.status_code == 401
+    assert "top secret" not in leaked_static.text
+    assert leaked_healthz.status_code == 401
+    assert real_static.status_code == 200
+    assert health.status_code == 200
+    assert authorized.status_code == 200
+
+
 def test_reader_lore_api_key_cannot_write(content_dir, search_db, tmp_path):
     config = make_config(content_dir, search_db, tmp_path, "api_key", "")
     store = LoreApiKeyStore(config.api_keys_db)

@@ -34,14 +34,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self.secret = secret
         self.api_key_store = api_key_store
         self.trusted_proxy_auth = trusted_proxy_auth
-        self.public_paths = {"/healthz", "/static"}
+
+    @staticmethod
+    def _is_public_path(path: str) -> bool:
+        """Public, unauthenticated paths.
+
+        Uses exact/segment-boundary matching, never a bare prefix: a substring
+        prefix test would let page ids like ``staticsecret`` or ``healthznotes``
+        (served by the catch-all reader route) bypass auth entirely.
+        """
+        return (
+            path in ("/healthz", "/healthz/config", "/static")
+            or path.startswith("/static/")
+        )
 
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         if self.mode == "none":
             return await call_next(request)
 
         path = request.url.path
-        if any(path.startswith(public_path) for public_path in self.public_paths):
+        if self._is_public_path(path):
             return await call_next(request)
 
         if self.mode == "bearer":
