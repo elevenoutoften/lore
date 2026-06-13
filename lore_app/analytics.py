@@ -195,6 +195,13 @@ class GraphAnalytics:
                 if node_id != source:
                     scores[node_id] += dependencies[node_id]
 
+        # When betweenness is sampled from a subset of sources (large graphs),
+        # scale by n/k so the magnitudes stay on the full-graph normalization.
+        if len(sources) < len(node_ids):
+            scale = len(node_ids) / len(sources)
+            for node_id in scores:
+                scores[node_id] *= scale
+
         for node_id in scores:
             scores[node_id] /= 2.0
         if len(node_ids) > 2:
