@@ -175,10 +175,17 @@ have the `admin` role, except when Lore is running with application auth
 disabled.
 
 Code ingest is disabled by default. To enable it, set `LORE_CODE_INGEST_ROOTS`
-to a colon-separated list of directory roots that the ingester is allowed to
-walk:
+to a list of directory roots that the ingester is allowed to walk. The
+separator is OS-dependent: use `;` on Windows (so drive-letter colons such as
+`D:\` are not mistaken for separators), and `:` or `;` on POSIX systems.
+
+POSIX:
 
     LORE_CODE_INGEST_ROOTS=/data/pages:/opt/services
+
+Windows:
+
+    LORE_CODE_INGEST_ROOTS=D:\Projects;E:\Code
 
 Any `source_dir` that is not a subdirectory of a configured root (after
 resolving symlinks) is rejected with a 400 error. File count, depth, and

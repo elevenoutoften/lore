@@ -122,6 +122,11 @@ curl -sS -X POST "$LORE_URL/api/rag/evaluate" \
 | `GET` | `/api/graph/stats` | Page, link, and broken-link counts. |
 | `GET` | `/api/graph/enriched` | Graph with node counts and metadata. |
 | `GET` | `/api/graph/sources` | Source reference edges. |
+| `GET` | `/api/graph/analytics` | Centrality and community analytics over the context graph. |
+| `GET` | `/api/context-graph` | Multi-hop context graph over pages, captures, claims, traces, etc. |
+| `POST` | `/api/context-graph/neighbors` | Neighbors of the given nodes. |
+| `POST` | `/api/context-graph/paths` | Paths between nodes. |
+| `POST` | `/api/context-graph/explain` | Explain how nodes are connected. |
 | `GET` | `/api/lint` | Full Lore lint report. |
 | `GET` | `/api/lint/fixable` | Auto-fixable lint issues. |
 | `GET` | `/api/lint/stale` | Stale page queue. |
@@ -175,6 +180,42 @@ curl -sS -X POST "$LORE_URL/api/captures/inbox/2026-05-04/deploy-finding/promote
   -H "Content-Type: application/json" \
   -d '{"target_page_id":"runbooks/deploy-lore"}'
 curl -sS "$LORE_URL/api/promotions"
+```
+
+## Heartbeat, Distillation, Extraction, and Memory
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/heartbeat` | Self-audit review (stale, contradictions, low-confidence, expired, procedure issues). |
+| `POST` | `/api/heartbeat/captures` | Create captures from heartbeat findings. |
+| `POST` | `/api/distill/daily` | Distill a day's captures into a daily note. Body: `{date?, actor?}`. |
+| `GET` | `/api/distill/daily/{target_date}` | List the captures for a day. |
+| `POST` | `/api/distill/promote/{target_date}` | Promote a daily note. |
+| `GET` | `/api/distill/pending` | Days with captures not yet distilled. |
+| `POST` | `/api/extraction/run` | Run LLM/deterministic extraction. Body: `{provider?, capture_ids?, dry_run, batch_size}`. |
+| `GET` | `/api/extraction/status` | Extraction batch status. |
+| `POST` | `/api/extraction/reset` | Reset extraction state. |
+| `GET` | `/api/extraction/batches` | List extraction batches. |
+| `GET` | `/api/extraction/candidates` | List extracted candidates. Query: `status`, `type`, `page_id`. |
+| `POST` | `/api/memory/capture` | Lightweight memory capture. |
+| `GET` | `/api/memory/health` | Memory subsystem health counts. |
+
+## Runtime Settings
+
+Secrets are never returned: responses expose `*_configured` (bool) and a masked
+`*_hint` only. See [llm-provider-config.md](llm-provider-config.md).
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/settings/llm` | Read the effective LLM provider config (env + stored overrides). Any Lore key. |
+| `PUT` | `/api/settings/llm` | Update LLM settings and hot-reload the client. Admin key only. |
+| `DELETE` | `/api/settings/llm` | Clear stored overrides; revert to env defaults. Admin key only. |
+
+```bash
+curl -sS "$LORE_URL/api/settings/llm" -H "Authorization: Bearer $LORE_TOKEN"
+curl -sS -X PUT "$LORE_URL/api/settings/llm" \
+  -H "Authorization: Bearer $LORE_ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"provider":"openrouter","model":"qwen3.6-plus","base_url":"https://openrouter.ai/api/v1","api_key":"sk-..."}'
 ```
 
 ## Decisions and Procedures

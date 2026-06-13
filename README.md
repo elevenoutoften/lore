@@ -160,6 +160,7 @@ Ledger, consolidation, provenance, traces, policies, and precedents:
 - `POST /api/ledger/archive/{candidate_id}`
 - `POST /api/ledger/decay`
 - `GET /api/ledger/claims`
+- `GET /api/ledger/candidates`
 - `GET /api/consolidation/status`
 - `POST /api/consolidation/run`
 - `POST /api/consolidation/rollback/{plan_id}`
@@ -185,6 +186,12 @@ API key management:
 - `GET /api/api-keys`
 - `POST /api/api-keys`
 - `POST /api/api-keys/{api_key_id}/revoke`
+
+Runtime settings (secrets are never returned; only `configured` + masked hint):
+
+- `GET /api/settings/llm` (any valid Lore API key)
+- `PUT /api/settings/llm` (admin Lore API key)
+- `DELETE /api/settings/llm` (admin Lore API key)
 
 Page IDs are slash-separated Markdown paths without the `.md` suffix, for
 example `projects/example-project` or `services/lore`.
@@ -252,6 +259,7 @@ security hardening, and beta release.
 - `resources/list`
 - `resources/read`
 - `resources/templates/list`
+- `prompts/list`
 
 Tools:
 

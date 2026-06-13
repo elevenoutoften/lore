@@ -1,21 +1,24 @@
 # LLM Extraction Provider Configuration
 
-## Default: qwen3.6-plus (OpenRouter)
+## Default: extraction disabled (recommended: qwen3.6-plus via OpenRouter)
 
-Lore uses `qwen3.6-plus` as its primary extraction model via OpenRouter's OpenAI-compatible API.
+Extraction runs deterministic-only out of the box: the shipped default is
+`LORE_LLM_PROVIDER=none`, so no LLM is called until a provider is configured
+(via the env vars below or `PUT /api/settings/llm`). The recommended production
+configuration is `qwen3.6-plus` through OpenRouter's OpenAI-compatible API.
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `LORE_LLM_PROVIDER` | `openrouter` | LLM provider name |
-| `LORE_LLM_MODEL` | `qwen3.6-plus` | Primary extraction model |
-| `LORE_LLM_BASE_URL` | `https://openrouter.ai/api/v1` | API base URL |
-| `LORE_LLM_API_KEY` | *(required)* | API key (set via secret store, never committed) |
-| `LORE_LLM_MAX_TOKENS` | `4096` | Max response tokens |
-| `LORE_LLM_TEMPERATURE` | `0.3` | Sampling temperature |
-| `LORE_LLM_ESCALATION_MODEL` | `glm-5.1` | Optional escalation model |
-| `LORE_LLM_ESCALATION_API_KEY` | *(optional)* | Escalation API key |
+| Variable | Default | Recommended | Description |
+|---|---|---|---|
+| `LORE_LLM_PROVIDER` | `none` | `openrouter` | LLM provider name; `none` disables LLM extraction |
+| `LORE_LLM_MODEL` | *(empty)* | `qwen3.6-plus` | Primary model; defaults to `qwen3.6-plus` once a provider is set |
+| `LORE_LLM_BASE_URL` | *(empty)* | `https://openrouter.ai/api/v1` | API base URL |
+| `LORE_LLM_API_KEY` | *(required to enable)* | — | API key (set via secret store, never committed) |
+| `LORE_LLM_MAX_TOKENS` | `4096` | — | Max response tokens |
+| `LORE_LLM_TEMPERATURE` | `0.3` | — | Sampling temperature |
+| `LORE_LLM_ESCALATION_MODEL` | `glm-5.1` | — | Optional escalation model |
+| `LORE_LLM_ESCALATION_API_KEY` | *(optional)* | — | Escalation API key (falls back to the primary key) |
 
 ### Escalation: GLM-5.1
 

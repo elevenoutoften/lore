@@ -126,5 +126,6 @@ def mcp_info():
             "resources/list",
             "resources/read",
             "resources/templates/list",
+            "prompts/list",
         ],
     }

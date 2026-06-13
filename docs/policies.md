@@ -71,4 +71,4 @@ Disable a policy via `DELETE /api/policies/{policy_id}`. Disabled policies are s
 
 ## Versioning
 
-When updating a policy's rules, increment the `version` field. Policy IDs include the version, so `auto-apply:v1` and `auto-apply:v2` are distinct policies. The `PolicyEngine` always evaluates the latest enabled version of each policy.
+When updating a policy's rules, increment the `version` field. Policy IDs include the version, so `auto-apply:v1` and `auto-apply:v2` are distinct policies. The `PolicyEngine` evaluates every enabled policy independently; it does not auto-select the latest version. When you supersede a policy with a new version, disable the old one via `DELETE /api/policies/{policy_id}` (which sets `enabled=0`) so it is no longer evaluated.
