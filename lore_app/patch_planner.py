@@ -112,6 +112,11 @@ class PatchPlanner:
 
     def apply_plan(self, plan_id: str, *, force: bool = False) -> PatchApplyResult:
         plan = self._load_plan(plan_id)
+        # Terminal-state guard: re-applying an applied/rejected/rolled-back plan
+        # would re-mutate the page and then crash on an invalid candidate
+        # transition (active -> active), leaving a partial, non-idempotent state.
+        if plan.status in (PatchPlanStatus.applied, PatchPlanStatus.rejected, PatchPlanStatus.rolled_back):
+            raise ValueError(f"Patch plan {plan_id} cannot be applied from status '{plan.status}'.")
         if not plan.auto_appliable and not force:
             raise ValueError(f"Patch plan {plan_id} is not auto-appliable; pass force=True to apply it.")
 
@@ -140,15 +145,26 @@ class PatchPlanner:
 
     def reject_plan(self, plan_id: str, reason: str | None = None) -> None:
         plan = self._load_plan(plan_id)
+        # Only open plans can be rejected. Rejecting an applied plan would try an
+        # invalid active -> rejected candidate transition after the plan row was
+        # already flipped, corrupting state.
+        if plan.status not in (
+            PatchPlanStatus.pending,
+            PatchPlanStatus.ready,
+            PatchPlanStatus.needs_manual_review,
+        ):
+            raise ValueError(f"Patch plan {plan_id} cannot be rejected from status '{plan.status}'.")
         rejected_at = utc_now()
+        # Reject the candidates first so a transition failure cannot leave the
+        # plan flipped to 'rejected' with still-open candidates.
+        for candidate_id in plan.candidate_ids:
+            self.ledger.reject_candidate(candidate_id, reason=reason or "Patch plan rejected")
         self.ledger.update_plan_status(
             plan_id,
             "rejected",
             rejected_at=rejected_at,
             rejection_reason=reason,
         )
-        for candidate_id in plan.candidate_ids:
-            self.ledger.reject_candidate(candidate_id, reason=reason or "Patch plan rejected")
         self._abandon_plan_trace(plan, f"Rejected: {reason or 'no reason given'}")
 
     def _collect_candidates(

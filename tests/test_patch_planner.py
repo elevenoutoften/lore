@@ -467,6 +467,35 @@ Current decision state.
     assert candidate["invalidation_reason"] == "manual review required"
 
 
+def test_apply_and_reject_guarded_against_terminal_plans(tmp_path, monkeypatch):
+    """Re-applying or rejecting an already-applied plan must fail cleanly, not corrupt state."""
+    ctx = make_context(tmp_path, monkeypatch)
+    add_capture(ctx.repo, "inbox/2026-05-10/guard", suggested_target_page="services/lore")
+    write_page(
+        ctx.repo,
+        "services/lore",
+        "---\ntitle: Lore\nkind: service\nvisibility: internal\nstatus: active\n---\n\n# Lore\n\n## Facts\n\nExisting fact.\n",
+    )
+    store_claims(
+        ctx.ledger,
+        "batch-guard",
+        "inbox/2026-05-10/guard",
+        [make_claim("services/lore", "Lore guards plan application", source_page_ids=["services/lore"])],
+    )
+
+    [plan] = ctx.planner.plan_batch(batch_id="batch-guard")
+    ctx.planner.apply_plan(plan.plan_id)
+    assert ctx.ledger.get_patch_plan(plan.plan_id)["status"] == "applied"
+
+    with pytest.raises(ValueError, match="cannot be applied"):
+        ctx.planner.apply_plan(plan.plan_id)
+    with pytest.raises(ValueError, match="cannot be rejected"):
+        ctx.planner.reject_plan(plan.plan_id)
+
+    assert ctx.ledger.get_patch_plan(plan.plan_id)["status"] == "applied"
+    assert ctx.ledger.get_candidates(candidate_type="claim", status="active")
+
+
 def test_consolidation_api_endpoints(tmp_path, monkeypatch):
     ctx = make_context(tmp_path, monkeypatch)
     add_capture(ctx.repo, "inbox/2026-05-10/api-apply", suggested_target_page="services/lore")
