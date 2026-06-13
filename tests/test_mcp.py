@@ -137,6 +137,49 @@ def test_mcp_write_tools_are_rate_limited(client):
     assert second.status_code == 429
 
 
+def test_write_tool_names_are_dispatchable_and_cover_page_writes():
+    """WRITE_TOOL_NAMES must list only real tools and cover every page-mutating tool.
+
+    Guards the L-SEC-11 default-deny rate limiter: a missing name silently
+    unthrottles a write tool, and a dead name (no handler) is misleading cruft.
+    """
+    from lore_app.mcp.tools import TOOLS, WRITE_TOOL_NAMES
+
+    tool_names = {tool["name"] for tool in TOOLS}
+    assert WRITE_TOOL_NAMES <= tool_names, f"unknown tool names: {WRITE_TOOL_NAMES - tool_names}"
+
+    page_mutating = {
+        "lore_create_procedure",
+        "lore_create_stub",
+        "lore_update_metadata",
+        "lore_transition_capture",
+        "lore_distill_daily",
+        "lore_promote_daily",
+        "lore_upsert_page",
+        "lore_capture",
+    }
+    assert page_mutating <= WRITE_TOOL_NAMES, f"unthrottled write tools: {page_mutating - WRITE_TOOL_NAMES}"
+
+
+def test_mcp_batch_isolates_malformed_items(client):
+    """A malformed batch member must not abort the whole batch (JSON-RPC 2.0)."""
+    response = client.post(
+        "/mcp",
+        json=[
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            "not-an-object",
+            {"jsonrpc": "1.0", "id": 3, "method": "tools/list"},
+        ],
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload, list)
+    assert len(payload) == 3
+    by_id = {item.get("id"): item for item in payload}
+    assert "result" in by_id[1]
+    assert "error" in by_id[3]
+
+
 def test_mcp_search_fts(client):
     """MCP lore_search uses FTS when available."""
     client.post("/api/search/reindex")

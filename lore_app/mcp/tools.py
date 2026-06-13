@@ -60,12 +60,17 @@ WRITE_TOOL_NAMES = {
     "lore_consolidation_run",
     "lore_create_trace",
     "lore_create_decision",
+    "lore_create_procedure",
+    "lore_create_stub",
+    "lore_update_metadata",
+    "lore_transition_capture",
+    "lore_distill_daily",
+    "lore_promote_daily",
     "lore_propose_procedure_candidate",
     "lore_heartbeat_audit",
     "lore_promote_capture",
     "lore_reject_patch",
     "lore_upsert_page",
-    "lore_delete_page",
 }
 
 TOOLS: list[dict[str, Any]] = [

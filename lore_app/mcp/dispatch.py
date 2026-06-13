@@ -39,11 +39,13 @@ def handle_mcp_message(
     request: Any | None = None,
 ) -> Any | None:
     if isinstance(message, list):
-        responses = [
-            response
-            for item in message
-            if (
-                response := handle_mcp_message(
+        # Per JSON-RPC 2.0, each batch member is handled independently: a
+        # malformed item yields its own error object rather than aborting the
+        # whole batch and silently dropping every well-formed request.
+        responses: list[Any] = []
+        for item in message:
+            try:
+                response = handle_mcp_message(
                     repo,
                     item,
                     search_index,
@@ -58,9 +60,12 @@ def handle_mcp_message(
                     metrics=metrics,
                     request=request,
                 )
-            )
-            is not None
-        ]
+            except JsonRpcError as exc:
+                item_id = item.get("id") if isinstance(item, dict) else None
+                responses.append(error_response(item_id, exc))
+                continue
+            if response is not None:
+                responses.append(response)
         return responses
 
     if not isinstance(message, dict):
