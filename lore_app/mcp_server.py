@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 
 from .config import LoreConfig
@@ -50,11 +51,17 @@ def main() -> int:
             response["result"] = {"tools": TOOLS}
         elif method == "tools/call":
             from .mcp import call_tool
+            from .mcp.dispatch import JsonRpcError
 
             try:
-                response["result"] = call_tool(repo, params, search_idx, graph_cache, vector_store, ledger_db=ledger_db)
-            except Exception as exc:
-                response["error"] = {"code": -32603, "message": str(exc)}
+                response["result"] = call_tool(
+                    repo, params, search_idx, graph_cache, vector_store, ledger_db=ledger_db, config=config
+                )
+            except JsonRpcError as exc:
+                response["error"] = {"code": exc.code, "message": exc.message}
+            except Exception:
+                logging.getLogger("lore.mcp").exception("Unexpected error in stdio MCP handler")
+                response["error"] = {"code": -32603, "message": "internal error; see server logs"}
         else:
             response["error"] = {"code": -32601, "message": f"Unsupported method: {method}"}
 

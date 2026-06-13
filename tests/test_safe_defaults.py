@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from lore_app.mcp.dispatch import JsonRpcError
 from lore_app.mcp.tools import TOOLS, call_tool
 from lore_app.schemas import ConsolidationRunRequest, ConsolidationRunResult
 
@@ -77,6 +80,17 @@ def test_lore_consolidation_run_tool_schema_defaults_are_safe():
     assert properties["dry_run"]["default"] is True
     assert properties["max_auto_apply"]["default"] == 0
     assert properties["force_reextract"]["default"] is False
+
+
+def test_lore_ingest_service_fails_closed_without_config():
+    """Code ingest must refuse when config is absent, never skip the allowed-roots gate."""
+    with pytest.raises(JsonRpcError) as excinfo:
+        call_tool(
+            DummyRepo(),
+            {"name": "lore_ingest_service", "arguments": {"service_id": "demo-service", "source_dir": "/etc"}},
+        )
+
+    assert excinfo.value.code == -32603
 
 
 def test_lore_service_sets_ledger_db():

@@ -1501,13 +1501,16 @@ def _handle_lore_ingest_service(ctx: McpContext) -> dict[str, Any]:
         validate_service_id(service_id)
     except IngestValidationError as e:
         raise JsonRpcError(-32602, str(e)) from e
-    # Validate source_dir against configured roots and limits
+    # Validate source_dir against configured roots and limits. Fail closed when
+    # config is unavailable: without it the allowed-roots/traversal/limit gate
+    # (L-SEC-10) cannot run, so ingestion of an arbitrary path must be refused.
     cfg: LoreConfig | None = ctx.config
-    if cfg is not None:
-        try:
-            source_dir = str(validate_source_dir(source_dir, cfg))
-        except IngestValidationError as e:
-            raise JsonRpcError(-32602, str(e)) from e
+    if cfg is None:
+        raise JsonRpcError(-32603, "Code ingest unavailable: server config not provided.")
+    try:
+        source_dir = str(validate_source_dir(source_dir, cfg))
+    except IngestValidationError as e:
+        raise JsonRpcError(-32602, str(e)) from e
     inventory = ingest_service_code(service_id, source_dir)
     payload = inventory.model_dump()
     ctx.code_inventories[service_id] = payload
