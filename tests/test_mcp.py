@@ -146,7 +146,7 @@ def test_write_tool_names_are_dispatchable_and_cover_page_writes():
     from lore_app.mcp.tools import TOOLS, WRITE_TOOL_NAMES
 
     tool_names = {tool["name"] for tool in TOOLS}
-    assert WRITE_TOOL_NAMES <= tool_names, f"unknown tool names: {WRITE_TOOL_NAMES - tool_names}"
+    assert tool_names >= WRITE_TOOL_NAMES, f"unknown tool names: {WRITE_TOOL_NAMES - tool_names}"
 
     page_mutating = {
         "lore_create_procedure",

@@ -118,8 +118,6 @@ class PolicyEngine:
             protected_kinds = set(policy.condition_kind) if policy.condition_kind else {"decision", "runbook"}
             risky_ops = {"update_existing_fact", "mark_stale"}
             return operation.value not in risky_ops and page_kind not in protected_kinds
-        if policy.gate == "review-required":
-            # _applies already confirmed this policy matches the page/operation,
-            # so failing the gate routes the matched plan to review (effect_fail).
-            return False
-        return True
+        # review-required: _applies already matched the page/operation, so fail
+        # the gate to route the matched plan to review (its effect_fail).
+        return policy.gate != "review-required"
