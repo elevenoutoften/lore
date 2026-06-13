@@ -336,11 +336,17 @@ def _trace_has_task_ref(trace: Any, task_ref: str) -> bool:
 
 
 def _trace_lanes(trace: Any) -> set[str]:
-    provenance = trace.provenance
+    # A trace's lane is the top-level TraceEntry.lane column; ProvenanceRef has
+    # no `lanes` field, so reading only provenance dropped every trace whenever
+    # a lane filter was supplied.
     lanes: set[str] = set()
+    lane = getattr(trace, "lane", None)
+    if lane:
+        lanes.add(str(lane).strip())
+    provenance = trace.provenance
     if provenance is not None:
         lanes.update(string_list(getattr(provenance, "lanes", None)))
-    return lanes
+    return {lane for lane in lanes if lane}
 
 
 def _trace_haystack(trace: Any) -> str:
