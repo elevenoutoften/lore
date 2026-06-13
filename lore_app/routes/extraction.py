@@ -3,7 +3,7 @@ from __future__ import annotations
 # ruff: noqa: B008
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from ..deps import get_ledger_db, get_repo
 from ..extraction import extract_from_captures, get_unprocessed_captures
@@ -38,6 +38,13 @@ def api_run_extraction(
             llm_client = llm_client.escalation
         elif isinstance(llm_client, NoLlmClient):
             pass
+        else:
+            # No escalation client configured: fail rather than silently running
+            # the primary model and mislabelling the result as escalation.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No escalation provider is configured; set an escalation model/API key.",
+            )
     return extract_from_captures(
         repo,
         capture_ids=payload.capture_ids,

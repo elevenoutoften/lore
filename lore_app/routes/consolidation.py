@@ -3,7 +3,7 @@ from __future__ import annotations
 # ruff: noqa: B008
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..deps import get_consolidation_worker, get_ledger_db, get_patch_planner
 from ..schemas import (
@@ -25,6 +25,13 @@ if TYPE_CHECKING:
 consolidation_router = APIRouter(prefix="/api/consolidation", tags=["consolidation"])
 
 
+def _plan_http_error(exc: ValueError) -> HTTPException:
+    """Map planner/ledger ValueErrors to 404 (missing) or 409 (conflict) instead of 500."""
+    detail = str(exc)
+    code = status.HTTP_404_NOT_FOUND if "not found" in detail.lower() else status.HTTP_409_CONFLICT
+    return HTTPException(status_code=code, detail=detail)
+
+
 @consolidation_router.post("/run", response_model=ConsolidationRunResult)
 def run_consolidation(
     payload: ConsolidationRunRequest,
@@ -43,7 +50,10 @@ def rollback_consolidation_plan(
     plan_id: str,
     worker: ConsolidationWorker = Depends(get_consolidation_worker),
 ) -> RollbackResult:
-    return worker.rollback(plan_id)
+    try:
+        return worker.rollback(plan_id)
+    except ValueError as exc:
+        raise _plan_http_error(exc) from exc
 
 
 @consolidation_router.get("/status")
@@ -80,8 +90,12 @@ def get_patch_plan(
 ) -> dict:
     plan = ledger_db.get_patch_plan(plan_id)
     if plan is None:
-        raise ValueError(f"Patch plan {plan_id} not found")
-    return {"plan": plan, "preview": planner.preview_patch(plan_id)}
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Patch plan {plan_id} not found")
+    try:
+        preview = planner.preview_patch(plan_id)
+    except ValueError as exc:
+        raise _plan_http_error(exc) from exc
+    return {"plan": plan, "preview": preview}
 
 
 @consolidation_router.post("/apply/{plan_id}", response_model=PatchApplyResult)
@@ -90,7 +104,10 @@ def apply_patch_plan(
     payload: PatchApplyRequest,
     planner: PatchPlanner = Depends(get_patch_planner),
 ) -> PatchApplyResult:
-    return planner.apply_plan(plan_id, force=payload.force)
+    try:
+        return planner.apply_plan(plan_id, force=payload.force)
+    except ValueError as exc:
+        raise _plan_http_error(exc) from exc
 
 
 @consolidation_router.post("/reject/{plan_id}")
@@ -99,7 +116,10 @@ def reject_patch_plan(
     payload: PatchRejectRequest,
     planner: PatchPlanner = Depends(get_patch_planner),
 ) -> dict:
-    planner.reject_plan(plan_id, reason=payload.reason)
+    try:
+        planner.reject_plan(plan_id, reason=payload.reason)
+    except ValueError as exc:
+        raise _plan_http_error(exc) from exc
     return {"plan_id": plan_id, "status": "rejected", "reason": payload.reason}
 
 

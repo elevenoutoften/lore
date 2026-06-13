@@ -378,3 +378,20 @@ def test_semantics_endpoint(client):
     assert payload["confidence_levels"]["low"].startswith("Information is unverified")
     assert "accepted" in payload["status_values"]
     assert payload["visibility_levels"]["internal"].startswith("Visible")
+
+
+def test_missing_consolidation_plan_returns_404(client):
+    assert client.get("/api/consolidation/plans/does-not-exist").status_code == 404
+    assert client.post("/api/consolidation/apply/does-not-exist", json={}).status_code == 404
+    assert client.post("/api/consolidation/reject/does-not-exist", json={}).status_code == 404
+
+
+def test_extraction_escalation_without_escalation_client_returns_409(client):
+    from lore_app.llm_provider import FallbackLLMClient, NoLlmClient
+
+    client.app.state.llm_client = FallbackLLMClient(primary=NoLlmClient(), escalation=None)
+    response = client.post(
+        "/api/extraction/run",
+        json={"provider": "escalation", "dry_run": True, "batch_size": 1},
+    )
+    assert response.status_code == 409
