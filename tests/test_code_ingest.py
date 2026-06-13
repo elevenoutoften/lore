@@ -52,6 +52,26 @@ async def submit():
         ("POST", "/submit", "submit"),
     ]
     assert routes[0].file_path == str(app_file)
+
+
+def test_fastapi_route_ingest_records_all_methods(tmp_path):
+    """A .route() with multiple methods must record every method, not just the first."""
+    app_file = tmp_path / "app.py"
+    app_file.write_text(
+        """from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.route("/submit", methods=["POST", "PUT"])
+async def submit():
+    return {}
+""",
+        encoding="utf-8",
+    )
+
+    routes = ingest_fastapi_routes(tmp_path)
+
+    assert {(route.method, route.path) for route in routes} == {("POST", "/submit"), ("PUT", "/submit")}
     assert routes[0].line_number == 6
 
 

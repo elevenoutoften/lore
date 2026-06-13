@@ -198,22 +198,20 @@ def api_ingest_service(
 @router.get("/api/code-ingest/{service_id:path}/inventory")
 def api_get_inventory(
     service_id: str,
-    repo: LoreRepository = Depends(get_repo),
     code_inventories: dict[str, Any] = Depends(get_code_inventories),
     _admin: None = Depends(require_lore_key_admin),
 ):
-    if service_id in code_inventories:
-        return code_inventories[service_id]
-    page = repo.read_page(service_id)
-    if page is None:
-        raise HTTPException(status_code=404, detail="Service page not found.")
-    inventory_data = page.frontmatter.get("code_inventory")
-    if inventory_data is None:
+    # Inventories live in memory only and are lost on restart; the previous
+    # page.frontmatter fallback was dead code (nothing ever wrote that key).
+    if service_id not in code_inventories:
         raise HTTPException(
             status_code=404,
-            detail="No code inventory found. Run POST /api/code-ingest/{service_id} first.",
+            detail=(
+                "No code inventory in memory. Inventories are not persisted across restarts; "
+                "re-run POST /api/code-ingest/{service_id}."
+            ),
         )
-    return inventory_data
+    return code_inventories[service_id]
 
 
 @router.get("/api/decisions", response_model=list[PageSummary])

@@ -34,33 +34,34 @@ def ingest_fastapi_routes(source_dir: str | Path) -> list[RouteEntry]:
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             for decorator in node.decorator_list:
-                route_info = _parse_route_decorator(decorator)
-                if route_info is None:
-                    continue
-                method, path = route_info
-                routes.append(
-                    RouteEntry(
-                        method=method,
-                        path=path,
-                        function_name=node.name,
-                        file_path=str(py_file),
-                        line_number=node.lineno,
+                for method, path in _parse_route_decorator(decorator):
+                    routes.append(
+                        RouteEntry(
+                            method=method,
+                            path=path,
+                            function_name=node.name,
+                            file_path=str(py_file),
+                            line_number=node.lineno,
+                        )
                     )
-                )
     return routes
 
 
-def _parse_route_decorator(decorator: ast.expr) -> tuple[str, str] | None:
-    """Extract (method, path) from a route decorator like @app.get('/path')."""
+def _parse_route_decorator(decorator: ast.expr) -> list[tuple[str, str]]:
+    """Extract (method, path) pairs from a route decorator like @app.get('/path').
+
+    A @router.route('/x', methods=['POST', 'PUT']) declares multiple methods, so
+    return every one rather than just the first.
+    """
 
     if not isinstance(decorator, ast.Call):
-        return None
+        return []
 
     func = decorator.func
     if isinstance(func, ast.Attribute) and func.attr in METHODS and decorator.args:
         arg = decorator.args[0]
         if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-            return func.attr.upper(), arg.value
+            return [(func.attr.upper(), arg.value)]
 
     if isinstance(func, ast.Attribute) and func.attr == "route":
         path = ""
@@ -68,9 +69,11 @@ def _parse_route_decorator(decorator: ast.expr) -> tuple[str, str] | None:
             arg = decorator.args[0]
             if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                 path = arg.value
+        results: list[tuple[str, str]] = []
         for kw in decorator.keywords:
             if kw.arg == "methods" and isinstance(kw.value, ast.List):
                 for elt in kw.value.elts:
                     if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                        return elt.value.upper(), path
-    return None
+                        results.append((elt.value.upper(), path))
+        return results
+    return []
