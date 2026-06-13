@@ -842,12 +842,15 @@ class LedgerDB:
         Floor: 0.01 (never zero — that would be deletion)
         """
         with self._lock:
+            # last_accessed_at is not yet populated by any write path, so fall
+            # back to updated_at/created_at; otherwise decay would always match
+            # zero rows and the documented /api/ledger/decay endpoint is a no-op.
             rows = self.connection.execute(
                 """
-                SELECT candidate_id, strength, last_accessed_at
+                SELECT candidate_id, strength,
+                       COALESCE(last_accessed_at, updated_at, created_at) AS decay_anchor
                 FROM extraction_candidates
                 WHERE status IN ('candidate', 'active')
-                  AND last_accessed_at IS NOT NULL
                 """
             ).fetchall()
 
@@ -860,7 +863,7 @@ class LedgerDB:
             max_strength = 0.0
 
             for row in rows:
-                accessed = datetime.fromisoformat(str(row["last_accessed_at"]))
+                accessed = datetime.fromisoformat(str(row["decay_anchor"]))
                 if accessed.tzinfo is None:
                     accessed = accessed.replace(tzinfo=UTC)
                 days = days_since_access if days_since_access is not None else max(0, (now - accessed).days)

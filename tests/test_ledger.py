@@ -3,6 +3,36 @@ from __future__ import annotations
 import json
 
 from lore_app.ledger import LedgerDB
+from lore_app.schemas import ExtractedClaim, ExtractionResult
+
+
+def test_apply_decay_affects_candidates_without_last_accessed_at(tmp_path):
+    """Decay must work even though last_accessed_at is never written (uses updated_at)."""
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-decay",
+            processed_at="2026-05-10T00:00:00+00:00",
+            source_capture_ids=["inbox/2026-05-10/decay"],
+            claims=[
+                ExtractedClaim(
+                    subject="services/decay",
+                    predicate="states",
+                    object="Decay should reduce strength over time.",
+                    confidence="high",
+                )
+            ],
+            entities=[],
+            edges=[],
+            invalidations=[],
+        )
+    )
+
+    result = ledger.apply_decay(days_since_access=100)
+
+    assert result.decayed_count == 1
+    assert result.max_strength < 0.5
 
 
 def test_deadletter_store_list_and_resolve(tmp_path):
