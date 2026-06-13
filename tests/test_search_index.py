@@ -155,6 +155,27 @@ def test_search_exact_page_id_ranks_first(client):
     assert hits[0]["page_id"] == "services/lore"
 
 
+def test_search_content_scores_preserve_relevance(client):
+    """Content-match scores must not truncate to 0 (which forced alphabetical order)."""
+    client.put(
+        "/api/pages/test/quokka-frequent",
+        json={"content": "---\ntitle: Quokka Frequent\n---\n\n# Quokka Frequent\n\n" + ("quokka " * 10)},
+    )
+    client.put(
+        "/api/pages/test/quokka-rare",
+        json={"content": "---\ntitle: Quokka Rare\n---\n\n# Quokka Rare\n\nquokka " + ("filler " * 9)},
+    )
+    client.post("/api/search/reindex")
+
+    resp = client.get("/api/search", params={"q": "quokka", "limit": 10})
+    assert resp.status_code == 200
+    hits = [h for h in resp.json()["hits"] if h["page"]["id"].startswith("test/quokka-")]
+    assert len(hits) == 2
+    # The more frequent page ranks first and carries a non-zero (untruncated) score.
+    assert hits[0]["page"]["id"] == "test/quokka-frequent"
+    assert hits[0]["score"] > 0
+
+
 def test_search_uses_frontmatter_validity_when_page_has_no_candidate(client):
     """Search provenance falls back to page frontmatter when no ledger candidate exists."""
     unique_term = "frontmatter-validity-token-1a2b3c"

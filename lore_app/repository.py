@@ -261,7 +261,11 @@ class LoreRepository:
                 hits.append(
                     build_search_hit(
                         page,
-                        score=int(hit["score"]),
+                        # FTS rank scores are tiny sub-1.0 floats; int() would
+                        # truncate every content match to 0 and collapse all
+                        # relevance ordering to alphabetical. Scale to keep the
+                        # integer SearchHit.score contract while preserving rank.
+                        score=round(float(hit["score"]) * 1_000_000),
                         matches=list(hit.get("matched_fields") or []),
                         ledger_candidates_by_page=ledger_candidates_by_page,
                     )

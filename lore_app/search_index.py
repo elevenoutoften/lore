@@ -291,27 +291,35 @@ class LoreSearchIndex:
         q = query.casefold().strip()
         for hit in hits:
             bonus = 0.0
+            matched: list[str] = []
             page_id = str(hit.get("page_id", "")).casefold()
             title = str(hit.get("title", "")).casefold()
             tags = " ".join(hit.get("tags", [])).casefold()
 
             if page_id == q or page_id.endswith("/" + q):
                 bonus += 10.0
+                matched.append("page_id")
             elif q in page_id.split("/"):
                 bonus += 5.0
+                matched.append("page_id")
 
             if title == q:
                 bonus += 8.0
+                matched.append("title")
             elif title.startswith(q):
                 bonus += 4.0
+                matched.append("title")
 
             if q in tags.split():
                 bonus += 3.0
+                matched.append("tags")
 
             hit["score"] = hit.get("score", 0) + bonus
-            hit["matched_fields"] = hit.get("matched_fields") or []
-            if bonus > 0 and "title" not in hit["matched_fields"]:
-                hit["matched_fields"].append("title")
+            existing = hit.get("matched_fields") or []
+            for field in matched:
+                if field not in existing:
+                    existing.append(field)
+            hit["matched_fields"] = existing
 
         hits.sort(key=lambda h: h.get("score", 0), reverse=True)
         return hits
