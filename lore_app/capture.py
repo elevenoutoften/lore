@@ -87,6 +87,7 @@ def capture_memory(repo: LoreRepository, payload: CaptureRequest) -> PageDetail:
         tool_calls=payload.tool_calls or None,
         constraints=string_list(payload.constraints) or None,
         policies_applied=string_list(payload.policies_applied) or None,
+        tags=string_list(payload.tags) or None,
         provenance=provenance.model_dump(mode="json"),
     )
     return repo.upsert_page(page_id, content)
@@ -331,9 +332,15 @@ def build_capture_markdown(
     tool_calls: list[dict[str, Any]] | None = None,
     constraints: list[str] | None = None,
     policies_applied: list[str] | None = None,
+    tags: list[str] | None = None,
     provenance: dict[str, Any] | None = None,
 ) -> str:
     effective_source_task = source_task or task_id
+    merged_tags = ["capture", "agent-memory"]
+    for tag in tags or []:
+        cleaned = tag.strip()
+        if cleaned and cleaned not in merged_tags:
+            merged_tags.append(cleaned)
     frontmatter = [
         "---",
         f"title: {frontmatter_scalar(title)}",
@@ -341,7 +348,7 @@ def build_capture_markdown(
         "visibility: internal",
         "status: draft",
         f"summary: {CAPTURE_INTAKE_SUMMARY}",
-        "tags: [capture, agent-memory]",
+        f"tags: {frontmatter_list(merged_tags)}",
         f"captured_at: {captured_at}",
         f"confidence: {frontmatter_scalar(confidence)}",
     ]

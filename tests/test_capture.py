@@ -39,6 +39,25 @@ def test_capture_api_creates_draft_inbox_page(client):
     assert "FLOW-123" in raw.json()["content"]
 
 
+def test_capture_api_merges_user_tags(client):
+    """User-supplied tags must reach the stored capture frontmatter, not be dropped."""
+    response = client.post(
+        "/api/capture",
+        json={
+            "title": "Tagged capture",
+            "observation": "A capture that carries user tags.",
+            "capture_date": "2026-05-02",
+            "tags": ["deploy", "gpu"],
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    tags = response.json()["page"]["frontmatter"]["tags"]
+    assert "deploy" in tags
+    assert "gpu" in tags
+    assert "capture" in tags
+
+
 def test_capture_api_makes_duplicate_slugs_unique(client):
     payload = {
         "title": "Duplicate capture",

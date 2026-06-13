@@ -145,9 +145,6 @@ class LoreClient:
     def capture_digest(self) -> dict[str, Any] | list[Any]:
         return self._request("GET", "/api/captures/digest")
 
-    def get_capture_status(self, page_id: str) -> dict[str, Any] | list[Any]:
-        return self._request("GET", f"/api/captures/{self._path(page_id)}/status")
-
     def update_capture_status(self, page_id: str, status: str) -> dict[str, Any] | list[Any]:
         return self._request("POST", f"/api/captures/{self._path(page_id)}/status", data={"status": status})
 

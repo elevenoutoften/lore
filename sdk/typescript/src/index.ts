@@ -161,10 +161,6 @@ export class LoreClient {
     return this.request("GET", "/api/captures/digest");
   }
 
-  getCaptureStatus(pageId: string): Promise<JsonResponse> {
-    return this.request("GET", `/api/captures/${this.path(pageId)}/status`);
-  }
-
   updateCaptureStatus(pageId: string, status: string): Promise<JsonResponse> {
     return this.request("POST", `/api/captures/${this.path(pageId)}/status`, { data: { status } });
   }

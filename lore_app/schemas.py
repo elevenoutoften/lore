@@ -429,6 +429,7 @@ class CaptureRequest(BaseModel):
     namespace: Literal["inbox", "notes"] = "inbox"
     agent: str | None = None
     capture_date: str | None = None
+    tags: list[str] = Field(default_factory=list, description="User-supplied tags merged into capture frontmatter.")
     source_task: str | None = None
     related_pages: list[str] = Field(default_factory=list)
     confidence: str | None = "unknown"
