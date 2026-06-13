@@ -89,7 +89,7 @@ class LLMClient:
         """Send a chat completion request with retry."""
 
         payload: dict[str, Any] = {
-            "model": model or self.config.model,
+            "model": model or self.config.model or DEFAULT_EXTRACTION_MODEL,
             "messages": messages,
             "temperature": temperature if temperature is not None else self.config.temperature,
             "max_tokens": max_tokens or self.config.max_tokens,
@@ -265,7 +265,7 @@ class FallbackLLMClient:
 def _primary_config_from_lore_config(config: LoreConfig) -> LLMProviderConfig:
     return LLMProviderConfig(
         name=config.llm_provider,
-        model=config.llm_model,
+        model=config.llm_model or DEFAULT_EXTRACTION_MODEL,
         base_url=config.llm_base_url or None,
         api_key=config.llm_api_key,
         max_tokens=config.llm_max_tokens,
@@ -278,9 +278,11 @@ def _primary_config_from_lore_config(config: LoreConfig) -> LLMProviderConfig:
 def _escalation_config_from_lore_config(config: LoreConfig) -> LLMProviderConfig:
     return LLMProviderConfig(
         name=config.llm_provider,
-        model=config.llm_escalation_model,
+        model=config.llm_escalation_model or DEFAULT_ESCALATION_MODEL,
         base_url=config.llm_base_url or None,
-        api_key=config.llm_escalation_api_key,
+        # Reuse the primary key for escalation when no separate key is set, so the
+        # CLI path escalates identically to the server path (build_llm_client_from_config).
+        api_key=config.llm_escalation_api_key or config.llm_api_key,
         max_tokens=config.llm_max_tokens,
         temperature=config.llm_temperature,
         timeout_seconds=config.llm_timeout_seconds,

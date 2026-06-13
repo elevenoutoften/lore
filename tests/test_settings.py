@@ -118,6 +118,22 @@ def test_merged_llm_config_uses_env_fallback(tmp_path, monkeypatch):
     store.close()
 
 
+def test_merged_llm_config_defaults_model_when_unset(tmp_path, monkeypatch):
+    """A provider with no model must fall back to the default model, not an empty string."""
+    monkeypatch.setenv("LORE_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LORE_LLM_API_KEY", "sk-env")
+    monkeypatch.delenv("LORE_LLM_MODEL", raising=False)
+    config = LoreConfig()
+    store = SettingsStore(tmp_path / "settings.db")
+    store.initialize()
+
+    merged = merged_llm_config(config, store)
+
+    assert merged.model == "qwen3.6-plus"
+    assert merged.escalation_model == "glm-5.1"
+    store.close()
+
+
 def test_stored_settings_override_env(tmp_path, monkeypatch):
     monkeypatch.setenv("LORE_LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("LORE_LLM_MODEL", "glm-5.1")

@@ -207,11 +207,15 @@ def parse_workspaces(raw_value: str | None) -> dict[str, WorkspaceConfig]:
 def merged_llm_config(config: LoreConfig, settings_store: SettingsStore) -> LLMProviderConfig:
     """Build LLM config with runtime settings overriding env-derived config."""
 
+    from .llm_provider import DEFAULT_ESCALATION_MODEL, DEFAULT_EXTRACTION_MODEL
+
     provider = settings_store.get(SETTINGS_LLM_PROVIDER) or config.llm_provider
-    model = settings_store.get(SETTINGS_LLM_MODEL) or config.llm_model
+    model = settings_store.get(SETTINGS_LLM_MODEL) or config.llm_model or DEFAULT_EXTRACTION_MODEL
     base_url = settings_store.get(SETTINGS_LLM_BASE_URL) or config.llm_base_url
     api_key = settings_store.get(SETTINGS_LLM_API_KEY) or config.llm_api_key
-    escalation_model = settings_store.get(SETTINGS_LLM_ESCALATION_MODEL) or config.llm_escalation_model
+    escalation_model = (
+        settings_store.get(SETTINGS_LLM_ESCALATION_MODEL) or config.llm_escalation_model or DEFAULT_ESCALATION_MODEL
+    )
     escalation_api_key = settings_store.get(SETTINGS_LLM_ESCALATION_API_KEY) or config.llm_escalation_api_key
 
     max_tokens_setting = settings_store.get(SETTINGS_LLM_MAX_TOKENS)

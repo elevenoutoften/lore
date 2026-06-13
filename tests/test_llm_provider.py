@@ -266,3 +266,29 @@ class TestBuildLLMClient:
         assert client.escalation.config.timeout_seconds == 12.5
         assert client.escalation.config.max_retries == 7
         client.close()
+
+    def test_escalation_reuses_primary_key_via_lore_config(self):
+        config = LoreConfig()
+        config.llm_provider = "openrouter"
+        config.llm_model = "qwen3.6-plus"
+        config.llm_api_key = "sk-test"
+        config.llm_escalation_api_key = None
+
+        client = build_llm_client(config=config)
+
+        assert isinstance(client, FallbackLLMClient)
+        assert client.escalation is not None
+        assert client.escalation.config.api_key == "sk-test"
+        client.close()
+
+    def test_primary_model_defaults_when_unset(self):
+        config = LoreConfig()
+        config.llm_provider = "openrouter"
+        config.llm_api_key = "sk-test"
+        config.llm_model = ""
+
+        client = build_llm_client(config=config)
+
+        assert isinstance(client, FallbackLLMClient)
+        assert client.primary.config.model == "qwen3.6-plus"
+        client.close()
