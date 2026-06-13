@@ -75,6 +75,8 @@ def distill_session_to_daily(
     target_date: date,
     *,
     actor: str | None = None,
+    status: str = "active",
+    reviewed_at: str | None = None,
 ) -> dict:
     capture_details: list[PageDetail] = []
     for summary in captures:
@@ -97,11 +99,13 @@ def distill_session_to_daily(
         f"title: {frontmatter_scalar(f'Daily Note {target_date.isoformat()}')}",
         "kind: daily-note",
         "visibility: internal",
-        "status: active",
+        f"status: {status}",
         f"summary: Distilled daily note from {len(capture_details)} session capture(s).",
         "tags: [daily-note, distilled]",
         f"distilled_at: {datetime.now(UTC).isoformat()}",
     ]
+    if reviewed_at:
+        lines.append(f"reviewed_at: {reviewed_at}")
     if actor:
         lines.append(f"actor: {frontmatter_scalar(actor)}")
     lines.extend(
@@ -173,8 +177,24 @@ def distill_daily(
     else:
         target_date = datetime.now(UTC).date()
 
+    # Preserve promotion state: re-distilling a day whose note was already
+    # promoted must not silently revert status -> active and drop reviewed_at.
+    existing = repo.read_page(f"dailies/{target_date.isoformat()}")
+    status = "active"
+    reviewed_at: str | None = None
+    if existing is not None and optional_string(existing.frontmatter.get("status")) == "promoted":
+        status = "promoted"
+        reviewed_at = optional_string(existing.frontmatter.get("reviewed_at"))
+
     captures = get_daily_captures(repo, target_date)
-    result = distill_session_to_daily(repo, captures, target_date, actor=optional_string(payload.actor))
+    result = distill_session_to_daily(
+        repo,
+        captures,
+        target_date,
+        actor=optional_string(payload.actor),
+        status=status,
+        reviewed_at=reviewed_at,
+    )
 
     if result["capture_count"] == 0:
         return DailyDistillResponse(**result)
@@ -194,9 +214,14 @@ def promote_daily_note(repo: LoreRepository, target_date: date) -> str:
     page = repo.read_page(daily_page_id)
     if page is None:
         raise InvalidPageId(f"No daily note found for {target_date.isoformat()}. Run distill first.")
-    updated_lines = ["---"]
+    # Do NOT pre-seed an opening fence: the loop emits the page's own opening
+    # '---' below. Seeding one produced a doubled '---\n---' that parsed as an
+    # empty frontmatter block, demoting all real keys (kind/status/sources) into
+    # the body and losing the 'status: promoted' contract.
+    updated_lines: list[str] = []
     in_fm = False
     status_updated = False
+    reviewed_added = False
     reviewed_at = datetime.now(UTC).isoformat()
     for line in page.content.splitlines():
         if line.strip() == "---":
@@ -206,8 +231,10 @@ def promote_daily_note(repo: LoreRepository, target_date: date) -> str:
             else:
                 if not status_updated:
                     updated_lines.append("status: promoted")
-                    updated_lines.append(f"reviewed_at: {reviewed_at}")
                     status_updated = True
+                if not reviewed_added:
+                    updated_lines.append(f"reviewed_at: {reviewed_at}")
+                    reviewed_added = True
                 in_fm = False
                 updated_lines.append(line)
             continue
@@ -217,6 +244,7 @@ def promote_daily_note(repo: LoreRepository, target_date: date) -> str:
             continue
         if in_fm and line.startswith("reviewed_at:"):
             updated_lines.append(f"reviewed_at: {reviewed_at}")
+            reviewed_added = True
             continue
         updated_lines.append(line)
     if status_updated:
