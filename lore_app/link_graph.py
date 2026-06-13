@@ -15,9 +15,13 @@ class LinkGraphCache:
         self._version: int = 0
 
     def get(self, repo: LoreRepository) -> LinkGraphResponse:
-        if self._graph is None:
+        # Re-validate the page fingerprint on every call (like ContextGraphCache)
+        # so out-of-band changes (git pull, external edits) that never trigger an
+        # HTTP write -> invalidate() do not serve a stale link graph.
+        fingerprint = _page_fingerprint(repo)
+        if self._graph is None or self._version != fingerprint:
             self._graph = build_link_graph(repo)
-            self._version = _page_fingerprint(repo)
+            self._version = fingerprint
         return self._graph
 
     def invalidate(self):
