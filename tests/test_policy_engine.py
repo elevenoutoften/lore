@@ -107,6 +107,29 @@ def test_default_policies_reproduce_patch_planner_behavior(ledger):
     assert decision_by_id(contradictory_mark_stale, "contradiction-review:v1").passed is False
 
 
+def test_review_required_policy_can_fail(ledger):
+    """A matched review-required policy must fail its gate so effect_fail can fire."""
+    ledger.store_policy(
+        make_policy(
+            policy_id="needs-review:v1",
+            name="Needs review",
+            gate="review-required",
+            condition_kind=["procedure"],
+            condition_operation=[PatchOperation.insert_new_fact.value],
+        )
+    )
+
+    decisions = PolicyEngine(ledger).evaluate(
+        page_id="procedures/deploy",
+        page_kind="procedure",
+        operation=PatchOperation.insert_new_fact,
+        has_contradictions=False,
+        high_confidence=True,
+    )
+
+    assert decision_by_id(decisions, "needs-review:v1").passed is False
+
+
 def test_auto_apply_policy_passes_for_high_confidence_no_contradictions(ledger):
     decisions = PolicyEngine(ledger).evaluate(
         page_id="services/lore",
