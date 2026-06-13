@@ -48,7 +48,7 @@ Pre-built images are published to GHCR on tagged releases:
 docker pull ghcr.io/elevenoutoften/lore:0.3.0-beta.1
 docker run -d -p 8000:8000 \
   -e LORE_AUTH_MODE=bearer \
-  -e LORE_BEARER_TOKEN=your-token \
+  -e LORE_AUTH_SECRET=your-secret-here \
   -v lore-pages:/data/pages \
   -v lore-db:/data/db \
   ghcr.io/elevenoutoften/lore:0.3.0-beta.1

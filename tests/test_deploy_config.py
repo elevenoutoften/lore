@@ -27,6 +27,15 @@ def test_deploy_passes_settings_db():
     )
 
 
+def test_deploy_provides_port_and_user_defaults():
+    """Regression: the unit must default LORE_PORT and LORE_CONTAINER_USER so a
+    minimal env file cannot produce an invalid docker run command."""
+    service_path = Path(__file__).parent.parent / "deploy" / "axis-lore.service"
+    content = service_path.read_text()
+    assert "Environment=LORE_PORT=8000" in content
+    assert "Environment=LORE_CONTAINER_USER=lore" in content
+
+
 def test_dockerfile_sets_settings_db():
     """Regression: Dockerfile must set LORE_SETTINGS_DB to /data/db/settings.db."""
     dockerfile = Path(__file__).parent.parent / "Dockerfile"

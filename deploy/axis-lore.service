@@ -6,7 +6,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# /etc/axis/lore.env must define LORE_CONTENT_DIR_HOST and LORE_DB_DIR_HOST.
+# Defaults so a missing env-file value cannot produce an invalid docker command.
+# EnvironmentFile entries below override these.
+Environment=LORE_PORT=8000
+Environment=LORE_CONTAINER_USER=lore
+# /etc/axis/lore.env must define LORE_CONTENT_DIR_HOST and LORE_DB_DIR_HOST
+# (and may override LORE_PORT, LORE_CONTAINER_USER, LORE_AUTH_MODE, LORE_AUTH_SECRET).
 EnvironmentFile=/etc/axis/lore.env
 ExecStartPre=-/usr/bin/docker rm -f axis-lore
 # Set LORE_AUTH_MODE and LORE_AUTH_SECRET in /etc/axis/lore.env.
