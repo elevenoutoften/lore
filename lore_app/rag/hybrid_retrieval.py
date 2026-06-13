@@ -193,7 +193,10 @@ def hybrid_retrieve_expanded(
                     "score": float(path_info["score"]) * decay,
                 }
                 previous_depth = visited_depth.get(neighbor_id)
-                if previous_depth is not None and previous_depth < next_hops:
+                # Record an additional page path for already-seen nodes (<=, not <)
+                # but do not re-expand them, so multiple same-depth parents no
+                # longer re-push the node onto the frontier and inflate paths_found.
+                if previous_depth is not None and previous_depth <= next_hops:
                     if target_type == "page":
                         reachable.setdefault(neighbor_id, []).append(next_path)
                         paths_found += 1
@@ -248,7 +251,7 @@ def hybrid_retrieve_expanded(
         _enrich_with_ledger_context(ledger, all_results, include_claims, include_traces, include_decisions)
 
     # Populate matched_entities from graph expansion paths
-    _populate_matched_entities(all_results, node_index, reachable)
+    _populate_matched_entities(all_results, reachable)
 
     for page_id, result in all_results.items():
         result["relevant_because"] = _relevant_because(page_id, result, hit_page_ids)
@@ -425,28 +428,19 @@ def _append_unique(values: list[str], value: str) -> None:
 
 def _populate_matched_entities(
     all_results: dict[str, dict[str, Any]],
-    node_index: dict[str, Any],
     reachable: dict[str, list[dict[str, Any]]],
 ) -> None:
-    """Populate matched_entities from graph expansion paths and entity nodes."""
+    """Populate matched_entities from each page's own graph expansion paths."""
     entity_types = {"entity", "claim", "capture", "trace", "decision", "policy"}
     for page_id, result in all_results.items():
         entities: list[str] = []
-        # Collect entity IDs from reachable paths
+        # Collect entity IDs reached on paths originating from this page only.
+        # (A prior global scan over `reachable` polluted every result with the
+        # same union of all entity nodes in the scoped expansion.)
         for path_info in reachable.get(page_id, []):
             for step in path_info.get("path", []):
                 target_type = step.get("target_type", "")
                 target_id = step.get("target_id", "")
                 if target_type in entity_types and target_id:
                     _append_unique(entities, target_id)
-        # Also check the node index for entity nodes reachable from this page
-        for node_id in reachable:
-            if node_id == page_id:
-                continue
-            node = node_index.get(node_id)
-            if node is None:
-                continue
-            node_type = getattr(getattr(node, "type", None), "value", None) or ""
-            if node_type in entity_types:
-                _append_unique(entities, node_id)
         result["matched_entities"] = entities
