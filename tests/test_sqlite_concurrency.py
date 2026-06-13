@@ -3,8 +3,12 @@ from __future__ import annotations
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from fastapi.testclient import TestClient
+
 from lore_app.api_keys import LoreApiKeyStore
+from lore_app.config import LoreConfig
 from lore_app.ledger import LedgerDB
+from lore_app.main import create_app
 from lore_app.rag.vector_store import VectorStore
 from lore_app.repository import LoreRepository
 from lore_app.schemas import (
@@ -252,11 +256,19 @@ def test_concurrent_ledger_reinforcement(tmp_path):
     ledger.close()
 
 
-def test_shutdown_closes_all_stores(client):
-    closed: list[str] = []
+def test_shutdown_closes_all_stores(content_dir, search_db, tmp_path):
+    config = LoreConfig()
+    config.content_dir = content_dir
+    config.search_db = search_db
+    config.vector_db = tmp_path / "vectors.db"
+    config.ledger_db = tmp_path / "ledger.db"
+    config.api_keys_db = tmp_path / "api_keys.db"
+    config.settings_db = tmp_path / "settings.db"
+    app = create_app(config)
 
-    for store_attr in ("search_index", "vector_store", "ledger_db", "api_key_store"):
-        store = getattr(client.app.state, store_attr)
+    closed: list[str] = []
+    for store_attr in ("search_index", "vector_store", "ledger_db", "api_key_store", "settings_store"):
+        store = getattr(app.state, store_attr)
         original_close = store.close
 
         def make_tracker(attr, orig):
@@ -268,10 +280,11 @@ def test_shutdown_closes_all_stores(client):
 
         store.close = make_tracker(store_attr, original_close)
 
-    for handler in client.app.router.on_shutdown:
-        handler()
+    # Entering and exiting the TestClient runs the lifespan startup + shutdown.
+    with TestClient(app):
+        pass
 
-    assert set(closed) == {"search_index", "vector_store", "ledger_db", "api_key_store"}
+    assert set(closed) == {"search_index", "vector_store", "ledger_db", "api_key_store", "settings_store"}
 
 
 def test_busy_timeout_set_on_all_stores(tmp_path):
