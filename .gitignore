@@ -53,3 +53,10 @@ coverage.xml
 # Lore runtime
 tmp/
 .worktrees/
+
+# Demo vault runtime writes (captures, consolidated pages, audit log)
+sample-vault/.lore/
+sample-vault/inbox/
+sample-vault/notes/
+sample-vault/dailies/
+sample-vault/memory/

@@ -11,9 +11,11 @@ Build from the repository root:
 docker build -t lore-app .
 ```
 
-Run with persistent content and database storage:
+Run with persistent content and database storage. Generate a strong auth secret
+first (the app rejects known placeholders like `changeme`/`your-secret-here`):
 
 ```bash
+export LORE_AUTH_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 docker run -d --name lore \
   -p 8078:8000 \
   -e LORE_CONTENT_DIR=/data/pages \
@@ -23,7 +25,7 @@ docker run -d --name lore \
   -e LORE_SETTINGS_DB=/data/db/settings.db \
   -e LORE_API_KEYS_DB=/data/db/api_keys.db \
   -e LORE_AUTH_MODE=bearer \
-  -e LORE_AUTH_SECRET=your-secret-here \
+  -e LORE_AUTH_SECRET="$LORE_AUTH_SECRET" \
   -v /srv/lore/pages:/data/pages \
   -v /srv/lore/db:/data/db \
   lore-app
@@ -45,10 +47,11 @@ curl -sS http://localhost:8078/healthz
 Pre-built images are published to GHCR on tagged releases:
 
 ```bash
+export LORE_AUTH_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 docker pull ghcr.io/elevenoutoften/lore:0.3.0-beta.1
 docker run -d -p 8000:8000 \
   -e LORE_AUTH_MODE=bearer \
-  -e LORE_AUTH_SECRET=your-secret-here \
+  -e LORE_AUTH_SECRET="$LORE_AUTH_SECRET" \
   -v lore-pages:/data/pages \
   -v lore-db:/data/db \
   ghcr.io/elevenoutoften/lore:0.3.0-beta.1
@@ -57,7 +60,7 @@ docker run -d -p 8000:8000 \
 ## Systemd
 
 The repository includes a systemd guide at
-[`../../../docs/install/systemd.md`](../../../docs/install/systemd.md).
+[`../deploy/axis-lore.service`](../deploy/axis-lore.service).
 
 Minimal unit:
 
@@ -77,7 +80,7 @@ Environment=LORE_LEDGER_DB=/var/lib/lore/ledger.db
 Environment=LORE_SETTINGS_DB=/var/lib/lore/settings.db
 Environment=LORE_API_KEYS_DB=/var/lib/lore/api_keys.db
 Environment=LORE_AUTH_MODE=bearer
-Environment=LORE_AUTH_SECRET=your-secret-here
+Environment=LORE_AUTH_SECRET=REPLACE_ME  # python -c "import secrets; print(secrets.token_urlsafe(32))"
 ExecStart=/opt/lore/.venv/bin/uvicorn lore_app.asgi:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 
@@ -105,7 +108,7 @@ LORE_LEDGER_DB=/var/lib/lore/ledger.db
 LORE_SETTINGS_DB=/var/lib/lore/settings.db
 LORE_API_KEYS_DB=/var/lib/lore/api_keys.db
 LORE_AUTH_MODE=bearer
-LORE_AUTH_SECRET=changeme
+LORE_AUTH_SECRET=REPLACE_ME  # generate: python -c "import secrets; print(secrets.token_urlsafe(32))"
 LORE_BRAND_TITLE=LORE
 LORE_BRAND_URL=/
 ```

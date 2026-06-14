@@ -5,28 +5,31 @@ captures draft agent memory.
 
 ## Install
 
-Install from the Python package name used for distribution:
+Install from source (the distribution is not published to PyPI yet):
 
 ```bash
-pip install lore-app
-```
-
-For local development from this repository:
-
-```bash
-
 python -m venv .venv
 . .venv/bin/activate
 pip install -e ".[test]"
+```
+
+Start a local server against the bundled demo vault:
+
+```bash
 LORE_CONTENT_DIR=./sample-vault uvicorn lore_app.asgi:app --reload --port 8078
 ```
 
-Run with Docker:
+By default Lore binds to `127.0.0.1` with auth disabled — the safe, zero-config
+local setup. To expose it on a network, enable auth (see
+[configuration.md](configuration.md)).
+
+Run with Docker (production-style; the image defaults to `api_key` auth, so
+create a key with the CLI below and send it as a bearer token):
 
 ```bash
 docker build -t lore-app .
 docker run --rm -p 8078:8000 \
-  -v "$PWD/lore:/data/pages" \
+  -v "$PWD/sample-vault:/data/pages" \
   lore-app
 ```
 
@@ -92,6 +95,12 @@ curl -sS "$LORE_URL/api/captures?status=draft"
 
 ## Python SDK
 
+Install the SDK from the repository (package name `axis-lore-sdk`):
+
+```bash
+pip install -e sdk/python
+```
+
 ```python
 from lore_sdk import LoreClient
 
@@ -112,8 +121,14 @@ client.create_capture(
 
 ## TypeScript SDK
 
+Install the SDK from npm (package name `axis-lore-sdk`):
+
+```bash
+npm install axis-lore-sdk
+```
+
 ```ts
-import { LoreClient } from "@axis-love/lore-sdk";
+import { LoreClient } from "axis-lore-sdk";
 
 const client = new LoreClient({ baseUrl: "http://localhost:8078" });
 
