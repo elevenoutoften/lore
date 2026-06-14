@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import secrets
 import sqlite3
 import threading
@@ -56,6 +57,7 @@ class LoreApiKeyStore:
                 self._connection.execute("PRAGMA busy_timeout = 5000")
                 self._connection.execute("PRAGMA journal_mode = WAL")
                 self._connection.execute("PRAGMA foreign_keys = ON")
+                self._set_db_permissions()
         return self._connection
 
     def initialize(self) -> None:
@@ -81,6 +83,7 @@ class LoreApiKeyStore:
             )
             self.connection.commit()
             self._migrate_columns()
+            self._set_db_permissions()
 
     def close(self) -> None:
         if self._connection is not None:
@@ -155,6 +158,7 @@ class LoreApiKeyStore:
                 ),
             )
             self.connection.commit()
+            self._set_db_permissions()
             created = self.get_key(key_id)
         if created is None:
             raise RuntimeError("Created API key could not be loaded.")
@@ -171,7 +175,17 @@ class LoreApiKeyStore:
                     (utc_now(), api_key_id),
                 )
                 self.connection.commit()
+                self._set_db_permissions()
             return self.get_key(api_key_id)
+
+    def _set_db_permissions(self) -> None:
+        if self.db_path.exists():
+            os.chmod(self.db_path, 0o600)
+        wal_path = self.db_path.with_suffix(".db-wal")
+        shm_path = self.db_path.with_suffix(".db-shm")
+        for sidecar_path in (wal_path, shm_path):
+            if sidecar_path.exists():
+                os.chmod(sidecar_path, 0o600)
 
     def _migrate_columns(self) -> None:
         existing = {row[1] for row in self.connection.execute("PRAGMA table_info(api_keys)").fetchall()}

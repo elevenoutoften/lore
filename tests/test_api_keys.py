@@ -1,5 +1,24 @@
 from __future__ import annotations
 
+import os
+
+from lore_app.api_keys import LoreApiKeyStore
+
+
+def test_api_key_store_hardens_db_permissions(tmp_path):
+    db_path = tmp_path / "api_keys.db"
+    store = LoreApiKeyStore(db_path)
+    store.initialize()
+    store.create_key(name="codex", role="writer")
+
+    if os.name != "nt":
+        assert oct(os.stat(db_path).st_mode & 0o777) == "0o600"
+        wal_path = db_path.with_suffix(".db-wal")
+        if wal_path.exists():
+            assert oct(os.stat(wal_path).st_mode & 0o777) == "0o600"
+
+    store.close()
+
 
 def test_api_key_management_requires_admin(client):
     store = client.app.state.api_key_store
