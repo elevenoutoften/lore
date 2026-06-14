@@ -253,6 +253,11 @@ class VectorStore:
             self._conn.commit()
             self._clear_idf_cache()
 
+    def chunk_count(self) -> int:
+        """Number of indexed chunks. 0 means the vector index has not been built."""
+        with self._lock:
+            return int(self._conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0])
+
     def _get_idf(self, tokens: list[str]) -> dict[str, float]:
         with self._cache_lock:
             cache = dict(self._idf_cache)

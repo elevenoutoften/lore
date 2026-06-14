@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 import threading
 import time
@@ -30,6 +31,7 @@ from .route_utils import (
     actor_from_request,
     client_rate_limit_key,
     is_rate_limited_write,
+    rebuild_vector_index,
     retrieve_context,
     workspace_lore_config,
 )
@@ -103,8 +105,6 @@ def create_app(
                 "bind to 127.0.0.1; or set LORE_ALLOW_INSECURE_BIND=true to acknowledge "
                 "the risk and proceed."
             )
-        import logging
-
         logging.getLogger("lore").warning(
             "SECURITY: Lore is running with LORE_AUTH_MODE=none on non-loopback "
             f"address {lore_config.host}. This is insecure unless an external gateway "
@@ -133,6 +133,17 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Cold-start: build the vector index for an existing vault so RAG works out
+        # of the box (the FTS index already self-builds; the vector index did not).
+        # Guarded by emptiness + a size ceiling so restarts and huge vaults are
+        # cheap; operators of very large vaults pre-build with /api/search/reindex.
+        try:
+            page_count = len(repo.list_pages())
+            if 0 < page_count <= 5000 and vector_store.chunk_count() == 0:
+                indexed = rebuild_vector_index(repo, vector_store)
+                logging.getLogger("lore").info("Built vector index for %d page(s) on startup.", indexed)
+        except Exception:  # pragma: no cover - best-effort startup index
+            logging.getLogger("lore").exception("Startup vector index build failed; run /api/search/reindex.")
         yield
         search_idx.close()
         vector_store.close()

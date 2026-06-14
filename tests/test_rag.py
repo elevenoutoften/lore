@@ -425,3 +425,12 @@ def test_rag_retrieve_graceful_without_graph(client):
         assert "relevance_paths" in result
         assert "matched_entities" in result
         assert isinstance(result["matched_entities"], list)
+
+
+def test_rag_works_without_manual_reindex(client):
+    """The vector index builds on startup, so RAG returns results cold (no reindex)."""
+    response = client.post("/api/rag/retrieve", json={"query": "gateway service", "limit": 3})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] >= 1
+    assert any("vector" in (r.get("sources") or []) for r in payload["results"])

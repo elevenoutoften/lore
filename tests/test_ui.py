@@ -113,3 +113,10 @@ def test_graph_page(client):
     assert "graphNetwork" in resp.text
     assert "/static/vendor/vis-network.min.js" in resp.text
     assert "/api/graph/enriched" in resp.text
+
+
+def test_empty_search_renders_gracefully(client):
+    """An empty browser search renders the search page, not a raw JSON 422."""
+    resp = client.get("/search")
+    assert resp.status_code == 200
+    assert "search" in resp.text.lower()

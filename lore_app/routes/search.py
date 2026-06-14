@@ -34,13 +34,16 @@ router = APIRouter()
 @router.get("/search", response_class=HTMLResponse)
 def search_page(
     request: Request,
-    q: str = Query(min_length=1),
+    q: str = Query(default=""),
     kind: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=50),
     search_idx: LoreSearchIndex = Depends(get_search_index),
     templates: Jinja2Templates = Depends(get_templates),
 ):
-    hits = search_idx.search_bm25(q, kind=kind, limit=limit)
+    # Tolerate an empty/missing query (browser GET forms can submit one) and render
+    # the empty-results state instead of ejecting the user into a raw JSON 422.
+    query = q.strip()
+    hits = search_idx.search_bm25(query, kind=kind, limit=limit) if query else []
     return templates.TemplateResponse(
         request,
         "search.html",
@@ -50,7 +53,7 @@ def search_page(
             kind=kind or "",
             hits=hits,
             hit_count=len(hits),
-            title=f"Search: {q}",
+            title=f"Search: {q}" if query else "Search",
         ),
     )
 
