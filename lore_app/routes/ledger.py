@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 
 from ..deps import get_ledger_db
 from ..extraction import compute_extraction_hash
+from ..route_utils import value_error_to_http
 from ..schemas import (
     ClaimReinforcementResult,
     ClaimSupersedeResult,
@@ -68,11 +69,14 @@ def supersede_claim(
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ) -> ClaimSupersedeResult:
     """Supersede an old claim with a new one."""
-    return ledger_db.supersede_candidate(
-        old_candidate_id=request.old_candidate_id,
-        new_candidate_id=request.new_candidate_id,
-        reason=request.reason,
-    )
+    try:
+        return ledger_db.supersede_candidate(
+            old_candidate_id=request.old_candidate_id,
+            new_candidate_id=request.new_candidate_id,
+            reason=request.reason,
+        )
+    except ValueError as exc:
+        raise value_error_to_http(exc) from exc
 
 
 @ledger_router.post("/activate/{candidate_id}")
@@ -81,7 +85,10 @@ def activate_candidate(
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ) -> dict:
     """Activate a candidate claim."""
-    ledger_db.activate_candidate(candidate_id)
+    try:
+        ledger_db.activate_candidate(candidate_id)
+    except ValueError as exc:
+        raise value_error_to_http(exc) from exc
     return {"candidate_id": candidate_id, "status": "active"}
 
 
@@ -92,7 +99,10 @@ def reject_candidate(
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ) -> dict:
     """Reject a candidate claim."""
-    ledger_db.reject_candidate(candidate_id, reason=reason)
+    try:
+        ledger_db.reject_candidate(candidate_id, reason=reason)
+    except ValueError as exc:
+        raise value_error_to_http(exc) from exc
     return {"candidate_id": candidate_id, "status": "rejected", "reason": reason}
 
 
@@ -102,7 +112,10 @@ def archive_candidate(
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ) -> dict:
     """Archive an active claim."""
-    ledger_db.archive_candidate(candidate_id)
+    try:
+        ledger_db.archive_candidate(candidate_id)
+    except ValueError as exc:
+        raise value_error_to_http(exc) from exc
     return {"candidate_id": candidate_id, "status": "archived"}
 
 

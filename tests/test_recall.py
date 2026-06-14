@@ -298,3 +298,41 @@ def test_recall_hint_flags_pending_captures_when_not_consolidated(tmp_path):
         assert recall["count"] == 0
         assert recall["pending_captures"] >= 1
         assert recall["hint"] and "consolidation" in recall["hint"].lower()
+
+
+# ─── Ledger write-path correctness ──────────────────────────────────────────
+
+
+def test_supersede_rejects_phantom_new_candidate_and_preserves_old(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    _seed(ledger, [ExtractedClaim(subject="s", predicate="p", object="o", confidence="high")])
+    old_id = ledger.get_active_claims()[0]["candidate_id"]
+
+    try:
+        ledger.supersede_candidate(old_id, "does-not-exist", "bogus")
+        raise AssertionError("expected ValueError for phantom new_candidate_id")
+    except ValueError as exc:
+        assert "not found" in str(exc).lower()
+
+    # The old claim must NOT have been retired by the failed supersede.
+    still_live = [c["candidate_id"] for c in ledger.get_active_claims()]
+    assert old_id in still_live
+
+
+def test_ledger_lifecycle_endpoints_return_4xx_not_500(client):
+    # Missing candidate -> 404, not 500.
+    assert client.post("/api/ledger/archive/missing-zzz").status_code == 404
+    assert client.post("/api/ledger/activate/missing-zzz").status_code == 404
+    assert client.post("/api/ledger/reject/missing-zzz").status_code == 404
+    sup = client.post(
+        "/api/ledger/supersede",
+        json={"old_candidate_id": "a", "new_candidate_id": "b", "reason": "x"},
+    )
+    assert sup.status_code == 404
+
+    # Create a real candidate, then an invalid transition -> 409.
+    _reinforce(client, "services/lore", "is", "an agent memory backend")
+    cand_id = client.get("/api/ledger/claims").json()["claims"][0]["candidate_id"]
+    invalid = client.post(f"/api/ledger/archive/{cand_id}")  # candidate -> archived is invalid
+    assert invalid.status_code == 409

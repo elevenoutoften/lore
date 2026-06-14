@@ -757,6 +757,17 @@ class LedgerDB:
                 raise ValueError(f"Candidate {old_candidate_id} not found")
             old_status = str(old_row["status"])
 
+            # Validate the superseding claim exists BEFORE retiring the old one.
+            # Without this, superseding against a non-existent id silently marks the
+            # old claim 'superseded' (removing it from recall) and points it at a
+            # phantom -> durable memory loss with no error.
+            new_row = self.connection.execute(
+                "SELECT 1 FROM extraction_candidates WHERE candidate_id = ?",
+                (new_candidate_id,),
+            ).fetchone()
+            if new_row is None:
+                raise ValueError(f"Candidate {new_candidate_id} not found")
+
             now = utc_now()
             self.connection.execute(
                 """

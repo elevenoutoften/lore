@@ -251,3 +251,10 @@ def backlink_groups(links: PageLinks | None, pages: list[PageSummary]) -> list[d
     for edge in links.backlinks:
         grouped.setdefault(kind_by_id.get(edge.source, "page"), []).append(edge)
     return [{"kind": kind, "edges": grouped[kind]} for kind in sorted(grouped)]
+
+
+def value_error_to_http(exc: ValueError) -> HTTPException:
+    """Map ledger/planner ValueErrors to 404 (missing) or 409 (conflict), not a raw 500."""
+    detail = str(exc)
+    code = 404 if "not found" in detail.lower() else 409
+    return HTTPException(status_code=code, detail=detail)
