@@ -207,6 +207,9 @@ def client(content_dir, search_db):
     lore_config.settings_db = search_db.with_name("settings.db")
     lore_config.trusted_headers = True
     lore_config.code_ingest_roots = [content_dir.parent]  # allow ingest for tests
+    # Background auto-consolidation runs synchronously under TestClient and would
+    # mutate ledger/pages mid-test; tests that want it opt in with their own app.
+    lore_config.auto_consolidate = False
     app = create_app(lore_config)
     with TestClient(app) as test_client:
         yield test_client

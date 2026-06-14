@@ -877,6 +877,8 @@ class MemoryRecallResponse(BaseModel):
     latency_ms: float = 0.0
     weights: dict[str, float] = Field(default_factory=dict)
     claims: list[MemoryRecallClaim] = Field(default_factory=list)
+    pending_captures: int = 0
+    hint: str | None = None
 
 
 class RepeatedCaptureGroup(BaseModel):

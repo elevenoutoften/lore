@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import tempfile
 import uuid
 from pathlib import Path
@@ -25,9 +26,44 @@ from .schemas import (
 if TYPE_CHECKING:
     from .config import LoreConfig
 
+logger = logging.getLogger("lore.consolidation")
+
 
 def _content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def run_auto_consolidation(app: Any) -> None:
+    """Background, coalesced consolidation triggered off the capture path.
+
+    Runs the consolidation worker so freshly captured memory becomes ledger
+    candidates (recallable immediately) and durable pages (safe auto-apply)
+    without a manual step. Non-blocking and self-coalescing: if a run is already
+    in progress, it just flags a rerun so the in-flight run processes the newly
+    captured work, never overlapping two runs.
+    """
+    state = app.state
+    config = state.config
+    if not getattr(config, "auto_consolidate", True):
+        return
+    lock = getattr(state, "auto_consolidate_lock", None)
+    if lock is None or not lock.acquire(blocking=False):
+        if lock is not None:
+            state.auto_consolidate_rerun = True
+        return
+    try:
+        worker = state.consolidation_worker
+        batch_size = max(1, int(getattr(config, "auto_consolidate_batch_size", 25)))
+        while True:
+            state.auto_consolidate_rerun = False
+            try:
+                worker.run(dry_run=False, batch_size=batch_size, max_auto_apply=batch_size)
+            except Exception:  # pragma: no cover - background best-effort
+                logger.exception("Auto-consolidation run failed")
+            if not getattr(state, "auto_consolidate_rerun", False):
+                break
+    finally:
+        lock.release()
 
 
 class ConsolidationWorker:

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 
 from ..capture import capture_memory
+from ..consolidation_worker import run_auto_consolidation
 from ..deps import (
     get_audit_log,
     get_context_graph_cache,
@@ -113,6 +114,11 @@ def api_memory_capture(
         diff_size=len(page.content.encode("utf-8")),
     )
 
+    # Self-completing loop: consolidate in the background so this capture becomes
+    # recallable (and a durable page) without a separate manual step.
+    if getattr(request.app.state.config, "auto_consolidate", False):
+        background_tasks.add_task(run_auto_consolidation, request.app)
+
     return MemoryCaptureResponse(
         capture_id=page.id,
         timestamp=datetime.now(UTC).isoformat(),
@@ -167,6 +173,7 @@ def api_memory_recall(
     limit: int = Query(default=20, ge=1, le=200, description="Max claims to return."),
     record_access: bool = Query(default=True, description="Stamp access (salience + recency) on the returned claims."),
     ledger: LedgerDB = Depends(get_ledger_db),
+    repo: LoreRepository = Depends(get_repo),
 ) -> MemoryRecallResponse:
     """Recency/salience-weighted recall over the claim ledger.
 
@@ -187,12 +194,21 @@ def api_memory_recall(
     )
     latency_ms = (time.perf_counter() - start) * 1000.0
     claims = [_recall_row_to_claim(row) for row in rows]
+
+    # Self-diagnosing: a count=0 recall should never be silent. Surface how many
+    # captures are still pending consolidation so an agent knows whether memory is
+    # genuinely absent or just not consolidated yet.
+    pending_captures = sum(1 for page in repo.list_pages(kind="capture") if page.status == "draft")
+    hint = _recall_hint(len(claims), pending_captures)
+
     return MemoryRecallResponse(
         query=query,
         count=len(claims),
         latency_ms=round(latency_ms, 3),
         weights=weights_for_query(query),
         claims=claims,
+        pending_captures=pending_captures,
+        hint=hint,
     )
 
 
@@ -224,6 +240,18 @@ def _recall_row_to_claim(row: dict[str, Any]) -> MemoryRecallClaim:
         valid_until=_optional_str(row.get("valid_until")),
         updated_at=_optional_str(row.get("updated_at")),
     )
+
+
+def _recall_hint(count: int, pending_captures: int) -> str | None:
+    if count > 0:
+        return None
+    if pending_captures > 0:
+        return (
+            f"No matching claims yet, but {pending_captures} capture(s) are pending consolidation. "
+            "They become recallable once consolidation runs (POST /api/consolidation/run); "
+            "with auto-consolidation enabled this usually happens within moments of capture."
+        )
+    return "No matching memory. Write some with POST /api/memory/capture (or broaden the query)."
 
 
 def _optional_str(value: Any) -> str | None:

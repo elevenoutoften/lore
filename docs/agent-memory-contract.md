@@ -56,11 +56,33 @@ Captures flow through extraction and consolidation into the **claim ledger** —
 subject/predicate/object facts with strength, confidence, provenance, and temporal
 bounds. See [consolidation.md](consolidation.md).
 
+### The capture → recall loop
+
+A capture is not immediately recallable: it is first **consolidated** (extracted
+into ledger claims, then routed into durable pages). By default Lore runs this
+automatically in the background right after each capture (`LORE_AUTO_CONSOLIDATE`,
+on by default), so `capture` then `recall` "just works" with no manual step. A
+capture with no obvious home still consolidates — it lands on a per-actor
+`memory/<actor>` page rather than being stranded.
+
+If you disable auto-consolidation (for very high write volume plus a scheduled
+runner), drive it explicitly with `POST /api/consolidation/run` (MCP
+`lore_consolidation_run`). Recall is **self-diagnosing**: a `count: 0` response
+includes `pending_captures` and a `hint` telling you whether memory is genuinely
+absent or just awaiting consolidation.
+
+On a default install with no LLM key (`LORE_LLM_PROVIDER=none`), extraction is
+deterministic: it emits coarse `predicate=states` claims keyed off the capture
+text rather than fine-grained structured facts. Recall still works; configure an
+LLM provider (see [llm-provider-config.md](llm-provider-config.md)) for richer
+subject/predicate/object extraction.
+
 ## Recall: ranked read
 
 `GET /api/memory/recall` is the agent-facing read surface over the claim ledger. It
-ranks active claims by a deterministic, explainable score and returns the breakdown
-so an agent can see *why* a claim surfaced.
+ranks live claims (both freshly extracted `candidate` claims and consolidated
+`active` ones) by a deterministic, explainable score and returns the breakdown so
+an agent can see *why* a claim surfaced.
 
 ### Ranking signals
 
@@ -149,6 +171,7 @@ floors on a labelled corpus so ranking quality is held, not just functionality.
 | Operation | HTTP | MCP tool | Python SDK |
 | --- | --- | --- | --- |
 | Capture memory | `POST /api/memory/capture` | `lore_capture` | `MemoryProvider.capture` |
+| Consolidate (auto by default) | `POST /api/consolidation/run` | `lore_consolidation_run` | — |
 | Recall ranked claims | `GET /api/memory/recall` | `lore_recall` | `MemoryProvider.recall` |
 | Search pages | `GET /api/search` | `lore_search` | `LoreClient.search` |
 | Assembled context | `POST /api/rag/retrieve-expanded` | `lore_rag_context_expanded` | — |

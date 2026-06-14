@@ -103,6 +103,15 @@ class LoreConfig:
         self.favicon_url: str = os.environ.get("LORE_FAVICON_URL", "/static/lore.css")
         self.write_rate_limit: int = int(os.environ.get("LORE_WRITE_RATE_LIMIT", "30"))
         self.write_rate_window_seconds: int = int(os.environ.get("LORE_WRITE_RATE_WINDOW_SECONDS", "60"))
+        # Auto-consolidate captures in the background so the capture -> recall loop
+        # is non-empty out of the box without a manual consolidation step. Disable
+        # (LORE_AUTO_CONSOLIDATE=false) for very high write volume + a scheduled runner.
+        self.auto_consolidate: bool = os.environ.get("LORE_AUTO_CONSOLIDATE", "true").lower() not in (
+            "false",
+            "0",
+            "no",
+            "off",
+        )
         self.audit_retention_days: int = int(os.environ.get("LORE_AUDIT_RETENTION_DAYS", "365"))
         self.allow_insecure_bind: bool = os.environ.get("LORE_ALLOW_INSECURE_BIND", "").lower() in ("true", "1", "yes")
         self.trusted_headers: bool = os.environ.get("LORE_TRUSTED_HEADERS", "").lower() in ("true", "1", "yes")

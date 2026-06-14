@@ -16,6 +16,7 @@ def make_client(tmp_path) -> TestClient:
     config.vector_db = tmp_path / "vectors.db"
     config.api_keys_db = tmp_path / "api_keys.db"
     config.trusted_headers = True
+    config.auto_consolidate = False  # this test drives the manual pipeline explicitly
     return TestClient(create_app(config))
 
 

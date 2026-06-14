@@ -169,6 +169,9 @@ def create_app(
         lore_config,
         audit_log,
     )
+    # Coalescing guard for background auto-consolidation triggered off captures.
+    app.state.auto_consolidate_lock = threading.Lock()
+    app.state.auto_consolidate_rerun = False
     app.state.metrics = metrics
     app.state.templates = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
     app.state.code_inventories = {}

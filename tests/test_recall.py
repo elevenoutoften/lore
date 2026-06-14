@@ -242,3 +242,59 @@ def test_sdk_memory_provider_recall_parses_claims(monkeypatch):
     assert captured["path"].startswith("/api/memory/recall?")
     assert "query=memory+backend" in captured["path"]
     assert claims[0]["candidate_id"] == "c1"
+
+
+# ─── Self-completing loop + self-diagnosing recall ──────────────────────────
+
+
+def _app_with_auto_consolidate(tmp_path, enabled: bool):
+    import os
+
+    os.environ.setdefault("LORE_HOST", "127.0.0.1")
+
+    from lore_app.config import LoreConfig
+    from lore_app.main import create_app
+
+    cfg = LoreConfig()
+    content = tmp_path / "pages"
+    content.mkdir()
+    cfg.content_dir = content
+    cfg.trusted_headers = True
+    cfg.auto_consolidate = enabled
+    for attr in ("search_db", "vector_db", "ledger_db", "api_keys_db", "settings_db"):
+        setattr(cfg, attr, tmp_path / f"{attr}.db")
+    return create_app(cfg)
+
+
+def test_auto_consolidation_makes_capture_recallable_without_manual_step(tmp_path):
+    from fastapi.testclient import TestClient
+
+    app = _app_with_auto_consolidate(tmp_path, enabled=True)
+    with TestClient(app) as c:
+        # TestClient runs background tasks synchronously, so the capture is
+        # consolidated by the time the POST returns.
+        r = c.post(
+            "/api/memory/capture",
+            json={"text": "Pixl renders text as garbage on Illustrious XL.", "agent_name": "nyx"},
+        )
+        assert r.status_code == 201, r.text
+
+        recall = c.get("/api/memory/recall", params={"query": "illustrious text", "limit": 5})
+        assert recall.status_code == 200, recall.text
+        body = recall.json()
+        assert body["count"] >= 1
+        assert body["hint"] is None
+
+
+def test_recall_hint_flags_pending_captures_when_not_consolidated(tmp_path):
+    from fastapi.testclient import TestClient
+
+    app = _app_with_auto_consolidate(tmp_path, enabled=False)
+    with TestClient(app) as c:
+        r = c.post("/api/memory/capture", json={"text": "An unconsolidated observation.", "agent_name": "nyx"})
+        assert r.status_code == 201, r.text
+
+        recall = c.get("/api/memory/recall", params={"query": "unconsolidated", "limit": 5}).json()
+        assert recall["count"] == 0
+        assert recall["pending_captures"] >= 1
+        assert recall["hint"] and "consolidation" in recall["hint"].lower()
