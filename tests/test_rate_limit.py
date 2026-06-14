@@ -79,3 +79,17 @@ def test_get_endpoints_not_rate_limited(client):
     assert r.status_code != 429
     r = client.get("/api/policies")
     assert r.status_code != 429
+
+
+def test_rate_limit_keys_on_agent_identity_for_independent_budgets(client):
+    """Distinct agents get independent write budgets instead of sharing one IP bucket."""
+    from lore_app.security import RateLimiter
+
+    client.app.state.write_rate_limiter = RateLimiter(max_requests=1, window_seconds=60)
+    body = {"actor": "test", "reason_summary": "trace"}
+    agent_a = {"Authorization": "Bearer agent-aaa-token"}
+    agent_b = {"Authorization": "Bearer agent-bbb-token"}
+
+    assert client.post("/api/traces", json=body, headers=agent_a).status_code != 429
+    assert client.post("/api/traces", json=body, headers=agent_a).status_code == 429  # same agent exhausted
+    assert client.post("/api/traces", json=body, headers=agent_b).status_code != 429  # different agent, own budget

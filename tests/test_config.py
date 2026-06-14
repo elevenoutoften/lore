@@ -43,7 +43,7 @@ def test_config_defaults(monkeypatch):
     assert config.host == "127.0.0.1"
     assert config.auth_mode == "none"
     assert config.brand_title == "LORE"
-    assert config.write_rate_limit == 30
+    assert config.write_rate_limit == 300
     assert config.write_rate_window_seconds == 60
     assert config.audit_retention_days == 365
     assert config.csp_policy == ""

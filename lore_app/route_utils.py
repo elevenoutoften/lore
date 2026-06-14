@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import time
 from pathlib import Path
@@ -123,6 +124,22 @@ def is_rate_limited_write(request: Request) -> bool:
 
 
 def client_rate_limit_key(request: Request) -> str:
+    # Give distinct agents independent write budgets: key on a stable agent
+    # identity where available, so many agents behind one proxy don't share (and
+    # exhaust) a single IP-keyed bucket. Falls back to client IP for anonymous
+    # traffic. Runs before AuthMiddleware sets lore_actor for token auth, so the
+    # bearer token (hashed, never logged) is used as the per-agent key there.
+    actor = str(getattr(request.state, "lore_actor", "") or "").strip()
+    if actor:
+        return f"actor:{actor}"
+    agent_header = request.headers.get("X-Lore-Agent", "").strip() or request.headers.get("X-Lore-Actor", "").strip()
+    if agent_header:
+        return f"agent:{agent_header}"
+    authorization = request.headers.get("Authorization", "")
+    if authorization.startswith("Bearer "):
+        token = authorization[7:].strip()
+        if token:
+            return "token:" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
     if getattr(request.app.state, "trusted_headers", False):
         forwarded_for = request.headers.get("X-Forwarded-For", "")
         if forwarded_for:

@@ -101,7 +101,7 @@ class LoreConfig:
         self.brand_title: str = os.environ.get("LORE_BRAND_TITLE", "LORE")
         self.brand_url: str = os.environ.get("LORE_BRAND_URL", "/")
         self.favicon_url: str = os.environ.get("LORE_FAVICON_URL", "/static/lore.css")
-        self.write_rate_limit: int = int(os.environ.get("LORE_WRITE_RATE_LIMIT", "30"))
+        self.write_rate_limit: int = int(os.environ.get("LORE_WRITE_RATE_LIMIT", "300"))
         self.write_rate_window_seconds: int = int(os.environ.get("LORE_WRITE_RATE_WINDOW_SECONDS", "60"))
         # Auto-consolidate captures in the background so the capture -> recall loop
         # is non-empty out of the box without a manual consolidation step. Disable
