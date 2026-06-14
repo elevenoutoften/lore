@@ -228,6 +228,80 @@
       border-color: var(--warning);
       color: var(--text);
     }
+
+    /* Reader-first: metadata as small pill badges. */
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem;
+      margin-top: 0.55rem;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel-2);
+      color: var(--muted);
+      font-size: 0.7rem;
+      line-height: 1.5;
+      padding: 0.12rem 0.55rem;
+      overflow-wrap: anywhere;
+    }
+
+    .pill--kind {
+      border-color: color-mix(in srgb, var(--pink) 50%, var(--line));
+      color: var(--pink);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .pill--tag { color: var(--text); }
+
+    .pill--id { color: rgba(255, 230, 244, 0.42); }
+
+    /* Reader-first: collapse capture/provenance chrome behind one toggle. */
+    .page-aside {
+      margin: 1rem 0 1.25rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+    }
+
+    .page-aside > summary {
+      align-items: center;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      font-size: 0.7rem;
+      font-weight: 700;
+      gap: 0.45rem;
+      letter-spacing: 0.02em;
+      list-style: none;
+      padding: 0.55rem 0.75rem;
+      text-transform: uppercase;
+    }
+
+    .page-aside > summary::-webkit-details-marker { display: none; }
+
+    .page-aside > summary::before {
+      color: var(--pink);
+      content: "▸";
+      transition: transform 0.15s ease;
+    }
+
+    .page-aside[open] > summary::before { transform: rotate(90deg); }
+
+    .page-aside__body {
+      display: grid;
+      gap: 0.75rem;
+      padding: 0 0.75rem 0.75rem;
+    }
+
+    .page-aside__body > * { margin: 0; }
   </style>
 </head>
 <body>
@@ -294,11 +368,15 @@
         {% if selected_page %}
         <article class="wiki-article">
           <div class="reader-header">
-            <div>
-              <p class="eyebrow">{{ selected_page.kind }} - {{ selected_page.visibility }}</p>
-              <h2>{{ selected_page.title }}</h2>
-            </div>
-            <span class="badge">{{ selected_page.id }}</span>
+            <h2>{{ selected_page.title }}</h2>
+          </div>
+          <div class="pill-row" aria-label="Page metadata">
+            <span class="pill pill--kind">{{ selected_page.kind }}</span>
+            <span class="pill">{{ selected_page.visibility }}</span>
+            {% if selected_page.status %}<span class="pill">{{ selected_page.status }}</span>{% endif %}
+            {% if selected_page.updated_at %}<span class="pill">updated {{ selected_page.updated_at[:10] }}</span>{% endif %}
+            {% for tag in selected_page.tags %}<span class="pill pill--tag">#{{ tag }}</span>{% endfor %}
+            <span class="pill pill--id">{{ selected_page.id }}</span>
           </div>
 
           {% if selected_page.kind == "capture" %}
@@ -313,21 +391,9 @@
           <p class="summary">{{ selected_page.summary }}</p>
           {% endif %}
 
-          <div class="meta-grid">
-            <div>
-              <span>Status</span>
-              <strong>{{ selected_page.status or "n/a" }}</strong>
-            </div>
-            <div>
-              <span>Updated</span>
-              <strong>{{ selected_page.updated_at[:10] }}</strong>
-            </div>
-            <div>
-              <span>Tags</span>
-              <strong>{{ selected_page.tags | join(", ") if selected_page.tags else "n/a" }}</strong>
-            </div>
-          </div>
-
+          <details class="page-aside"{% if selected_page.kind == "capture" %} open{% endif %}>
+            <summary>{% if selected_page.kind == "capture" %}Capture details &amp; provenance{% else %}Details &amp; provenance{% endif %}</summary>
+            <div class="page-aside__body">
           {% if selected_page.kind == "capture" %}
           <div class="capture-provenance">
             {% if selected_page.frontmatter.captured_at %}
@@ -405,6 +471,8 @@
             <span>{{ rendered_page.missing_links | length }} missing link{% if rendered_page.missing_links | length != 1 %}s{% endif %}</span>
             {% endif %}
           </div>
+            </div>
+          </details>
 
           <div class="article-layout {% if rendered_page.toc %}article-layout--with-toc{% endif %}">
             {% if rendered_page.toc %}
