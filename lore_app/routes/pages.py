@@ -477,7 +477,19 @@ def render_reader_page(
     graph_cache: LinkGraphCache,
     templates: Jinja2Templates,
 ):
-    selected_page = require_page(repo, page_id)
+    try:
+        selected_page = require_page(repo, page_id)
+    except HTTPException as exc:
+        # Browser reader routes: a missing or invalid page id should land on a
+        # themed 404 with a way back/search, not a raw JSON error.
+        if exc.status_code in (404, 422):
+            return templates.TemplateResponse(
+                request,
+                "not_found.html",
+                template_context(request, title="Not found", missing_page_id=page_id),
+                status_code=404,
+            )
+        raise
     pages = repo.list_pages()
     rendered = render_page_markdown(selected_page, page_ids={page.id for page in pages})
     graph = graph_cache.get(repo)

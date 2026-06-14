@@ -120,3 +120,12 @@ def test_empty_search_renders_gracefully(client):
     resp = client.get("/search")
     assert resp.status_code == 200
     assert "search" in resp.text.lower()
+
+
+def test_missing_page_renders_themed_404(client):
+    """A missing/mistyped wiki URL returns a styled 404 with nav + search, not raw JSON."""
+    resp = client.get("/no/such/page-xyz")
+    assert resp.status_code == 404
+    assert "Page not found" in resp.text
+    assert "topbar-links" in resp.text  # has the nav to get back
+    assert "/search" in resp.text

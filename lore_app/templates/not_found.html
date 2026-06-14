@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Not found - {{ app_name }}</title>
+  <meta name="theme-color" content="#431741">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="{{ favicon_url }}">
+  <link rel="stylesheet" href="/static/lore.css?v=20260614-graph">
+  <style>
+    .notfound {
+      display: grid;
+      gap: 1rem;
+      max-width: 40rem;
+      margin: 4rem auto;
+      padding: 0 1rem;
+      text-align: center;
+    }
+    .notfound h2 { color: var(--text); margin: 0; }
+    .notfound p { color: var(--muted); }
+    .notfound code {
+      overflow-wrap: anywhere;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 0.15rem 0.45rem;
+    }
+    .notfound form { display: flex; gap: 0.5rem; justify-content: center; margin-top: 0.5rem; }
+    .notfound input {
+      background: rgba(9, 3, 7, 0.5);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      color: var(--text);
+      font: inherit;
+      padding: 0.45rem 0.7rem;
+      min-width: 14rem;
+    }
+    .notfound .actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+    .notfound a.button {
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius);
+      background: rgba(255, 125, 184, 0.16);
+      color: var(--text);
+      padding: 0.45rem 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div>
+        <p class="wordmark">{{ brand_title }}</p>
+        <h1>{{ app_name }}</h1>
+      </div>
+      <nav class="topbar-links" aria-label="Lore navigation">
+        <a href="/">Wiki</a>
+        <a href="/graph">Graph</a>
+        <a href="/api-keys">Keys</a>
+        <a href="/settings">Settings</a>
+      </nav>
+    </header>
+
+    <main class="notfound">
+      <p class="eyebrow">404 — Page not found</p>
+      <h2>There's no Lore page here yet.</h2>
+      {% if missing_page_id %}
+      <p>Nothing is stored at <code>{{ missing_page_id }}</code>.</p>
+      {% endif %}
+      <form method="get" action="/search">
+        <input name="q" placeholder="Search Lore" aria-label="Search Lore" autocomplete="off">
+        <button type="submit">Search</button>
+      </form>
+      <div class="actions">
+        <a class="button" href="/">Back to the wiki</a>
+        <a class="button" href="/graph">Explore the graph</a>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
