@@ -3,8 +3,8 @@
 ## Current Production Default
 The shipped `LoreConfig` default is extraction-disabled (`LORE_LLM_PROVIDER=none`).
 The intended/recommended production configuration, set via env or `PUT /api/settings/llm`, is:
-- **Primary**: qwen3.6-plus (OpenRouter)
-- **Escalation**: GLM-5.1 (OpenRouter)
+- **Primary**: glm-5.1 (Ollama Cloud)
+- **Escalation**: minimax-m3 (Ollama Cloud)
 
 ## Switching Criteria
 A model can become the production default only when:

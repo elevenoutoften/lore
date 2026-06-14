@@ -124,7 +124,7 @@ class LoreConfig:
         self.llm_temperature: float = float(os.environ.get("LORE_LLM_TEMPERATURE", "0.3"))
         self.llm_timeout_seconds: float = float(os.environ.get("LORE_LLM_TIMEOUT", "60"))
         self.llm_max_retries: int = int(os.environ.get("LORE_LLM_MAX_RETRIES", "3"))
-        self.llm_escalation_model: str = os.environ.get("LORE_LLM_ESCALATION_MODEL", "glm-5.1")
+        self.llm_escalation_model: str = os.environ.get("LORE_LLM_ESCALATION_MODEL", "minimax-m3")
         self.llm_escalation_api_key: str | None = os.environ.get("LORE_LLM_ESCALATION_API_KEY")
         self.workspaces: dict[str, WorkspaceConfig] = parse_workspaces(os.environ.get("LORE_WORKSPACES"))
         if self.auth_mode not in VALID_AUTH_MODES:

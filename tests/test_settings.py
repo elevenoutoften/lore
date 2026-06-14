@@ -39,13 +39,13 @@ def test_settings_store_crud_and_masking(tmp_path):
     store = SettingsStore(db_path)
     store.initialize()
 
-    store.set(SETTINGS_LLM_MODEL, "qwen3.6-plus")
+    store.set(SETTINGS_LLM_MODEL, "glm-5.1")
     store.set(SETTINGS_LLM_API_KEY, "sk-runtime-b1f3", secret=True)
 
-    assert store.get(SETTINGS_LLM_MODEL) == "qwen3.6-plus"
+    assert store.get(SETTINGS_LLM_MODEL) == "glm-5.1"
     assert store.get(SETTINGS_LLM_API_KEY) == "sk-runtime-b1f3"
     assert store.get_masked(SETTINGS_LLM_API_KEY) == "****b1f3"
-    assert store.get_all() == {SETTINGS_LLM_MODEL: "qwen3.6-plus"}
+    assert store.get_all() == {SETTINGS_LLM_MODEL: "glm-5.1"}
     assert store.get_all_masked()[SETTINGS_LLM_API_KEY] == "****b1f3"
     if os.name != "nt":
         assert oct(os.stat(db_path).st_mode & 0o777) == "0o600"
@@ -66,11 +66,11 @@ def test_settings_store_crud_and_masking(tmp_path):
 def test_put_then_get_llm_settings_masks_secrets(client):
     headers = admin_headers(client)
     payload = {
-        "provider": "openrouter",
-        "model": "qwen3.6-plus",
+        "provider": "ollama",
+        "model": "glm-5.1",
         "base_url": "https://example.invalid/v1",
         "api_key": "sk-secret-b1f3",
-        "escalation_model": "glm-5.1",
+        "escalation_model": "minimax-m3",
         "escalation_api_key": "sk-escalation-c9d2",
         "max_tokens": 2048,
         "temperature": 0.2,
@@ -81,7 +81,7 @@ def test_put_then_get_llm_settings_masks_secrets(client):
     updated = client.put("/api/settings/llm", json=payload, headers=headers)
     assert updated.status_code == 200, updated.text
     updated_payload = updated.json()
-    assert updated_payload["model"] == "qwen3.6-plus"
+    assert updated_payload["model"] == "glm-5.1"
     assert updated_payload["api_key_configured"] is True
     assert updated_payload["api_key_hint"] == "****b1f3"
     assert "sk-secret-b1f3" not in updated.text
@@ -99,7 +99,7 @@ def test_hot_reload_swaps_llm_client(client):
     old_client = client.app.state.llm_client
     response = client.put(
         "/api/settings/llm",
-        json={"provider": "openrouter", "model": "runtime-model", "api_key": "sk-runtime"},
+        json={"provider": "ollama", "model": "runtime-model", "api_key": "sk-runtime"},
         headers=admin_headers(client),
     )
 
@@ -111,7 +111,7 @@ def test_hot_reload_swaps_llm_client(client):
 
 
 def test_merged_llm_config_uses_env_fallback(tmp_path, monkeypatch):
-    monkeypatch.setenv("LORE_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LORE_LLM_PROVIDER", "ollama")
     monkeypatch.setenv("LORE_LLM_MODEL", "glm-5.1")
     monkeypatch.setenv("LORE_LLM_BASE_URL", "https://env.example/v1")
     monkeypatch.setenv("LORE_LLM_API_KEY", "sk-env")
@@ -121,7 +121,7 @@ def test_merged_llm_config_uses_env_fallback(tmp_path, monkeypatch):
 
     merged = merged_llm_config(config, store)
 
-    assert merged.name == "openrouter"
+    assert merged.name == "ollama"
     assert merged.model == "glm-5.1"
     assert merged.base_url == "https://env.example/v1"
     assert merged.api_key == "sk-env"
@@ -130,7 +130,7 @@ def test_merged_llm_config_uses_env_fallback(tmp_path, monkeypatch):
 
 def test_merged_llm_config_defaults_model_when_unset(tmp_path, monkeypatch):
     """A provider with no model must fall back to the default model, not an empty string."""
-    monkeypatch.setenv("LORE_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LORE_LLM_PROVIDER", "ollama")
     monkeypatch.setenv("LORE_LLM_API_KEY", "sk-env")
     monkeypatch.delenv("LORE_LLM_MODEL", raising=False)
     config = LoreConfig()
@@ -139,23 +139,23 @@ def test_merged_llm_config_defaults_model_when_unset(tmp_path, monkeypatch):
 
     merged = merged_llm_config(config, store)
 
-    assert merged.model == "qwen3.6-plus"
-    assert merged.escalation_model == "glm-5.1"
+    assert merged.model == "glm-5.1"
+    assert merged.escalation_model == "minimax-m3"
     store.close()
 
 
 def test_stored_settings_override_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("LORE_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LORE_LLM_PROVIDER", "ollama")
     monkeypatch.setenv("LORE_LLM_MODEL", "glm-5.1")
     config = LoreConfig()
     store = SettingsStore(tmp_path / "settings.db")
     store.initialize()
-    store.set(SETTINGS_LLM_MODEL, "qwen3.6-plus")
+    store.set(SETTINGS_LLM_MODEL, "minimax-m3")
     store.set(SETTINGS_LLM_MAX_TOKENS, "1024")
 
     merged = merged_llm_config(config, store)
 
-    assert merged.model == "qwen3.6-plus"
+    assert merged.model == "minimax-m3"
     assert merged.max_tokens == 1024
     store.close()
 
@@ -190,7 +190,7 @@ def test_extraction_uses_configured_model(client, monkeypatch):
 
     settings = client.put(
         "/api/settings/llm",
-        json={"provider": "openrouter", "model": "configured-model", "api_key": "sk-runtime"},
+        json={"provider": "ollama", "model": "configured-model", "api_key": "sk-runtime"},
         headers=admin_headers(client),
     )
     assert settings.status_code == 200, settings.text
@@ -217,7 +217,7 @@ def test_settings_security_no_raw_key_in_response_or_audit(client):
 
     response = client.put(
         "/api/settings/llm",
-        json={"provider": "openrouter", "model": "secure-model", "api_key": raw_key},
+        json={"provider": "ollama", "model": "secure-model", "api_key": raw_key},
         headers=headers,
     )
     assert response.status_code == 200, response.text
@@ -234,7 +234,7 @@ def test_settings_security_no_raw_key_in_response_or_audit(client):
 
 def test_delete_reverts_to_env_and_clears_store(client):
     config = client.app.state.config
-    config.llm_provider = "openrouter"
+    config.llm_provider = "ollama"
     config.llm_model = "env-model"
     config.llm_base_url = "https://env.example/v1"
     config.llm_api_key = None
@@ -242,7 +242,7 @@ def test_delete_reverts_to_env_and_clears_store(client):
     headers = admin_headers(client)
     updated = client.put(
         "/api/settings/llm",
-        json={"provider": "openrouter", "model": "stored-model", "base_url": "https://stored.example/v1"},
+        json={"provider": "ollama", "model": "stored-model", "base_url": "https://stored.example/v1"},
         headers=headers,
     )
     assert updated.status_code == 200, updated.text

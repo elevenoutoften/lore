@@ -355,7 +355,7 @@ Active/planned Flow items that may affect UI design:
 - Extraction model eval and switch gate.
 - Extraction dead-letter table and retry path.
 - Mocked LLM provider test coverage.
-- qwen3.6-plus extraction provider configuration.
+- glm-5.1 (Ollama Cloud) extraction provider configuration.
 - Provenance hardening in Search and RAG results: observed time, valid time,
   actor, lane, and source refs.
 - Round-trip provenance test from capture to retrieval.

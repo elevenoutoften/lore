@@ -494,7 +494,7 @@ The API Gateway routes requests to backends.
     )
     mock_client = mock.MagicMock(spec=FallbackLLMClient)
     mock_client.primary = mock.MagicMock()
-    mock_client.primary.config.model = "qwen3.6-plus"
+    mock_client.primary.config.model = "glm-5.1"
     mock_client.extract_json.return_value = {
         "entities": [],
         "claims": [
@@ -510,7 +510,7 @@ The API Gateway routes requests to backends.
         "edges": [],
         "invalidations": [],
         "_lore_meta": {
-            "model": "qwen3.6-plus",
+            "model": "glm-5.1",
             "usage": {"prompt_tokens": 42, "completion_tokens": 13},
         },
     }
@@ -518,7 +518,7 @@ The API Gateway routes requests to backends.
     result = extract_from_captures(repo, dry_run=True, llm_client=mock_client, ledger_db=make_ledger(tmp_path))
 
     claim = result.claims[0]
-    assert claim.model_version == "qwen3.6-plus"
+    assert claim.model_version == "glm-5.1"
     assert claim.prompt_hash is not None
     assert len(claim.prompt_hash) == 16
     assert claim.token_usage == {"prompt": 42, "completion": 13}

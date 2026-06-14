@@ -301,7 +301,7 @@ def test_ledger_candidates_endpoint(client):
                     valid_until="2026-12-31",
                     evidence="Observed during deployment.",
                     source_page_ids=["captures/cap-001"],
-                    model_version="qwen3.6-plus",
+                    model_version="glm-5.1",
                     prompt_hash="abcd1234ef567890",
                     token_usage={"prompt": 10, "completion": 5},
                 )
@@ -330,7 +330,7 @@ def test_ledger_candidates_endpoint(client):
     assert cand["valid_until"] == "2026-12-31"
     assert "captures/cap-001" in cand["source_page_ids"]
     assert "test-prov-cap" in cand["source_capture_ids"] or "inbox/test-prov-cap" in cand["source_capture_ids"]
-    assert cand["model_version"] == "qwen3.6-plus"
+    assert cand["model_version"] == "glm-5.1"
     assert cand["prompt_hash"] == "abcd1234ef567890"
     assert cand["token_usage"] == {"prompt": 10, "completion": 5}
     assert "created_at" in cand

@@ -1,6 +1,7 @@
 """LLM provider configuration and client for extraction and other LLM tasks.
 
-Supports OpenAI-compatible APIs (qwen3.6-plus, GLM-5.1) with:
+Supports OpenAI-compatible APIs (GLM-5.1 / MiniMax-M3 on Ollama Cloud, and any
+other OpenAI-compatible endpoint) with:
 - Configurable model, base_url, api_key
 - JSON-object mode for guaranteed valid JSON output
 - Retry with exponential backoff
@@ -23,9 +24,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_EXTRACTION_MODEL = "qwen3.6-plus"
-DEFAULT_ESCALATION_MODEL = "glm-5.1"
-DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_EXTRACTION_MODEL = "glm-5.1"
+DEFAULT_ESCALATION_MODEL = "minimax-m3"
+DEFAULT_BASE_URL = "https://ollama.com/v1"
 
 
 @dataclass(frozen=True)

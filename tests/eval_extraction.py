@@ -6,7 +6,7 @@ Usage:
     python tests/eval_extraction.py --ci
 
     # Live mode against specific provider:
-    LORE_LLM_API_KEY=... python tests/eval_extraction.py --live --provider qwen3.6-plus
+    LORE_LLM_API_KEY=... python tests/eval_extraction.py --live --provider glm-5.1
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from lore_app.llm_provider import FallbackLLMClient, LLMClient, LLMProviderConfi
 from lore_app.repository import LoreRepository  # noqa: E402
 from lore_app.schemas import ExtractedClaim  # noqa: E402
 
-SUPPORTED_PROVIDERS = {"qwen3.6-plus", "glm-5.1", "gemma-4"}
+SUPPORTED_PROVIDERS = {"glm-5.1", "minimax-m3", "gemma-4"}
 
 
 class RecordedLLMClient:

@@ -215,7 +215,7 @@ Secrets are never returned: responses expose `*_configured` (bool) and a masked
 curl -sS "$LORE_URL/api/settings/llm" -H "Authorization: Bearer $LORE_TOKEN"
 curl -sS -X PUT "$LORE_URL/api/settings/llm" \
   -H "Authorization: Bearer $LORE_ADMIN_TOKEN" -H "Content-Type: application/json" \
-  -d '{"provider":"openrouter","model":"qwen3.6-plus","base_url":"https://openrouter.ai/api/v1","api_key":"sk-..."}'
+  -d '{"provider":"ollama","model":"glm-5.1","base_url":"https://ollama.com/v1","api_key":"sk-..."}'
 ```
 
 ## Decisions and Procedures

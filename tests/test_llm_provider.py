@@ -26,7 +26,7 @@ from lore_app.llm_provider import (
 
 class TestLLMProviderConfig:
     def test_defaults(self):
-        config = LLMProviderConfig(name="test", model="qwen3.6-plus")
+        config = LLMProviderConfig(name="test", model="glm-5.1")
         assert config.base_url == DEFAULT_BASE_URL
         assert config.max_tokens == 4096
         assert config.temperature == 0.3
@@ -211,12 +211,12 @@ class TestBuildLLMClient:
         assert config.llm_base_url == ""
 
     def test_build_with_env(self, monkeypatch):
-        monkeypatch.setenv("LORE_LLM_PROVIDER", "openrouter")
+        monkeypatch.setenv("LORE_LLM_PROVIDER", "ollama")
         monkeypatch.setenv("LORE_LLM_API_KEY", "sk-test")
-        monkeypatch.setenv("LORE_LLM_MODEL", "qwen3.6-plus")
+        monkeypatch.setenv("LORE_LLM_MODEL", "minimax-m3")
         client = build_llm_client()
         assert isinstance(client, FallbackLLMClient)
-        assert client.primary.config.model == "qwen3.6-plus"
+        assert client.primary.config.model == "minimax-m3"
         assert client.primary.config.api_key == "sk-test"
         client.close()
 
@@ -248,8 +248,8 @@ class TestBuildLLMClient:
 
     def test_build_from_explicit_provider_returns_real_client(self):
         config = LoreConfig()
-        config.llm_provider = "openrouter"
-        config.llm_model = "qwen3.6-plus"
+        config.llm_provider = "ollama"
+        config.llm_model = "minimax-m3"
         config.llm_base_url = DEFAULT_BASE_URL
         config.llm_api_key = "sk-test"
         config.llm_timeout_seconds = 12.5
@@ -259,7 +259,7 @@ class TestBuildLLMClient:
         client = build_llm_client(config=config)
 
         assert isinstance(client, FallbackLLMClient)
-        assert client.primary.config.model == "qwen3.6-plus"
+        assert client.primary.config.model == "minimax-m3"
         assert client.primary.config.timeout_seconds == 12.5
         assert client.primary.config.max_retries == 7
         assert client.escalation is not None
@@ -269,8 +269,8 @@ class TestBuildLLMClient:
 
     def test_escalation_reuses_primary_key_via_lore_config(self):
         config = LoreConfig()
-        config.llm_provider = "openrouter"
-        config.llm_model = "qwen3.6-plus"
+        config.llm_provider = "ollama"
+        config.llm_model = "glm-5.1"
         config.llm_api_key = "sk-test"
         config.llm_escalation_api_key = None
 
@@ -283,12 +283,12 @@ class TestBuildLLMClient:
 
     def test_primary_model_defaults_when_unset(self):
         config = LoreConfig()
-        config.llm_provider = "openrouter"
+        config.llm_provider = "ollama"
         config.llm_api_key = "sk-test"
         config.llm_model = ""
 
         client = build_llm_client(config=config)
 
         assert isinstance(client, FallbackLLMClient)
-        assert client.primary.config.model == "qwen3.6-plus"
+        assert client.primary.config.model == "glm-5.1"
         client.close()
