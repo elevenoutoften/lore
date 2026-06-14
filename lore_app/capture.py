@@ -21,6 +21,11 @@ from .schemas import (
     SourceCapture,
 )
 
+
+class CaptureNotFoundError(LookupError):
+    """Raised when promoting a capture page id that does not exist."""
+
+
 SLUG_PATTERN = re.compile(r"[A-Za-z0-9]+")
 PAGE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_/.-]*$")
 CAPTURE_STATUSES = {"draft", "review", "accepted", "rejected", "archived"}
@@ -218,11 +223,9 @@ def promote_capture(
     content: str | None = None,
 ) -> PageDetail:
     capture = repo.read_page(page_id)
-    if (
-        capture is None
-        or capture.frontmatter.get("kind") != "capture"
-        or not capture.id.startswith(("inbox/", "notes/"))
-    ):
+    if capture is None:
+        raise CaptureNotFoundError(f"Capture not found: {page_id}")
+    if capture.frontmatter.get("kind") != "capture" or not capture.id.startswith(("inbox/", "notes/")):
         raise InvalidPageId("Only capture pages can be promoted.")
 
     target = normalize_optional_page_id(target_page_id) or normalize_optional_page_id(

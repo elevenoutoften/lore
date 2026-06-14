@@ -620,3 +620,10 @@ def test_mcp_capture_transition(client):
     assert page["status"] == "accepted"
     assert page["frontmatter"]["status"] == "accepted"
     assert f"Transitioned capture {page_id} to accepted." in transitioned["result"]["content"][0]["text"]
+
+
+def test_promote_missing_capture_returns_404(client):
+    """Promoting a non-existent capture is a 404, not a confusing 422."""
+    resp = client.post("/api/captures/inbox/2026-01-01/does-not-exist/promote", json={})
+    assert resp.status_code == 404
+    assert "not found" in resp.json()["detail"].lower()

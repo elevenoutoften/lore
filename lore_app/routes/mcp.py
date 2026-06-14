@@ -121,6 +121,8 @@ def mcp_info():
         "endpoint": "/mcp",
         "methods": [
             "initialize",
+            "ping",
+            "notifications/initialized",
             "tools/list",
             "tools/call",
             "resources/list",

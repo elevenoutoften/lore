@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from fastapi.responses import HTMLResponse
 
 from ..capture import (
+    CaptureNotFoundError,
     build_capture_digest,
     build_promotion_audit,
     capture_memory,
@@ -219,6 +220,8 @@ def api_capture_promote(
         target_existed = None
     try:
         page = promote_capture(repo, page_id, target_page_id=payload.target_page_id, content=payload.content)
+    except CaptureNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except InvalidPageId as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ValueError as exc:

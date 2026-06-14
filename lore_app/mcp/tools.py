@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from ..analytics import GraphAnalytics
 from ..capture import (
+    CaptureNotFoundError,
     build_capture_digest,
     build_promotion_audit,
     capture_memory,
@@ -1462,6 +1463,8 @@ def _handle_lore_promote_capture(ctx: McpContext) -> dict[str, Any]:
     content = optional_string(arguments.get("content"))
     try:
         page = promote_capture(ctx.repo, page_id, target_page_id=target, content=content)
+    except CaptureNotFoundError as exc:
+        return tool_result({"page_id": page_id}, str(exc), is_error=True)
     except InvalidPageId as exc:
         raise JsonRpcError(-32602, str(exc)) from exc
     except ValueError as exc:
