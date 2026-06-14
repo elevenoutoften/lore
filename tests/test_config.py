@@ -38,6 +38,9 @@ def test_config_defaults(monkeypatch):
     assert config.vector_db.as_posix() == "data/db/vectors.db"
     assert config.api_keys_db.as_posix() == "data/db/api_keys.db"
     assert config.port == 8000
+    # Loopback by default so the default (auth_mode=none) config starts without
+    # tripping the insecure-bind guard.
+    assert config.host == "127.0.0.1"
     assert config.auth_mode == "none"
     assert config.brand_title == "LORE"
     assert config.write_rate_limit == 30

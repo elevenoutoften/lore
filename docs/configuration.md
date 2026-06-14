@@ -13,7 +13,7 @@ Lore reads configuration from environment variables through
 | `LORE_SEARCH_DB` | `./data/db/search.db` | SQLite search index path. |
 | `LORE_VECTOR_DB` | `./data/db/vectors.db` | Local vector/retrieval index path. |
 | `LORE_API_KEYS_DB` | `./data/db/api_keys.db` | SQLite database for Lore-owned agent API keys. |
-| `LORE_HOST` | `0.0.0.0` | Host used by service launchers. |
+| `LORE_HOST` | `127.0.0.1` | Host used by service launchers. Loopback by default so `auth_mode=none` starts safely; set `0.0.0.0` (with auth enabled) to expose the service. |
 | `LORE_PORT` | `8000` | Port used by service launchers. |
 | `LORE_AUTH_MODE` | `none` | Auth mode: `none`, `bearer`, `basic`, or `api_key`. |
 | `LORE_AUTH_SECRET` | empty | Bearer token or `username:password` value for basic auth. |

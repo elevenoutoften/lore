@@ -91,7 +91,10 @@ class LoreConfig:
         self.ledger_db: Path = Path(os.environ.get("LORE_LEDGER_DB", str(default_db_dir / "ledger.db")))
         self.api_keys_db: Path = Path(os.environ.get("LORE_API_KEYS_DB", str(default_db_dir / "api_keys.db")))
         self.settings_db: Path = Path(os.environ.get("LORE_SETTINGS_DB", str(default_db_dir / "settings.db")))
-        self.host: str = os.environ.get("LORE_HOST", "0.0.0.0")
+        # Default to loopback so the documented bare-metal quickstart starts out of
+        # the box (auth_mode=none + a non-loopback bind trips the insecure-bind guard).
+        # Production (Docker/systemd) overrides LORE_HOST=0.0.0.0 with auth enabled.
+        self.host: str = os.environ.get("LORE_HOST", "127.0.0.1")
         self.port: int = int(os.environ.get("LORE_PORT", "8000"))
         self.auth_mode: str = os.environ.get("LORE_AUTH_MODE", "none")
         self.auth_secret: str = os.environ.get("LORE_AUTH_SECRET", "")
