@@ -1,8 +1,10 @@
 # Lore Documentation
 
-Lore is a Markdown-backed knowledge wiki for humans, agents, and automation.
-These docs cover the local service, REST API, SDKs, deployment, and operating
-patterns.
+Lore is an agent memory backend: a fast, Markdown-backed memory store that
+agents connect to with a token over HTTP and MCP to read, write, link, and
+recall project knowledge. These docs cover the local service, REST API, SDKs,
+deployment, and operating patterns. The browser UI is a minimal human surface
+(readable wiki, graph, settings/keys); the API and MCP endpoint are the product.
 
 ## Start Here
 

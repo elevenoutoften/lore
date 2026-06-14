@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#431741">
   <meta name="color-scheme" content="dark">
   <link rel="icon" href="{{ favicon_url }}">
-  <link rel="stylesheet" href="/static/lore.css?v=20260501-lore-reader">
+  <link rel="stylesheet" href="/static/lore.css?v=20260614-reframe">
   <style>
     .heartbeat-page {
       display: grid;
@@ -245,14 +245,11 @@
         <p class="wordmark">{{ brand_title }}</p>
         <h1>{{ app_name }}</h1>
       </div>
-      <nav class="topbar-links" aria-label="Lore endpoints">
-        <a href="/api/pages">API</a>
-        <a href="/api/catalog">Catalog</a>
-        <a href="/captures">Captures</a>
+      <nav class="topbar-links" aria-label="Lore navigation">
+        <a href="/">Wiki</a>
+        <a href="/graph">Graph</a>
         <a href="/api-keys">Keys</a>
-        <a href="/lint">Lint</a>
-        <a href="/heartbeat">Heartbeat</a>
-        <a href="/mcp">MCP</a>
+        <a href="/settings">Settings</a>
       </nav>
     </header>
 

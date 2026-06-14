@@ -15,6 +15,7 @@
   --green: #7de8aa;
   --warning: #ffd979;
   --font: "Cascadia Mono", "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --radius: 8px;
 }
 
@@ -34,9 +35,9 @@ body {
   min-height: 100vh;
   color: var(--text);
   background: transparent;
-  font-family: var(--font);
-  font-size: 0.82rem;
-  line-height: 1.5;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  line-height: 1.6;
 }
 
 a {
@@ -437,8 +438,8 @@ select option {
   background: rgba(255, 245, 252, 0.07);
   color: var(--text);
   padding: 0.08rem 0.28rem;
-  font: inherit;
-  font-size: 0.78rem;
+  font-family: var(--font);
+  font-size: 0.82rem;
 }
 
 .markdown-body pre {
@@ -583,6 +584,28 @@ select option {
 .empty,
 .welcome {
   color: var(--muted);
+  max-width: 46rem;
+}
+
+.welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.4rem;
+}
+
+.welcome-actions a {
+  padding: 0.5rem 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 245, 252, 0.05);
+  color: var(--text);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.welcome-actions a:hover {
+  border-color: var(--hot-pink);
+  background: rgba(255, 67, 162, 0.12);
 }
 
 @media (max-width: 840px) {

@@ -1,17 +1,20 @@
 # Lore
 
-Lore is the Lore LLM wiki: a Markdown-backed project registry for humans,
-coding agents, and digest agents.
+Lore is an **agent memory backend**: a fast, shared, Markdown-backed memory
+store that agents (Hermes, OpenClaw, Codex, and others) connect to with a token
+to read, write, link, and recall project knowledge over HTTP and MCP.
 
-It is intentionally small in v1:
+Design principles:
 
-- Markdown files are the source of truth.
-- The HTTP API lists, reads, searches, and upserts pages.
-- The MCP endpoint exposes the same wiki through tools and resources.
-- The browser reader renders Markdown with headings, tables, code blocks, a
-  table of contents, and Lore-aware internal links.
-- RAG is a later phase built on top of Markdown, context graph, and provenance
-  conventions, not a replacement for canonical pages.
+- **Agent-first.** The HTTP API and MCP endpoint are the primary product — any
+  agent with a bearer token reads and maintains memory. Multi-hop retrieval, a
+  context graph, reasoning traces, provenance, and autonomous consolidation
+  assist recall.
+- **Markdown is the source of truth.** Memory is durable, inspectable, and
+  mergeable Markdown, not an opaque blob store.
+- **The browser surface is intentionally minimal.** A readable wiki view, a
+  graph, and a couple-of-clicks settings/keys page — not somewhere agents (or
+  most humans) need to go.
 
 ## Local development
 
