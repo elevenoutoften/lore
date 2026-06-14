@@ -553,3 +553,37 @@ def test_consolidation_run_api_force_reextracts_processed_captures(tmp_path, mon
     assert skipped.json()["captures_processed"] == 0
     assert forced.status_code == 200, forced.text
     assert forced.json()["captures_processed"] == 1
+
+
+def test_run_plans_candidates_left_by_a_prior_separate_extraction(tmp_path, monkeypatch):
+    """Candidates extracted by a separate /api/extraction/run must not be stranded."""
+    from lore_app.extraction import extract_from_captures
+
+    ctx = make_context(tmp_path, monkeypatch)
+    write_page(ctx.repo, "services/lore")
+    add_capture(ctx.repo, "inbox/2026-05-10/prior", summary="Lore handled a prior extraction note.")
+
+    # Simulate POST /api/extraction/run having run earlier and on its own.
+    extract_from_captures(ctx.repo, dry_run=False, ledger_db=ctx.ledger)
+
+    # Consolidation now finds nothing new to extract, but the candidate is pending.
+    result = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=5)
+
+    assert result.plans_generated >= 1
+    assert result.auto_applied >= 1
+    page = ctx.repo.read_page("services/lore")
+    assert page is not None
+    assert "prior extraction note" in page.content.lower()
+
+
+def test_force_reextract_still_produces_plans(tmp_path, monkeypatch):
+    """force_reextract reinforces candidates under their old batch id; planning must still find them."""
+    ctx = make_context(tmp_path, monkeypatch)
+    write_page(ctx.repo, "services/lore")
+    add_capture(ctx.repo, "inbox/2026-05-10/reproc", summary="Lore should reprocess cleanly.")
+
+    first = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=5)
+    assert first.plans_generated >= 1
+
+    reprocessed = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=5, force_reextract=True)
+    assert reprocessed.plans_generated >= 1  # was silently 0 before the no-batch-filter fix

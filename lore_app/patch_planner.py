@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from .audit import AuditLog, new_audit_entry
-from .capture import is_capture_page_id
+from .capture import is_capture_page_id, slugify
 from .frontmatter import serialize_markdown, update_frontmatter
 from .ledger import LedgerDB, utc_now
 from .repository import InvalidPageId, LoreRepository, infer_kind, normalize_page_id, optional_string
@@ -182,6 +182,15 @@ class PatchPlanner:
             placeholders = ", ".join("?" for _ in candidate_ids)
             clauses.append(f"candidate_id IN ({placeholders})")
             params.extend(candidate_ids)
+        else:
+            # Bulk planning is idempotent: skip candidates that already have an open
+            # (non-terminal) patch plan so repeated plan_batch() calls do not pile up
+            # duplicate plans for the same claim.
+            clauses.append(
+                "candidate_id NOT IN ("
+                "SELECT je.value FROM patch_plans p, json_each(p.candidate_ids) je "
+                "WHERE p.status IN ('pending', 'ready', 'needs_manual_review'))"
+            )
         rows = self.ledger.connection.execute(
             f"""
             SELECT *
@@ -402,7 +411,15 @@ class PatchPlanner:
                     return target
             except InvalidPageId:
                 return None
-        return None
+
+        # No route could be derived. Rather than strand the claim forever, give it a
+        # deterministic durable home: a per-actor memory page (non-capture namespace,
+        # so it is not re-extracted). This guarantees every capture consolidates.
+        actor_slug = slugify(optional_string(candidate.row.get("actor")) or "shared") or "shared"
+        try:
+            return normalize_page_id(f"memory/{actor_slug}")
+        except InvalidPageId:  # pragma: no cover - actor_slug is already sanitized
+            return None
 
     def _batch_id_for_group(self, bundles: list[_CandidateBundle]) -> str | None:
         batch_ids = {optional_string(bundle.row.get("batch_id")) for bundle in bundles}

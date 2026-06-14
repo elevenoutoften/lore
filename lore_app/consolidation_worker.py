@@ -79,11 +79,20 @@ class ConsolidationWorker:
             errors.append(f"extraction failed: {exc}")
 
         plans: list[PatchPlan] = []
-        if extraction_result is not None and extraction_result.source_capture_ids:
-            try:
-                plans = self._plan_dry_run(extraction_result) if dry_run else self.planner.plan_batch(batch_id=batch_id)
-            except Exception as exc:
-                errors.append(f"planning failed: {exc}")
+        try:
+            if dry_run:
+                # Dry-run previews plans for the just-extracted batch in a throwaway
+                # ledger without touching real state.
+                if extraction_result is not None:
+                    plans = self._plan_dry_run(extraction_result)
+            else:
+                # Plan ALL un-planned candidate claims, not just this run's batch.
+                # Candidates left over from a prior /api/extraction/run, or reinforced
+                # under an older batch id (force_reextract), keep their original
+                # batch_id and were silently stranded by the previous batch filter.
+                plans = self.planner.plan_batch()
+        except Exception as exc:
+            errors.append(f"planning failed: {exc}")
 
         auto_applied = 0
         blocked_claims: list[dict[str, str]] = []

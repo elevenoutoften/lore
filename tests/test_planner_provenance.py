@@ -185,7 +185,7 @@ def test_stub_page_kind_is_inferred_from_target_not_capture_frontmatter(ctx):
     assert page.frontmatter["kind"] == "service"
 
 
-def test_planner_skips_capture_targets_but_uses_suggested_canonical_target(ctx):
+def test_planner_routes_no_target_capture_to_memory_fallback_and_uses_suggested_target(ctx):
     capture_without_target = "inbox/2026-05-10/observation"
     add_capture(
         ctx.repo,
@@ -204,7 +204,10 @@ def test_planner_skips_capture_targets_but_uses_suggested_canonical_target(ctx):
         ),
     )
 
-    assert ctx.planner.plan_batch(batch_id="batch-capture-target") == []
+    # A capture with no derivable canonical target is not stranded: it routes to a
+    # per-actor durable memory page (never back onto its own capture page).
+    no_route_plans = ctx.planner.plan_batch(batch_id="batch-capture-target")
+    assert [plan.target_page_id for plan in no_route_plans] == ["memory/nyx"]
 
     capture_with_target = "inbox/2026-05-10/lore"
     add_capture(

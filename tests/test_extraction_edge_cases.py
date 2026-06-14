@@ -39,10 +39,12 @@ def test_target_page_id_uses_valid_path_subject(tmp_path):
     assert planner._target_page_id(candidate_with_subject("services/lore")) == "services/lore"
 
 
-def test_target_page_id_skips_capture_page_subject(tmp_path):
+def test_target_page_id_routes_capture_subject_to_memory_fallback(tmp_path):
     planner = make_planner(tmp_path)
 
-    assert planner._target_page_id(candidate_with_subject("inbox/2026-05-10/memory")) is None
+    # A capture-page subject must never patch its own capture page; with no other
+    # route it falls back to a per-actor durable memory page instead of stranding.
+    assert planner._target_page_id(candidate_with_subject("inbox/2026-05-10/memory")) == "memory/shared"
 
 
 def test_wikilink_entities_skip_label_first_documentation_placeholder():
