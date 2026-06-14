@@ -31,6 +31,7 @@ from ..procedure_candidate import find_repeated_captures, propose_procedure_cand
 from ..provenance import get_capture_provenance, get_page_provenance
 from ..rag.chunker import chunk_page
 from ..rag.hybrid_retrieval import hybrid_retrieve_expanded
+from ..recall import weights_for_query
 from ..repository import InvalidPageId, LoreRepository
 from ..schemas import (
     CaptureRequest,
@@ -186,6 +187,37 @@ TOOLS: list[dict[str, Any]] = [
                 "include_decisions": {"type": "boolean", "default": True},
             },
             "required": ["query"],
+        },
+    },
+    {
+        "name": "lore_recall",
+        "title": "Recall Lore Memory",
+        "description": "Recency- and salience-weighted recall over the durable claim ledger. Ranks active memory by strength (reinforce/decay), recency, recall frequency, and -- when a query is given -- lexical relevance. Returns each claim's score breakdown.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Optional query to bias ranking by lexical relevance."},
+                "subject": {"type": "string", "description": "Filter to claims about an exact normalized subject."},
+                "lane": {
+                    "type": "string",
+                    "enum": ["project", "procedural", "ops", "companion", "draft"],
+                    "description": "Filter to a retrieval lane.",
+                },
+                "actor": {"type": "string", "description": "Filter to claims produced by a specific agent."},
+                "min_strength": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "default": 0.0,
+                    "description": "Minimum ledger strength to consider.",
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 20},
+                "record_access": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Stamp access (salience + recency) on the returned claims.",
+                },
+            },
         },
     },
     {
@@ -1142,6 +1174,35 @@ def _handle_lore_rag_context_expanded(ctx: McpContext) -> dict[str, Any]:
     return tool_result(payload, summarize_rag_context(payload))
 
 
+def _handle_lore_recall(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    query = optional_string(arguments.get("query"))
+    subject = optional_string(arguments.get("subject"))
+    lane = optional_string(arguments.get("lane"))
+    actor = optional_string(arguments.get("actor"))
+    min_strength = max(0.0, min(float(arguments.get("min_strength") or 0.0), 1.0))
+    limit = max(1, min(int(arguments.get("limit") or 20), 200))
+    record_access = bool(arguments.get("record_access", True))
+    rows = ledger.recall_claims(
+        query=query,
+        subject=subject,
+        lane=lane,
+        actor=actor,
+        min_strength=min_strength,
+        limit=limit,
+        record_access=record_access,
+    )
+    claims = [_recall_claim_payload(row) for row in rows]
+    payload = {
+        "query": query,
+        "count": len(claims),
+        "weights": weights_for_query(query),
+        "claims": claims,
+    }
+    return tool_result(payload, summarize_recall(payload))
+
+
 def _handle_lore_link_graph(ctx: McpContext) -> dict[str, Any]:
     tool_arguments(ctx.params)
     graph = build_link_graph(ctx.repo)
@@ -1928,6 +1989,7 @@ TOOL_HANDLERS: dict[str, Callable[[McpContext], dict[str, Any]]] = {
     "lore_list_actors": _handle_lore_list_actors,
     "lore_rag_context": _handle_lore_rag_context,
     "lore_rag_context_expanded": _handle_lore_rag_context_expanded,
+    "lore_recall": _handle_lore_recall,
     "lore_link_graph": _handle_lore_link_graph,
     "lore_context_graph": _handle_lore_context_graph,
     "lore_graph_analytics": _handle_lore_graph_analytics,
@@ -2207,6 +2269,41 @@ def summarize_traces(payload: dict[str, Any]) -> str:
     lines = [f"Found {len(traces)} reasoning trace(s)."]
     for trace in traces[:10]:
         lines.append(f"  {trace.get('trace_id', '?')} - {trace.get('actor', '?')} ({trace.get('status', 'active')})")
+    return "\n".join(lines)
+
+
+def _recall_claim_payload(row: dict[str, Any]) -> dict[str, Any]:
+    content = row.get("content_json") if isinstance(row.get("content_json"), dict) else {}
+    return {
+        "candidate_id": str(row.get("candidate_id") or ""),
+        "subject": str(content.get("subject") or ""),
+        "predicate": str(content.get("predicate") or ""),
+        "object": str(content.get("object") or ""),
+        "status": str(row.get("status") or "candidate"),
+        "confidence": optional_string(row.get("confidence")),
+        "actor": optional_string(row.get("actor")),
+        "lane": optional_string(row.get("lane")),
+        "strength": float(row.get("strength") or 0.0),
+        "access_count": int(row.get("access_count") or 0),
+        "age_days": float(row.get("age_days") or 0.0),
+        "recall_score": float(row.get("recall_score") or 0.0),
+        "recall_signals": row.get("recall_signals") if isinstance(row.get("recall_signals"), dict) else {},
+        "source_page_ids": row.get("source_page_ids") if isinstance(row.get("source_page_ids"), list) else [],
+    }
+
+
+def summarize_recall(payload: dict[str, Any]) -> str:
+    claims = payload.get("claims") or []
+    query = payload.get("query") or "(no query)"
+    lines = [f"Recalled {len(claims)} claim(s) for {query}:"]
+    for claim in claims[:10]:
+        subject = claim.get("subject") or "?"
+        predicate = claim.get("predicate") or ""
+        obj = claim.get("object") or ""
+        lines.append(
+            f"  [{claim.get('recall_score', 0):.3f}] {subject} {predicate} {obj}"
+            f" (strength={claim.get('strength', 0):.2f}, accesses={claim.get('access_count', 0)})"
+        )
     return "\n".join(lines)
 
 

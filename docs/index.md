@@ -8,6 +8,9 @@ deployment, and operating patterns. The browser UI is a minimal human surface
 
 ## Start Here
 
+- [Agent Memory Contract](agent-memory-contract.md): the canonical product
+  surface — token-scoped connect, capture, and recency/salience-weighted recall
+  over HTTP and MCP.
 - [Quickstart](quickstart.md): install Lore, create a page, search, capture
   agent memory, and use the Python and TypeScript SDKs.
 - [Configuration](configuration.md): environment variables, auth modes,

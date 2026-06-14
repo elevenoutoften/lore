@@ -49,6 +49,35 @@ client.create_capture(
 )
 ```
 
+## Durable Memory: capture and recall
+
+`MemoryProvider` is a zero-dependency client for the agent memory surface
+(`/api/memory/*`) with built-in retries and a circuit breaker. Use it for
+high-frequency captures and ranked recall. See
+[Agent Memory Contract](../../docs/agent-memory-contract.md) for the full contract.
+
+```python
+from lore_sdk.memory_provider import MemoryProvider
+
+memory = MemoryProvider(base_url="https://lore.example", api_key="…")
+
+# Write rough memory (consolidated into the claim ledger over time).
+memory.capture(
+    "Pixl renders text as garbage on Illustrious XL.",
+    agent_name="pixie",
+    lane="project",
+    metadata={"confidence": "high", "source_task": "flow_000770"},
+)
+
+# Recall ranked claims by relevance, recency, and salience.
+claims = memory.recall("illustrious text rendering", lane="project", limit=5)
+for claim in claims:
+    print(claim["recall_score"], claim["subject"], claim["object"])
+```
+
+Each recalled claim includes a `recall_score` and a `recall_signals` breakdown
+(`strength`, `recency`, `salience`, `relevance`).
+
 ## Trace-Linked Capture
 
 Use `create_trace` to record rationale, then attach the returned `trace_id` to

@@ -11,6 +11,7 @@ from typing import Any, ClassVar
 
 from .db_utils import retry_on_locked
 from .provenance import merge_trace_provenance
+from .recall import compute_recall_score
 from .schemas import (
     ClaimReinforcementResult,
     ClaimSupersedeResult,
@@ -555,6 +556,23 @@ class LedgerDB:
             self.connection.commit()
             self._bump_generation()
 
+    def _ensure_batch(self, batch_id: str, now: str) -> None:
+        """Create a placeholder batch row if one does not already exist.
+
+        Manual ledger writes (reinforcement, supersede) reference a synthetic
+        batch id that has no corresponding extraction_batches row; without this
+        the foreign key on extraction_candidates would reject the insert.
+        """
+        self.connection.execute(
+            """
+            INSERT OR IGNORE INTO extraction_batches (
+                batch_id, created_at, total_captures, total_entities,
+                total_claims, total_edges, total_invalidations, dry_run
+            ) VALUES (?, ?, 0, 0, 0, 0, 0, 0)
+            """,
+            (batch_id, now),
+        )
+
     # ─── Reinforcement ────────────────────────────────────────────────────
 
     @retry_on_locked()
@@ -670,6 +688,11 @@ class LedgerDB:
             normalized_subject = _normalize(candidate.subject)
             normalized_predicate = _normalize(candidate.predicate)
             normalized_object = _normalize(candidate.object)
+
+            # Ensure the referenced batch exists so manual reinforcement paths
+            # (e.g. /api/ledger/reinforce with batch_id="__manual__") do not trip
+            # the extraction_candidates -> extraction_batches foreign key.
+            self._ensure_batch(batch_id, now)
 
             self.connection.execute(
                 """
@@ -899,6 +922,8 @@ class LedgerDB:
         lane: str | None = None,
         min_strength: float = 0.0,
         valid_at: str | None = None,
+        actor: str | None = None,
+        limit: int = 500,
     ) -> list[dict[str, Any]]:
         """Query active/candidate claims with filters."""
         clauses: list[str] = [
@@ -913,6 +938,9 @@ class LedgerDB:
         if lane:
             clauses.append("lane = ?")
             params.append(lane)
+        if actor:
+            clauses.append("actor = ?")
+            params.append(actor)
         if min_strength > 0:
             clauses.append("strength >= ?")
             params.append(min_strength)
@@ -923,7 +951,7 @@ class LedgerDB:
             params.append(valid_at)
 
         where = " AND ".join(clauses)
-        params.append(500)  # limit
+        params.append(max(1, min(limit, 1000)))
 
         rows = self.connection.execute(
             f"""
@@ -935,6 +963,97 @@ class LedgerDB:
             params,
         ).fetchall()
         return [_decode_row(row) for row in rows]
+
+    # ─── Recall (recency/salience-weighted) ────────────────────────────────
+
+    def recall_claims(
+        self,
+        *,
+        query: str | None = None,
+        subject: str | None = None,
+        lane: str | None = None,
+        actor: str | None = None,
+        min_strength: float = 0.0,
+        valid_at: str | None = None,
+        limit: int = 20,
+        pool_limit: int = 500,
+        record_access: bool = True,
+        now: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """Rank active/candidate claims by recency/salience-weighted recall.
+
+        Claims are scored on strength (reinforce/decay), recency (freshness of the
+        last-access/update anchor), salience (recall frequency), and -- when a
+        query is supplied -- lexical relevance. The strongest, freshest, most
+        frequently recalled, most relevant claims rank first. Each returned row
+        carries ``recall_score``, a ``recall_signals`` breakdown, and ``age_days``.
+
+        When ``record_access`` is true, the returned claims have their access
+        count incremented and ``last_accessed_at`` stamped, which feeds both the
+        salience signal and the decay anchor on subsequent recalls.
+        """
+        now_dt = now or datetime.now(UTC)
+        pool = self.get_active_claims(
+            subject=subject,
+            lane=lane,
+            actor=actor,
+            min_strength=min_strength,
+            valid_at=valid_at,
+            limit=pool_limit,
+        )
+
+        scored: list[dict[str, Any]] = []
+        for row in pool:
+            anchor = row.get("last_accessed_at") or row.get("updated_at") or row.get("created_at")
+            age_days = _age_in_days(anchor, now_dt)
+            score = compute_recall_score(
+                strength=float(row.get("strength") or 0.0),
+                age_days=age_days,
+                access_count=int(row.get("access_count") or 0),
+                query=query,
+                text=_claim_text(row),
+            )
+            entry = dict(row)
+            entry["recall_score"] = round(score.total, 6)
+            entry["recall_signals"] = score.as_dict()
+            entry["age_days"] = round(age_days, 4)
+            scored.append(entry)
+
+        scored.sort(
+            key=lambda item: (item["recall_score"], float(item.get("strength") or 0.0)),
+            reverse=True,
+        )
+        top = scored[: max(1, min(limit, 200))]
+
+        if record_access and top:
+            self.record_claim_access(
+                [str(item["candidate_id"]) for item in top],
+                now=now_dt.isoformat(),
+            )
+        return top
+
+    @retry_on_locked()
+    def record_claim_access(self, candidate_ids: list[str], *, now: str | None = None) -> int:
+        """Increment access count and stamp last_accessed_at for recalled claims."""
+        ids = [cid for cid in dict.fromkeys(candidate_ids) if cid]
+        if not ids:
+            return 0
+        timestamp = now or utc_now()
+        placeholders = ", ".join("?" for _ in ids)
+        with self._lock:
+            cursor = self.connection.execute(
+                f"""
+                UPDATE extraction_candidates
+                SET access_count = COALESCE(access_count, 0) + 1,
+                    last_accessed_at = ?
+                WHERE candidate_id IN ({placeholders})
+                """,
+                (timestamp, *ids),
+            )
+            self.connection.commit()
+            if cursor.rowcount > 0:
+                self._bump_generation()
+        return int(cursor.rowcount)
 
     # ─── Existing methods ──────────────────────────────────────────────────
 
@@ -1584,6 +1703,31 @@ def _candidate_metadata(candidate: Any) -> dict[str, Any]:
     if isinstance(candidate, ExtractedEdge):
         return {"strength": candidate.strength}
     return {}
+
+
+def _age_in_days(anchor: Any, now_dt: datetime) -> float:
+    """Fractional days between ``anchor`` (ISO timestamp) and ``now_dt``."""
+    if not anchor:
+        return 0.0
+    try:
+        ts = datetime.fromisoformat(str(anchor))
+    except ValueError:
+        return 0.0
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    return max(0.0, (now_dt - ts).total_seconds() / 86400.0)
+
+
+def _claim_text(row: dict[str, Any]) -> str:
+    """Build the lexical text for a claim row from its content or normalized fields."""
+    content = row.get("content_json")
+    if isinstance(content, dict):
+        parts = [str(content.get(key) or "") for key in ("subject", "predicate", "object", "evidence")]
+        text = " ".join(part for part in parts if part).strip()
+        if text:
+            return text
+    parts = [str(row.get(key) or "") for key in ("normalized_subject", "normalized_predicate", "normalized_object")]
+    return " ".join(part for part in parts if part)
 
 
 def _candidate_source_page_ids(candidate: Any) -> list[str]:

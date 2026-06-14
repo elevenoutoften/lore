@@ -16,6 +16,11 @@ Design principles:
   graph, and a couple-of-clicks settings/keys page — not somewhere agents (or
   most humans) need to go.
 
+The [Agent Memory Contract](docs/agent-memory-contract.md) is the canonical
+description of the product surface: how an agent connects with a token, captures
+durable memory, and recalls it ranked by relevance, recency, and salience over
+HTTP and MCP.
+
 ## Local development
 
 ```bash
@@ -152,6 +157,7 @@ Captures, heartbeat, distillation, extraction, and memory:
 - `GET /api/extraction/batches`
 - `GET /api/extraction/candidates`
 - `POST /api/memory/capture`
+- `GET /api/memory/recall`
 - `GET /api/memory/health`
 
 Ledger, consolidation, provenance, traces, policies, and precedents:
@@ -273,6 +279,7 @@ Tools:
 - `lore_list_actors`
 - `lore_rag_context`
 - `lore_rag_context_expanded`
+- `lore_recall`
 - `lore_link_graph`
 - `lore_context_graph`
 - `lore_graph_analytics`

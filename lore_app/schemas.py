@@ -846,6 +846,39 @@ class MemoryHealthResponse(BaseModel):
     total_issues: int = 0
 
 
+class MemoryRecallClaim(BaseModel):
+    """A single ranked claim returned by recency/salience-weighted recall."""
+
+    candidate_id: str
+    subject: str = ""
+    predicate: str = ""
+    object: str = ""
+    status: str = "candidate"
+    confidence: str | None = None
+    actor: str | None = None
+    lane: str | None = None
+    strength: float = 0.0
+    access_count: int = 0
+    age_days: float = 0.0
+    recall_score: float = 0.0
+    recall_signals: dict[str, float] = Field(default_factory=dict)
+    source_page_ids: list[str] = Field(default_factory=list)
+    source_capture_ids: list[str] = Field(default_factory=list)
+    valid_from: str | None = None
+    valid_until: str | None = None
+    updated_at: str | None = None
+
+
+class MemoryRecallResponse(BaseModel):
+    """Ranked recall over the claim ledger, the agent-facing read surface."""
+
+    query: str | None = None
+    count: int = 0
+    latency_ms: float = 0.0
+    weights: dict[str, float] = Field(default_factory=dict)
+    claims: list[MemoryRecallClaim] = Field(default_factory=list)
+
+
 class RepeatedCaptureGroup(BaseModel):
     """A group of captures with similar content suggesting a repeated procedure."""
 

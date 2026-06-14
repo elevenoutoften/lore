@@ -1,0 +1,21 @@
+{
+  "claims": [
+    {"subject": "services/lore", "predicate": "is", "object": "an agent memory backend with markdown as the source of truth", "confidence": "high"},
+    {"subject": "services/lore", "predicate": "supports", "object": "MCP and HTTP recall with token-scoped authentication", "confidence": "high"},
+    {"subject": "services/pixl", "predicate": "exposes", "object": "a ComfyUI image generation API running on the GPU box", "confidence": "high"},
+    {"subject": "services/flow", "predicate": "is", "object": "an agent-first kanban task board and coordination service", "confidence": "high"},
+    {"subject": "services/muse", "predicate": "serves", "object": "a local large language model inference API", "confidence": "medium"},
+    {"subject": "projects/coinflow", "predicate": "is", "object": "a polymarket signal-fused trading bot", "confidence": "medium"},
+    {"subject": "ops/deploy", "predicate": "runs", "object": "the update-server script behind a caddy reverse proxy", "confidence": "medium"},
+    {"subject": "procedures/capture", "predicate": "describes", "object": "how agents write durable memory captures for consolidation", "confidence": "high"}
+  ],
+  "queries": [
+    {"query": "memory backend markdown source of truth", "expected": "services/lore"},
+    {"query": "comfyui image generation gpu box", "expected": "services/pixl"},
+    {"query": "kanban task board coordination", "expected": "services/flow"},
+    {"query": "local llm inference api", "expected": "services/muse"},
+    {"query": "polymarket trading bot", "expected": "projects/coinflow"},
+    {"query": "caddy reverse proxy deploy", "expected": "ops/deploy"},
+    {"query": "agents write memory captures", "expected": "procedures/capture"}
+  ]
+}

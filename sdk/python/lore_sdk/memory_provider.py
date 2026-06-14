@@ -122,6 +122,48 @@ class MemoryProvider:
         result = self._post_with_retry("/api/memory/capture", payload)
         return str(result.get("capture_id") or result.get("page", {}).get("id"))
 
+    def recall(
+        self,
+        query: str | None = None,
+        *,
+        subject: str | None = None,
+        lane: str | None = None,
+        actor: str | None = None,
+        min_strength: float = 0.0,
+        limit: int = 20,
+        record_access: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Recall durable memory ranked by recency/salience-weighted score.
+
+        Returns the ranked claims, each with a ``recall_score`` and a
+        ``recall_signals`` breakdown (strength, recency, salience, relevance).
+
+        Args:
+            query: Optional query to bias ranking by lexical relevance.
+            subject: Filter to claims about an exact normalized subject.
+            lane: Filter to a retrieval lane.
+            actor: Filter to claims produced by a specific agent.
+            min_strength: Minimum ledger strength to consider.
+            limit: Max claims to return.
+            record_access: Stamp access (salience + recency) on returned claims.
+        """
+        params: dict[str, str] = {"limit": str(int(limit))}
+        if query:
+            params["query"] = query
+        if subject:
+            params["subject"] = subject
+        if lane:
+            params["lane"] = lane
+        if actor:
+            params["actor"] = actor
+        if min_strength:
+            params["min_strength"] = str(float(min_strength))
+        params["record_access"] = "true" if record_access else "false"
+        path = "/api/memory/recall?" + urllib.parse.urlencode(params)
+        result = self._send_with_retry("GET", path)
+        claims = result.get("claims") if isinstance(result, dict) else None
+        return claims if isinstance(claims, list) else []
+
     def page_promote(
         self,
         capture_id: str,
@@ -155,12 +197,15 @@ class MemoryProvider:
     # ------------------------------------------------------------------
 
     def _post_with_retry(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._send_with_retry("POST", path, payload)
+
+    def _send_with_retry(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         self._check_circuit()
 
         last_exception: Exception | None = None
         for attempt in range(self._MAX_RETRIES + 1):
             try:
-                result = self._request("POST", path, payload)
+                result = self._request(method, path, payload)
                 self._on_success()
                 return result
             except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
