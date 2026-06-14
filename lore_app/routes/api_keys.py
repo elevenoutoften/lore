@@ -23,6 +23,12 @@ def require_lore_key_admin(
     authorization: str | None = Header(default=None),
     store: LoreApiKeyStore = Depends(get_api_key_store),
 ) -> None:
+    # When auth is disabled (the default local/dev config, loopback-only per the
+    # insecure-bind guard) there is no auth boundary, so the local operator is
+    # treated as admin. Otherwise the keys/settings UI would dead-end on 401 with
+    # no way to mint the first key (use `lore key create` for non-local bootstrap).
+    if getattr(request.app.state.config, "auth_mode", None) == "none":
+        return
     state_role = str(getattr(request.state, "lore_role", "") or "").strip()
     if state_role == "admin":
         return
@@ -34,7 +40,14 @@ def require_lore_key_admin(
             return
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin API key required.")
 
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin authentication is required.")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=(
+            "Admin authentication is required. Send an admin Lore key as a bearer token, or bootstrap one "
+            "with `lore key create --role admin`. On a default local install (LORE_AUTH_MODE=none) the keys "
+            "and settings pages are open to the loopback operator."
+        ),
+    )
 
 
 @router.get("/api-keys", response_class=HTMLResponse)

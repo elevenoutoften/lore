@@ -205,6 +205,16 @@
         </div>
       </section>
 
+      <section class="key-token">
+        <form data-token-form>
+          <label>
+            <span>Admin API key</span>
+            <input name="bearer_token" type="password" autocomplete="off"
+                   placeholder="Paste an admin bearer token (not needed on a local install)">
+          </label>
+        </form>
+      </section>
+
       <section class="key-grid">
         <article class="key-panel">
           <h3>Create Key</h3>
@@ -271,6 +281,13 @@
     const secretPanel = document.querySelector("[data-key-secret]");
     const secretValue = document.querySelector("[data-key-secret-value]");
     const copyButton = document.querySelector("[data-copy-secret]");
+    const tokenForm = document.querySelector("[data-token-form]");
+    const tokenInput = tokenForm ? tokenForm.elements.bearer_token : null;
+
+    function authHeader() {
+      const token = (tokenInput && tokenInput.value.trim()) || "";
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    }
 
     async function requestJson(path, options = {}) {
       const response = await fetch(path, {
@@ -278,6 +295,7 @@
         headers: {
           "Accept": "application/json",
           ...(options.body ? { "Content-Type": "application/json" } : {}),
+          ...authHeader(),
           ...(options.headers || {})
         }
       });

@@ -88,6 +88,15 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("info", help="Show vault info")
 
+    p_key = sub.add_parser("key", help="Manage Lore agent API keys")
+    key_sub = p_key.add_subparsers(dest="key_command")
+    p_key_create = key_sub.add_parser("create", help="Create an API key and print its token once")
+    p_key_create.add_argument("--name", required=True, help="Human-readable key name")
+    p_key_create.add_argument(
+        "--role", default="admin", choices=["admin", "writer", "reader"], help="Key role (default: admin)"
+    )
+    p_key_create.add_argument("--description", default="", help="Optional description")
+
     args = parser.parse_args(argv)
 
     if args.command == "bootstrap":
@@ -115,8 +124,33 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_status(args)
     if args.command == "info":
         return cmd_info()
+    if args.command == "key":
+        if args.key_command == "create":
+            return cmd_key_create(args)
+        parser.error("key requires a subcommand")
 
     parser.print_help()
+    return 0
+
+
+def cmd_key_create(args: argparse.Namespace) -> int:
+    """Bootstrap an agent API key directly (no running server / proxy session needed)."""
+    from .api_keys import LoreApiKeyStore
+    from .config import LoreConfig
+
+    config = LoreConfig()
+    store = LoreApiKeyStore(config.api_keys_db)
+    store.initialize()
+    try:
+        key, raw_key = store.create_key(name=args.name, description=args.description, role=args.role)
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        return 1
+    finally:
+        store.close()
+    print(f"Created API key '{key.name}' (role={key.role}, id={key.id}).")
+    print("Token (shown once — store it securely and send it as 'Authorization: Bearer <token>'):")
+    print(raw_key)
     return 0
 
 

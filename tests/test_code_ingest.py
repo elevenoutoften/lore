@@ -225,30 +225,38 @@ def ready():
 # ── L-SEC-10: Validation tests ──────────────────────────────────
 
 
-def test_code_ingest_rest_requires_admin(client, tmp_path):
-    """Code ingest REST endpoints require an admin API key."""
-    (tmp_path / "app.py").write_text("def ready():\n    return True\n", encoding="utf-8")
-    _, admin_key = client.app.state.api_key_store.create_key(name="rest-admin", role="admin")
-    _, writer_key = client.app.state.api_key_store.create_key(name="rest-writer", role="writer")
+def test_code_ingest_rest_requires_admin(content_dir, search_db, tmp_path):
+    """Code ingest REST endpoints require an admin API key (with auth enabled)."""
+    source_dir = tmp_path / "svc"
+    source_dir.mkdir()
+    (source_dir / "app.py").write_text("def ready():\n    return True\n", encoding="utf-8")
+
+    config = LoreConfig()
+    config.content_dir = content_dir
+    config.search_db = search_db
+    config.vector_db = search_db.with_name("vectors.db")
+    config.ledger_db = search_db.with_name("ledger.db")
+    config.api_keys_db = search_db.with_name("api_keys.db")
+    config.settings_db = search_db.with_name("settings.db")
+    config.auth_mode = "api_key"
+    config.auto_consolidate = False
+    config.code_ingest_roots = [tmp_path]
+    app = create_app(config)
+    _, admin_key = app.state.api_key_store.create_key(name="rest-admin", role="admin")
+    _, writer_key = app.state.api_key_store.create_key(name="rest-writer", role="writer")
     admin_headers = {"Authorization": f"Bearer {admin_key}"}
     writer_headers = {"Authorization": f"Bearer {writer_key}"}
 
-    unauthenticated = client.post(
-        "/api/code-ingest/services/admin-only",
-        params={"source_dir": str(tmp_path)},
-    )
-    writer_post = client.post(
-        "/api/code-ingest/services/admin-only",
-        params={"source_dir": str(tmp_path)},
-        headers=writer_headers,
-    )
-    writer_inventory = client.get("/api/code-ingest/services/admin-only/inventory", headers=writer_headers)
-    admin_post = client.post(
-        "/api/code-ingest/services/admin-only",
-        params={"source_dir": str(tmp_path)},
-        headers=admin_headers,
-    )
-    admin_inventory = client.get("/api/code-ingest/services/admin-only/inventory", headers=admin_headers)
+    with TestClient(app) as client:
+        unauthenticated = client.post("/api/code-ingest/services/admin-only", params={"source_dir": str(source_dir)})
+        writer_post = client.post(
+            "/api/code-ingest/services/admin-only", params={"source_dir": str(source_dir)}, headers=writer_headers
+        )
+        writer_inventory = client.get("/api/code-ingest/services/admin-only/inventory", headers=writer_headers)
+        admin_post = client.post(
+            "/api/code-ingest/services/admin-only", params={"source_dir": str(source_dir)}, headers=admin_headers
+        )
+        admin_inventory = client.get("/api/code-ingest/services/admin-only/inventory", headers=admin_headers)
 
     assert unauthenticated.status_code == 401
     assert writer_post.status_code == 403

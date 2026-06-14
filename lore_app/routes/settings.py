@@ -51,6 +51,10 @@ def require_lore_key(
     authorization: str | None = Header(default=None),
     store: LoreApiKeyStore = Depends(get_api_key_store),
 ) -> None:
+    # Auth disabled (default local config) has no boundary: let the local operator
+    # read settings so the /settings page works out of the box.
+    if getattr(request.app.state.config, "auth_mode", None) == "none":
+        return
     state_role = str(getattr(request.state, "lore_role", "") or "").strip()
     if state_role in {"admin", "writer", "reader"}:
         return

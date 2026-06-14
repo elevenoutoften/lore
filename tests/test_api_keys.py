@@ -2,7 +2,33 @@ from __future__ import annotations
 
 import os
 
+import pytest
+from fastapi.testclient import TestClient
+
 from lore_app.api_keys import LoreApiKeyStore
+from lore_app.config import LoreConfig
+from lore_app.main import create_app
+
+
+@pytest.fixture()
+def admin_client(content_dir, search_db):
+    """A client in api_key auth mode, where the admin gate is actually enforced.
+
+    (In auth_mode=none the keys/settings pages are intentionally open to the local
+    operator, so admin gating can only be exercised with auth enabled.)
+    """
+    cfg = LoreConfig()
+    cfg.content_dir = content_dir
+    cfg.search_db = search_db
+    cfg.vector_db = search_db.with_name("vectors.db")
+    cfg.ledger_db = search_db.with_name("ledger.db")
+    cfg.api_keys_db = search_db.with_name("api_keys.db")
+    cfg.settings_db = search_db.with_name("settings.db")
+    cfg.auth_mode = "api_key"
+    cfg.auto_consolidate = False
+    app = create_app(cfg)
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def test_api_key_store_hardens_db_permissions(tmp_path):
@@ -20,15 +46,15 @@ def test_api_key_store_hardens_db_permissions(tmp_path):
     store.close()
 
 
-def test_api_key_management_requires_admin(client):
-    store = client.app.state.api_key_store
+def test_api_key_management_requires_admin(admin_client):
+    store = admin_client.app.state.api_key_store
     _key_obj, raw_key = store.create_key(name="test-admin", role="admin")
     admin_headers = {"Authorization": f"Bearer {raw_key}"}
 
-    assert client.get("/api/api-keys").status_code == 401
-    assert client.post("/api/api-keys", json={"name": "codex"}).status_code == 401
+    assert admin_client.get("/api/api-keys").status_code == 401
+    assert admin_client.post("/api/api-keys", json={"name": "codex"}).status_code == 401
 
-    created = client.post("/api/api-keys", json={"name": "codex", "role": "writer"}, headers=admin_headers)
+    created = admin_client.post("/api/api-keys", json={"name": "codex", "role": "writer"}, headers=admin_headers)
     assert created.status_code == 201, created.text
     payload = created.json()
     assert payload["name"] == "codex"
@@ -36,7 +62,7 @@ def test_api_key_management_requires_admin(client):
     assert payload["api_key"].startswith("lore_")
     assert payload["key_prefix"] == payload["api_key"][:16]
 
-    listed = client.get("/api/api-keys", headers=admin_headers)
+    listed = admin_client.get("/api/api-keys", headers=admin_headers)
     assert listed.status_code == 200
     items = listed.json()
     assert len(items) == 2
@@ -45,34 +71,43 @@ def test_api_key_management_requires_admin(client):
     assert codex_item["key_prefix"] == payload["key_prefix"]
 
 
-def test_lore_admin_key_can_manage_keys(client):
-    store = client.app.state.api_key_store
+def test_lore_admin_key_can_manage_keys(admin_client):
+    store = admin_client.app.state.api_key_store
     _admin_key_obj, admin_key = store.create_key(name="key-admin", role="admin")
     admin_headers = {"Authorization": f"Bearer {admin_key}"}
 
-    created_writer = client.post("/api/api-keys", json={"name": "writer"}, headers=admin_headers)
+    created_writer = admin_client.post("/api/api-keys", json={"name": "writer"}, headers=admin_headers)
     assert created_writer.status_code == 201, created_writer.text
-    assert client.get("/api/api-keys", headers=admin_headers).status_code == 200
+    assert admin_client.get("/api/api-keys", headers=admin_headers).status_code == 200
 
-    revoked = client.post(f"/api/api-keys/{created_writer.json()['id']}/revoke", headers=admin_headers)
+    revoked = admin_client.post(f"/api/api-keys/{created_writer.json()['id']}/revoke", headers=admin_headers)
     assert revoked.status_code == 200
     assert revoked.json()["revoked_at"] is not None
 
 
-def test_lore_writer_key_cannot_manage_keys(client):
-    store = client.app.state.api_key_store
+def test_lore_writer_key_cannot_manage_keys(admin_client):
+    store = admin_client.app.state.api_key_store
     _admin_key_obj, admin_key = store.create_key(name="key-admin", role="admin")
     admin_headers = {"Authorization": f"Bearer {admin_key}"}
 
-    created_writer = client.post(
+    created_writer = admin_client.post(
         "/api/api-keys",
         json={"name": "writer", "role": "writer"},
         headers=admin_headers,
     ).json()
     writer_headers = {"Authorization": f"Bearer {created_writer['api_key']}"}
 
-    listed = client.get("/api/api-keys", headers=writer_headers)
-    created = client.post("/api/api-keys", json={"name": "nested"}, headers=writer_headers)
+    listed = admin_client.get("/api/api-keys", headers=writer_headers)
+    created = admin_client.post("/api/api-keys", json={"name": "nested"}, headers=writer_headers)
 
     assert listed.status_code == 403
     assert created.status_code == 403
+
+
+def test_local_none_mode_opens_key_and_settings_management(client):
+    """On a default local install (auth_mode=none) the loopback operator manages keys/settings."""
+    created = client.post("/api/api-keys", json={"name": "first-admin", "role": "admin"})
+    assert created.status_code == 201, created.text
+    assert created.json()["api_key"].startswith("lore_")
+    assert client.get("/api/api-keys").status_code == 200
+    assert client.get("/api/settings/llm").status_code == 200

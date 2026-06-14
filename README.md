@@ -67,6 +67,16 @@ requests use bearer key authentication. Agents use Lore-owned bearer keys create
 through the `/api-keys` browser page or `/api/api-keys`; Lore no longer depends
 on Flow API keys.
 
+**Bootstrapping the first key.** On a default local install (`LORE_AUTH_MODE=none`,
+loopback) the `/api-keys` and `/settings` pages are open to the local operator —
+just create a key. When auth is enabled (`api_key`/`bearer`), mint the first admin
+key without a running server using the CLI, then paste it into the `/api-keys`
+page's bearer-token field:
+
+```bash
+lore key create --name bootstrap --role admin
+```
+
 ## Configuration
 
 `LORE_AUTH_MODE` accepts only `none`, `bearer`, `basic`, or `api_key`. Any other

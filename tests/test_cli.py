@@ -70,3 +70,24 @@ def test_cli_info(capsys):
     output = capsys.readouterr().out
     assert "app_name:" in output
     assert "content_dir:" in output
+
+
+def test_cli_key_create_mints_admin_token(tmp_path, monkeypatch, capsys):
+    from lore_app.api_keys import LoreApiKeyStore
+    from lore_app.cli import main
+
+    db = tmp_path / "api_keys.db"
+    monkeypatch.setenv("LORE_API_KEYS_DB", str(db))
+    rc = main(["key", "create", "--name", "codex", "--role", "admin"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "lore_" in out  # the token is printed once
+    # The key is persisted and verifiable.
+    store = LoreApiKeyStore(db)
+    store.initialize()
+    token = next(
+        line.strip() for line in out.splitlines() if line.strip().startswith("lore_") and " " not in line.strip()
+    )
+    verified = store.verify_token(token)
+    assert verified is not None and verified.role == "admin"
+    store.close()
