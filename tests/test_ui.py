@@ -106,9 +106,10 @@ def test_lint_dashboard(client):
 
 
 def test_graph_page(client):
-    """GET /graph returns the graph visualization page."""
+    """GET /graph returns the vis-network graph visualization page."""
     resp = client.get("/graph")
     assert resp.status_code == 200
-    assert "Link Graph" in resp.text
-    assert "graphSvg" in resp.text
+    assert "Knowledge Graph" in resp.text
+    assert "graphNetwork" in resp.text
+    assert "/static/vendor/vis-network.min.js" in resp.text
     assert "/api/graph/enriched" in resp.text

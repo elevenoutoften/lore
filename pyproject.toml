@@ -34,7 +34,7 @@ dev = [
 include = ["lore_app*"]
 
 [tool.setuptools.package-data]
-lore_app = ["templates/*.html", "static/*.css"]
+lore_app = ["templates/*.html", "static/*.css", "static/vendor/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "eval"]

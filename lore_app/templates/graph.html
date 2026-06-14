@@ -7,13 +7,14 @@
   <meta name="theme-color" content="#431741">
   <meta name="color-scheme" content="dark">
   <link rel="icon" href="{{ favicon_url }}">
-  <link rel="stylesheet" href="/static/lore.css?v=20260614-reframe">
+  <link rel="stylesheet" href="/static/lore.css?v=20260614-graph">
   <style>
     .graph-shell {
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-rows: auto auto minmax(0, 1fr);
       min-height: 100vh;
       padding: 1rem;
+      gap: 0.85rem;
     }
 
     .graph-topbar {
@@ -22,7 +23,6 @@
       flex-wrap: wrap;
       gap: 1rem;
       justify-content: space-between;
-      margin-bottom: 1rem;
     }
 
     .graph-topbar h1 {
@@ -37,70 +37,140 @@
       margin-top: 0.25rem;
     }
 
+    .graph-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.6rem 0.9rem;
+    }
+
+    .graph-controls .control-group {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .graph-search {
+      background: rgba(9, 3, 7, 0.5);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      color: var(--text);
+      font: inherit;
+      padding: 0.4rem 0.7rem;
+      min-width: 12rem;
+    }
+
+    .graph-search:focus {
+      outline: none;
+      border-color: var(--line-strong);
+    }
+
+    .graph-depth {
+      display: none;
+      align-items: center;
+      gap: 0.45rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .graph-depth input {
+      accent-color: #ff7db8;
+    }
+
+    .graph-chip {
+      align-items: center;
+      background: rgba(9, 3, 7, 0.42);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      font: inherit;
+      font-size: 0.78rem;
+      gap: 0.4rem;
+      padding: 0.28rem 0.7rem;
+      transition: opacity 0.15s ease, border-color 0.15s ease;
+    }
+
+    .graph-chip[aria-pressed="false"] {
+      opacity: 0.42;
+    }
+
+    .graph-chip .dot {
+      border-radius: 50%;
+      height: 0.62rem;
+      width: 0.62rem;
+    }
+
+    .graph-chip .count {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .graph-btn {
+      background: rgba(255, 125, 184, 0.16);
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius);
+      color: var(--text);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.82rem;
+      padding: 0.4rem 0.8rem;
+    }
+
+    .graph-btn:hover {
+      background: rgba(255, 125, 184, 0.26);
+    }
+
+    .graph-btn[hidden] {
+      display: none;
+    }
+
     .graph-stage {
       border: 1px solid var(--line);
       border-radius: var(--radius);
       background: rgba(9, 3, 7, 0.42);
-      min-height: 36rem;
+      min-height: 34rem;
       overflow: hidden;
       position: relative;
     }
 
-    #graphSvg {
-      display: block;
+    #graphNetwork {
       height: 100%;
-      min-height: 36rem;
+      min-height: 34rem;
       width: 100%;
     }
 
-    .graph-tooltip {
-      border: 1px solid var(--line-strong);
-      border-radius: var(--radius);
-      background: rgba(22, 7, 17, 0.96);
-      box-shadow: 0 18px 54px rgba(9, 3, 7, 0.45);
-      color: var(--text);
-      display: none;
-      left: 1rem;
-      max-width: min(22rem, calc(100vw - 2rem));
-      padding: 0.7rem;
+    /* vis-network keeps a focus outline on the canvas; suppress it. */
+    #graphNetwork:focus,
+    #graphNetwork canvas:focus {
+      outline: none;
+    }
+
+    .graph-status {
+      color: var(--muted);
+      font-size: 0.78rem;
+      left: 0.9rem;
       pointer-events: none;
       position: absolute;
-      top: 1rem;
-      z-index: 3;
-    }
-
-    .graph-tooltip strong {
-      display: block;
-      font-size: 0.86rem;
-      margin-bottom: 0.25rem;
-    }
-
-    .graph-tooltip span,
-    .graph-tooltip p {
-      color: var(--muted);
-      font-size: 0.72rem;
-    }
-
-    .graph-tooltip p {
-      margin-top: 0.45rem;
+      bottom: 0.7rem;
+      z-index: 2;
     }
 
     .graph-empty {
       color: var(--muted);
-      left: 1rem;
+      left: 50%;
       position: absolute;
-      top: 1rem;
+      top: 45%;
+      transform: translate(-50%, -50%);
+      text-align: center;
     }
 
     @media (max-width: 760px) {
-      .graph-shell {
-        padding: 0.7rem;
-      }
-
+      .graph-shell { padding: 0.7rem; }
       .graph-stage,
-      #graphSvg {
-        min-height: 32rem;
-      }
+      #graphNetwork { min-height: 30rem; }
+      .graph-search { min-width: 9rem; }
     }
   </style>
 </head>
@@ -109,7 +179,7 @@
     <header class="graph-topbar">
       <div>
         <p class="wordmark">{{ brand_title }}</p>
-        <h1>Link Graph</h1>
+        <h1>Knowledge Graph</h1>
       </div>
       <nav class="topbar-links" aria-label="Lore navigation">
         <a href="/">Wiki</a>
@@ -119,203 +189,420 @@
       </nav>
     </header>
 
+    <div class="graph-controls">
+      <div class="control-group">
+        <input id="graphSearch" class="graph-search" type="search" placeholder="Search pages..."
+               aria-label="Search pages" autocomplete="off">
+      </div>
+      <label class="graph-depth" id="graphDepthWrap">
+        <span>Depth</span>
+        <input id="graphDepth" type="range" min="1" max="3" step="1" value="2" aria-label="Ego view depth">
+        <span id="graphDepthValue">2</span>
+      </label>
+      <div class="control-group" id="graphFilters" role="group" aria-label="Filter by type"></div>
+      <button id="graphBack" class="graph-btn" type="button" hidden>&larr; Overview</button>
+    </div>
+
     <main class="graph-stage">
-      <svg id="graphSvg" role="img" aria-label="Lore link graph"></svg>
-      <div id="graphTooltip" class="graph-tooltip"></div>
+      <div id="graphNetwork" role="application" aria-label="Lore knowledge graph"></div>
+      <p id="graphStatus" class="graph-status"></p>
       <p id="graphEmpty" class="graph-empty">Loading graph...</p>
     </main>
   </div>
 
+  <script src="/static/vendor/vis-network.min.js"></script>
   <script nonce="{{ csp_nonce }}">
-    const svg = document.getElementById("graphSvg");
-    const tooltip = document.getElementById("graphTooltip");
-    const empty = document.getElementById("graphEmpty");
-    const kindColors = {
-      capture: "#ffd979",
-      concept: "#ffa8d7",
-      decision: "#7de8aa",
-      page: "#8fd3ff",
-      project: "#ff7db8",
-      runbook: "#c9a7ff",
-      service: "#7de8aa"
-    };
+    (function () {
+      "use strict";
 
-    function svgEl(name, attrs = {}) {
-      const element = document.createElementNS("http://www.w3.org/2000/svg", name);
-      for (const [key, value] of Object.entries(attrs)) {
-        element.setAttribute(key, value);
+      const container = document.getElementById("graphNetwork");
+      const empty = document.getElementById("graphEmpty");
+      const status = document.getElementById("graphStatus");
+      const searchInput = document.getElementById("graphSearch");
+      const depthWrap = document.getElementById("graphDepthWrap");
+      const depthInput = document.getElementById("graphDepth");
+      const depthValue = document.getElementById("graphDepthValue");
+      const filtersBox = document.getElementById("graphFilters");
+      const backButton = document.getElementById("graphBack");
+
+      const KIND_COLORS = {
+        capture: "#ffd979",
+        concept: "#ffa8d7",
+        decision: "#7de8aa",
+        page: "#8fd3ff",
+        project: "#ff7db8",
+        procedure: "#c9a7ff",
+        runbook: "#c9a7ff",
+        service: "#6fe0c6"
+      };
+      const FALLBACK_COLOR = "#8fd3ff";
+      const DIM_NODE = "rgba(143, 211, 255, 0.12)";
+      const DIM_EDGE = "rgba(255, 230, 244, 0.05)";
+      const EDGE_COLOR = "rgba(255, 230, 244, 0.22)";
+      const EDGE_HIGHLIGHT = "rgba(255, 168, 215, 0.85)";
+
+      const colorForKind = (kind) => KIND_COLORS[kind] || FALLBACK_COLOR;
+
+      let allNodes = [];
+      const nodeById = new Map();
+      const adjacency = new Map();
+      const activeKinds = new Set();
+
+      let network = null;
+      let mode = "overview";
+      let focusId = null;
+      let depth = 2;
+
+      function buildModel(data) {
+        const nodes = Array.isArray(data.nodes) ? data.nodes : [];
+        allNodes = nodes.map((node) => ({
+          id: node.page_id,
+          label: node.title || node.page_id,
+          kind: node.kind || "page",
+          visibility: node.visibility || "",
+          summary: node.summary || "",
+          degree: (node.inbound_count || 0) + (node.outbound_count || 0),
+          inbound: node.inbound_count || 0,
+          outbound: node.outbound_count || 0
+        }));
+        allNodes.forEach((node) => {
+          nodeById.set(node.id, node);
+          adjacency.set(node.id, new Set());
+          activeKinds.add(node.kind);
+        });
+
+        const links = Array.isArray(data.links) ? data.links : [];
+        links.forEach((edge) => {
+          if (edge.relationship_type !== "wikilink") return;
+          if (!edge.exists || edge.external) return;
+          const { source, target } = edge;
+          if (!source || !target) return;
+          if (!nodeById.has(source) || !nodeById.has(target)) return;
+          adjacency.get(source).add(target);
+          adjacency.get(target).add(source);
+        });
       }
-      return element;
-    }
 
-    function size() {
-      const rect = svg.getBoundingClientRect();
-      return { width: Math.max(rect.width, 320), height: Math.max(rect.height, 320) };
-    }
-
-    function renderGraph(data) {
-      const nodes = data.nodes.map((node, index) => ({ ...node, index, x: 0, y: 0, vx: 0, vy: 0 }));
-      const byId = new Map(nodes.map((node) => [node.page_id, node]));
-      const links = data.links
-        .filter((edge) => edge.relationship_type === "wikilink" && edge.target)
-        .map((edge) => ({ ...edge, sourceNode: byId.get(edge.source), targetNode: byId.get(edge.target) }))
-        .filter((edge) => edge.sourceNode && (edge.targetNode || !edge.exists));
-
-      if (!nodes.length) {
-        empty.textContent = "No graph nodes found.";
-        return;
+      function truncate(text, max) {
+        const value = String(text || "");
+        return value.length > max ? value.slice(0, max - 1) + "…" : value;
       }
-      empty.style.display = "none";
 
-      const { width, height } = size();
-      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-      svg.replaceChildren();
+      function tooltipFor(node) {
+        // Build the tooltip as a detached element so page titles/summaries are
+        // never interpreted as HTML by vis-network.
+        const el = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = node.label;
+        const meta = document.createElement("div");
+        meta.style.color = "var(--muted)";
+        meta.style.fontSize = "0.72rem";
+        meta.textContent = `${node.kind} · ${node.inbound} in / ${node.outbound} out`;
+        el.appendChild(title);
+        el.appendChild(meta);
+        if (node.summary) {
+          const summary = document.createElement("div");
+          summary.style.marginTop = "0.35rem";
+          summary.style.maxWidth = "20rem";
+          summary.textContent = truncate(node.summary, 160);
+          el.appendChild(summary);
+        }
+        return el;
+      }
 
-      nodes.forEach((node, index) => {
-        const angle = (Math.PI * 2 * index) / Math.max(nodes.length, 1);
-        const radius = Math.min(width, height) * 0.32;
-        node.x = width / 2 + Math.cos(angle) * radius;
-        node.y = height / 2 + Math.sin(angle) * radius;
-      });
+      function visibleNodeIds() {
+        const term = searchInput.value.trim().toLowerCase();
+        const ids = new Set();
+        for (const node of allNodes) {
+          if (!activeKinds.has(node.kind)) continue;
+          if (mode === "ego") continue; // ego membership handled separately
+          ids.add(node.id);
+        }
+        return { ids, term };
+      }
 
-      const lineLayer = svgEl("g");
-      const nodeLayer = svgEl("g");
-      svg.append(lineLayer, nodeLayer);
-
-      const lineEls = links.map((edge) => {
-        const line = svgEl("line", {
-          stroke: edge.exists ? "rgba(255, 230, 244, 0.28)" : "#ff6b8d",
-          "stroke-width": edge.exists ? "1.2" : "1.6",
-          "stroke-dasharray": edge.exists ? "" : "6 5"
-        });
-        lineLayer.append(line);
-        return line;
-      });
-
-      const nodeEls = nodes.map((node) => {
-        const group = svgEl("g", { tabindex: "0", role: "link", "aria-label": node.title });
-        const circle = svgEl("circle", {
-          r: String(8 + Math.min(8, node.inbound_count + node.outbound_count)),
-          fill: kindColors[node.kind] || kindColors.page,
-          stroke: "rgba(255, 245, 252, 0.72)",
-          "stroke-width": "1"
-        });
-        const label = svgEl("text", {
-          y: "24",
-          "text-anchor": "middle",
-          fill: "rgba(255, 245, 252, 0.86)",
-          "font-size": "10",
-          "font-family": "var(--font)"
-        });
-        label.textContent = node.title.length > 28 ? `${node.title.slice(0, 25)}...` : node.title;
-        group.append(circle, label);
-        group.addEventListener("click", () => {
-          window.location.href = `/${node.page_id}`;
-        });
-        group.addEventListener("mouseenter", (event) => showTooltip(event, node));
-        group.addEventListener("mousemove", (event) => moveTooltip(event));
-        group.addEventListener("mouseleave", hideTooltip);
-        group.addEventListener("keydown", (event) => {
-          if (event.key === "Enter") {
-            window.location.href = `/${node.page_id}`;
+      function egoMembers(rootId, maxDepth) {
+        // BFS over the undirected wikilink adjacency, capped at maxDepth.
+        const levels = new Map([[rootId, 0]]);
+        let frontier = [rootId];
+        for (let d = 0; d < maxDepth; d += 1) {
+          const next = [];
+          for (const id of frontier) {
+            for (const neighbor of adjacency.get(id) || []) {
+              if (!nodeById.has(neighbor)) continue;
+              if (!activeKinds.has(nodeById.get(neighbor).kind)) continue;
+              if (levels.has(neighbor)) continue;
+              levels.set(neighbor, d + 1);
+              next.push(neighbor);
+            }
           }
-        });
-        nodeLayer.append(group);
-        return group;
-      });
-
-      function showTooltip(event, node) {
-        tooltip.innerHTML = `<strong>${escapeHtml(node.title)}</strong><span>${escapeHtml(node.kind)} / ${escapeHtml(node.visibility)} / ${node.inbound_count} in / ${node.outbound_count} out</span>${node.summary ? `<p>${escapeHtml(node.summary)}</p>` : ""}`;
-        tooltip.style.display = "block";
-        moveTooltip(event);
+          frontier = next;
+        }
+        return levels;
       }
 
-      function moveTooltip(event) {
-        const stage = svg.parentElement.getBoundingClientRect();
-        tooltip.style.left = `${Math.min(event.clientX - stage.left + 14, stage.width - tooltip.offsetWidth - 12)}px`;
-        tooltip.style.top = `${Math.min(event.clientY - stage.top + 14, stage.height - tooltip.offsetHeight - 12)}px`;
-      }
+      function renderOverview() {
+        mode = "overview";
+        focusId = null;
+        backButton.hidden = true;
+        depthWrap.style.display = "none";
 
-      function hideTooltip() {
-        tooltip.style.display = "none";
-      }
-
-      let alpha = 1;
-      const alphaDecay = 0.008;
-      const alphaMin = 0.001;
-
-      function tick() {
-        if (alpha < alphaMin) return;
-
-        for (const node of nodes) {
-          let fx = (width / 2 - node.x) * 0.012 * alpha;
-          let fy = (height / 2 - node.y) * 0.012 * alpha;
-          for (const other of nodes) {
-            if (other === node) continue;
-            const dx = node.x - other.x;
-            const dy = node.y - other.y;
-            const distSq = Math.max(dx * dx + dy * dy, 80);
-            const force = (180 / distSq) * alpha;
-            fx += dx * force;
-            fy += dy * force;
+        const { ids, term } = visibleNodeIds();
+        const nodes = [];
+        for (const id of ids) {
+          const node = nodeById.get(id);
+          const dim = term && !node.label.toLowerCase().includes(term);
+          nodes.push({
+            id: node.id,
+            label: truncate(node.label, 30),
+            title: tooltipFor(node),
+            shape: "dot",
+            size: 9 + Math.min(18, node.degree * 2.2),
+            color: nodeColor(node, dim),
+            font: { color: dim ? "rgba(255,245,252,0.25)" : "rgba(255,245,252,0.88)", face: "var(--font)", size: 12 }
+          });
+        }
+        const edges = [];
+        for (const node of allNodes) {
+          if (!ids.has(node.id)) continue;
+          for (const neighbor of adjacency.get(node.id) || []) {
+            if (!ids.has(neighbor) || neighbor <= node.id) continue;
+            edges.push({ from: node.id, to: neighbor, color: { color: EDGE_COLOR, highlight: EDGE_HIGHLIGHT } });
           }
-          node.vx = (node.vx + fx) * 0.82;
-          node.vy = (node.vy + fy) * 0.82;
         }
 
-        for (const edge of links) {
-          const source = edge.sourceNode;
-          const target = edge.targetNode || source;
-          const dx = target.x - source.x;
-          const dy = target.y - source.y;
-          const distance = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-          const desired = edge.exists ? 120 : 80;
-          const force = (distance - desired) * 0.005 * alpha;
-          const fx = dx * force;
-          const fy = dy * force;
-          source.vx += fx;
-          source.vy += fy;
-          target.vx -= fx;
-          target.vy -= fy;
-        }
-
-        nodes.forEach((node, index) => {
-          node.x = Math.max(42, Math.min(width - 42, node.x + node.vx));
-          node.y = Math.max(42, Math.min(height - 42, node.y + node.vy));
-          nodeEls[index].setAttribute("transform", `translate(${node.x}, ${node.y})`);
-        });
-
-        links.forEach((edge, index) => {
-          const target = edge.targetNode || edge.sourceNode;
-          lineEls[index].setAttribute("x1", edge.sourceNode.x);
-          lineEls[index].setAttribute("y1", edge.sourceNode.y);
-          lineEls[index].setAttribute("x2", target.x);
-          lineEls[index].setAttribute("y2", target.y);
-        });
-
-        alpha *= (1 - alphaDecay);
-        requestAnimationFrame(tick);
+        draw(nodes, edges, overviewOptions());
+        status.textContent = `${nodes.length} pages · ${edges.length} links · click a node for its local view`;
       }
 
-      tick();
-    }
+      function renderEgo(rootId) {
+        const root = nodeById.get(rootId);
+        if (!root) { renderOverview(); return; }
+        mode = "ego";
+        focusId = rootId;
+        backButton.hidden = false;
+        depthWrap.style.display = "inline-flex";
 
-    function escapeHtml(value) {
-      return String(value).replace(/[&<>"']/g, (char) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;"
-      }[char]));
-    }
+        const levels = egoMembers(rootId, depth);
+        const term = searchInput.value.trim().toLowerCase();
+        const nodes = [];
+        for (const [id, level] of levels) {
+          const node = nodeById.get(id);
+          const dim = term && !node.label.toLowerCase().includes(term);
+          nodes.push({
+            id: node.id,
+            label: truncate(node.label, 26),
+            title: tooltipFor(node),
+            level: level,
+            shape: "box",
+            borderWidth: id === rootId ? 3 : 1,
+            margin: 8,
+            color: boxColor(node, id === rootId, dim),
+            font: { color: dim ? "rgba(20,8,16,0.45)" : "#170711", face: "var(--font)", size: 13 }
+          });
+        }
+        const memberIds = new Set(levels.keys());
+        const edges = [];
+        for (const id of memberIds) {
+          for (const neighbor of adjacency.get(id) || []) {
+            if (!memberIds.has(neighbor) || neighbor <= id) continue;
+            edges.push({ from: id, to: neighbor, color: { color: EDGE_COLOR, highlight: EDGE_HIGHLIGHT } });
+          }
+        }
 
-    fetch("/api/graph/enriched")
-      .then((response) => response.ok ? response.json() : Promise.reject(response))
-      .then(renderGraph)
-      .catch(() => {
-        empty.textContent = "Graph data could not be loaded.";
+        draw(nodes, edges, egoOptions());
+        const hops = depth === 1 ? "1 hop" : `${depth} hops`;
+        status.textContent = `${root.label} · ${nodes.length} connected within ${hops} · click a card to re-center`;
+      }
+
+      function nodeColor(node, dim) {
+        const base = colorForKind(node.kind);
+        if (dim) return { background: DIM_NODE, border: "rgba(255,245,252,0.08)" };
+        return { background: base, border: "rgba(255,245,252,0.7)", highlight: { background: base, border: "#fff" } };
+      }
+
+      function boxColor(node, isRoot, dim) {
+        const base = colorForKind(node.kind);
+        if (dim) return { background: "rgba(40,16,32,0.45)", border: "rgba(255,245,252,0.1)" };
+        return {
+          background: base,
+          border: isRoot ? "#fff" : "rgba(23,7,17,0.55)",
+          highlight: { background: base, border: "#fff" }
+        };
+      }
+
+      function overviewOptions() {
+        return {
+          layout: { hierarchical: false },
+          interaction: { hover: true, tooltipDelay: 120, dragNodes: true, dragView: true, zoomView: true, keyboard: false },
+          physics: {
+            enabled: true,
+            barnesHut: { gravitationalConstant: -9000, centralGravity: 0.25, springLength: 130, springConstant: 0.035, damping: 0.5 },
+            stabilization: { iterations: 220, fit: true }
+          },
+          nodes: { borderWidth: 1, shadow: false },
+          edges: { width: 1, smooth: { enabled: true, type: "continuous", roundness: 0.4 } }
+        };
+      }
+
+      function egoOptions() {
+        return {
+          layout: { hierarchical: { enabled: true, direction: "UD", sortMethod: "directed", levelSeparation: 130, nodeSpacing: 160, treeSpacing: 200 } },
+          interaction: { hover: true, tooltipDelay: 120, dragNodes: true, dragView: true, zoomView: true, keyboard: false },
+          physics: { enabled: false },
+          nodes: { borderWidth: 1, shadow: false, shapeProperties: { borderRadius: 8 } },
+          edges: { width: 1.1, smooth: { enabled: true, type: "cubicBezier", forceDirection: "vertical", roundness: 0.55 } }
+        };
+      }
+
+      function draw(nodes, edges, options) {
+        const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+        if (network) {
+          network.setData(data);
+          network.setOptions(options);
+        } else {
+          network = new vis.Network(container, data, options);
+          wireEvents();
+        }
+      }
+
+      function wireEvents() {
+        // Let the overview settle, then freeze physics so the showpiece rests
+        // calmly instead of drifting forever (and the canvas stops repainting).
+        network.on("stabilizationIterationsDone", () => {
+          if (mode === "overview") network.setOptions({ physics: { enabled: false } });
+        });
+        network.on("click", (params) => {
+          if (params.nodes && params.nodes.length) {
+            const id = params.nodes[0];
+            if (mode === "overview" || id !== focusId) {
+              renderEgo(id);
+            }
+          }
+        });
+        network.on("doubleClick", (params) => {
+          if (params.nodes && params.nodes.length) {
+            window.location.href = "/" + params.nodes[0];
+          }
+        });
+        // Hover-dim focus: spotlight the hovered node and its neighbours.
+        network.on("hoverNode", (params) => spotlight(params.node));
+        network.on("blurNode", () => clearSpotlight());
+      }
+
+      function spotlight(hoveredId) {
+        const neighbors = new Set(network.getConnectedNodes(hoveredId));
+        neighbors.add(hoveredId);
+        const nodeUpdates = [];
+        network.body.data.nodes.forEach((item) => {
+          const node = nodeById.get(item.id);
+          if (!node) return;
+          const on = neighbors.has(item.id);
+          if (mode === "ego") {
+            nodeUpdates.push({ id: item.id, color: boxColor(node, item.id === focusId, !on) });
+          } else {
+            nodeUpdates.push({ id: item.id, color: nodeColor(node, !on) });
+          }
+        });
+        network.body.data.nodes.update(nodeUpdates);
+        const edgeUpdates = [];
+        network.body.data.edges.forEach((edge) => {
+          const on = neighbors.has(edge.from) && neighbors.has(edge.to);
+          edgeUpdates.push({ id: edge.id, color: { color: on ? EDGE_HIGHLIGHT : DIM_EDGE, highlight: EDGE_HIGHLIGHT } });
+        });
+        network.body.data.edges.update(edgeUpdates);
+      }
+
+      function clearSpotlight() {
+        if (mode === "ego") { renderEgo(focusId); } else { renderOverview(); }
+      }
+
+      function buildFilters() {
+        const counts = new Map();
+        for (const node of allNodes) counts.set(node.kind, (counts.get(node.kind) || 0) + 1);
+        const kinds = Array.from(counts.keys()).sort();
+        filtersBox.replaceChildren();
+        for (const kind of kinds) {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "graph-chip";
+          chip.setAttribute("aria-pressed", "true");
+          const dot = document.createElement("span");
+          dot.className = "dot";
+          dot.style.background = colorForKind(kind);
+          const label = document.createElement("span");
+          label.textContent = kind;
+          const count = document.createElement("span");
+          count.className = "count";
+          count.textContent = String(counts.get(kind));
+          chip.append(dot, label, count);
+          chip.addEventListener("click", () => {
+            if (activeKinds.has(kind)) {
+              activeKinds.delete(kind);
+              chip.setAttribute("aria-pressed", "false");
+            } else {
+              activeKinds.add(kind);
+              chip.setAttribute("aria-pressed", "true");
+            }
+            rerender();
+          });
+          filtersBox.appendChild(chip);
+        }
+      }
+
+      function rerender() {
+        if (mode === "ego" && focusId && activeKinds.has(nodeById.get(focusId).kind)) {
+          renderEgo(focusId);
+        } else {
+          renderOverview();
+        }
+      }
+
+      function focusSearchMatch() {
+        const term = searchInput.value.trim().toLowerCase();
+        if (!term || !network) return;
+        const match = allNodes.find(
+          (node) => activeKinds.has(node.kind) && node.label.toLowerCase().includes(term)
+        );
+        if (match && network.body.data.nodes.get(match.id)) {
+          network.selectNodes([match.id]);
+          network.focus(match.id, { scale: 1.1, animation: { duration: 360 } });
+        }
+      }
+
+      depthInput.addEventListener("input", () => {
+        depth = Number(depthInput.value) || 2;
+        depthValue.textContent = String(depth);
+        if (mode === "ego" && focusId) renderEgo(focusId);
       });
+
+      let searchTimer = null;
+      searchInput.addEventListener("input", () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(rerender, 160);
+      });
+      searchInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") { event.preventDefault(); rerender(); focusSearchMatch(); }
+      });
+
+      backButton.addEventListener("click", () => renderOverview());
+
+      fetch("/api/graph/enriched")
+        .then((response) => (response.ok ? response.json() : Promise.reject(response)))
+        .then((data) => {
+          buildModel(data);
+          if (!allNodes.length) {
+            empty.textContent = "No graph nodes found.";
+            return;
+          }
+          empty.style.display = "none";
+          buildFilters();
+          renderOverview();
+        })
+        .catch(() => {
+          empty.textContent = "Graph data could not be loaded.";
+        });
+    })();
   </script>
 </body>
 </html>

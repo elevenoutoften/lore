@@ -75,4 +75,4 @@ def api_page_links(
 
 @router.get("/graph", response_class=HTMLResponse)
 def graph_view(request: Request, templates: Jinja2Templates = Depends(get_templates)):
-    return templates.TemplateResponse(request, "graph.html", template_context(request, title="Link Graph"))
+    return templates.TemplateResponse(request, "graph.html", template_context(request, title="Knowledge Graph"))
