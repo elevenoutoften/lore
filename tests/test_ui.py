@@ -64,6 +64,13 @@ def test_search_page(client):
     assert "projects/example-project" in resp.text
 
 
+def test_search_page_works_without_manual_reindex(client):
+    """The FTS index builds on startup, so the browser /search returns hits cold."""
+    resp = client.get("/search", params={"q": "ExampleProject"})
+    assert resp.status_code == 200
+    assert "projects/example-project" in resp.text
+
+
 def test_search_page_with_kind(client):
     """GET /search supports kind filter."""
     client.post("/api/search/reindex")

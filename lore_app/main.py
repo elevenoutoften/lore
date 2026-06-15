@@ -133,17 +133,41 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Cold-start: build the vector index for an existing vault so RAG works out
-        # of the box (the FTS index already self-builds; the vector index did not).
-        # Guarded by emptiness + a size ceiling so restarts and huge vaults are
-        # cheap; operators of very large vaults pre-build with /api/search/reindex.
+        # Cold-start: build the search indexes for an existing vault so search and
+        # RAG work out of the box. A fresh process pointed at an on-disk vault starts
+        # with empty FTS + vector tables (both are otherwise only populated by
+        # page-write triggers), so the browser /search, the FTS/BM25 endpoints, and
+        # lore_rag_context would all return nothing until a manual /api/search/reindex
+        # that no onboarding doc mentions. Guarded by emptiness so restarts are cheap.
         try:
             page_count = len(repo.list_pages())
-            if 0 < page_count <= 5000 and vector_store.chunk_count() == 0:
-                indexed = rebuild_vector_index(repo, vector_store)
-                logging.getLogger("lore").info("Built vector index for %d page(s) on startup.", indexed)
-        except Exception:  # pragma: no cover - best-effort startup index
-            logging.getLogger("lore").exception("Startup vector index build failed; run /api/search/reindex.")
+        except Exception:  # pragma: no cover - defensive
+            page_count = 0
+        if page_count > 0:
+            try:
+                if not search_idx.has_pages():
+                    indexed = search_idx.rebuild(repo)
+                    logging.getLogger("lore").info("Built full-text index for %d page(s) on startup.", indexed)
+            except Exception:  # pragma: no cover - best-effort startup index
+                logging.getLogger("lore").exception("Startup full-text index build failed; run /api/search/reindex.")
+            try:
+                if vector_store.chunk_count() == 0:
+                    # The vector build can be expensive, so it is capped; very large
+                    # vaults must opt in with /api/search/reindex. Warn loudly rather
+                    # than skip silently, or lore_rag_context returns 0 with no clue why.
+                    if page_count <= 5000:
+                        indexed = rebuild_vector_index(repo, vector_store)
+                        logging.getLogger("lore").info("Built vector index for %d page(s) on startup.", indexed)
+                    else:
+                        logging.getLogger("lore").warning(
+                            "Vault has %d pages (over the %d-page startup ceiling); the vector index "
+                            "was NOT auto-built. RAG/semantic search returns nothing until you run "
+                            "POST /api/search/reindex.",
+                            page_count,
+                            5000,
+                        )
+            except Exception:  # pragma: no cover - best-effort startup index
+                logging.getLogger("lore").exception("Startup vector index build failed; run /api/search/reindex.")
         yield
         search_idx.close()
         vector_store.close()

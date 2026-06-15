@@ -87,6 +87,15 @@ def test_search_fts_api(client):
     assert len(data["hits"]) >= 1
 
 
+def test_bm25_works_without_manual_reindex(client):
+    """The FTS index builds on startup, so BM25 returns hits cold (no manual reindex)."""
+    resp = client.get("/api/search/bm25", params={"q": "ExampleProject"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["hits"]) >= 1
+    assert data["hits"][0]["page_id"] == "projects/example-project"
+
+
 def test_bm25_search_endpoint(client):
     """BM25 search endpoint returns ranked results with snippets."""
     client.post("/api/search/reindex")
