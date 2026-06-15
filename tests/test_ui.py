@@ -136,3 +136,13 @@ def test_missing_page_renders_themed_404(client):
     assert "Page not found" in resp.text
     assert "topbar-links" in resp.text  # has the nav to get back
     assert "/search" in resp.text
+
+
+def test_nav_exposes_operator_pages(client):
+    """The shared nav must make every operator page reachable by a click from /."""
+    expected = ("/", "/graph", "/captures", "/procedures", "/heartbeat", "/lint", "/rag", "/api-keys", "/settings")
+    home = client.get("/").text
+    for href in expected:
+        assert f'href="{href}"' in home, href
+    # The nav is a shared partial, so a deep operator page carries the same links.
+    assert 'href="/captures"' in client.get("/heartbeat").text
