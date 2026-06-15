@@ -21,7 +21,7 @@ from ..deps import (
     get_vector_store,
 )
 from ..heartbeat import heartbeat_review
-from ..recall import weights_for_query
+from ..recall import count_pending_captures, recall_hint, weights_for_query
 from ..repository import InvalidPageId, LoreRepository
 from ..route_utils import index_vectors_for_page, record_audit, validate_content
 from ..schemas import (
@@ -197,9 +197,10 @@ def api_memory_recall(
 
     # Self-diagnosing: a count=0 recall should never be silent. Surface how many
     # captures are still pending consolidation so an agent knows whether memory is
-    # genuinely absent or just not consolidated yet.
-    pending_captures = sum(1 for page in repo.list_pages(kind="capture") if page.status == "draft")
-    hint = _recall_hint(len(claims), pending_captures)
+    # genuinely absent or just not consolidated yet. Count only captures not yet
+    # extracted — an extracted draft is already recallable as a candidate claim.
+    pending_captures = count_pending_captures(repo, ledger)
+    hint = recall_hint(len(claims), pending_captures)
 
     return MemoryRecallResponse(
         query=query,
@@ -240,18 +241,6 @@ def _recall_row_to_claim(row: dict[str, Any]) -> MemoryRecallClaim:
         valid_until=_optional_str(row.get("valid_until")),
         updated_at=_optional_str(row.get("updated_at")),
     )
-
-
-def _recall_hint(count: int, pending_captures: int) -> str | None:
-    if count > 0:
-        return None
-    if pending_captures > 0:
-        return (
-            f"No matching claims yet, but {pending_captures} capture(s) are pending consolidation. "
-            "They become recallable once consolidation runs (POST /api/consolidation/run); "
-            "with auto-consolidation enabled this usually happens within moments of capture."
-        )
-    return "No matching memory. Write some with POST /api/memory/capture (or broaden the query)."
 
 
 def _optional_str(value: Any) -> str | None:

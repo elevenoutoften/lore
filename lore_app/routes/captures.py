@@ -15,6 +15,7 @@ from ..capture import (
     promote_capture,
     transition_capture_status,
 )
+from ..consolidation_worker import run_auto_consolidation
 from ..deps import (
     get_audit_log,
     get_context_graph_cache,
@@ -113,6 +114,11 @@ def api_capture(
         summary=f"Captured {page.title}",
         diff_size=len(page.content.encode("utf-8")),
     )
+    # Self-completing loop: consolidate in the background so this capture becomes
+    # recallable (and a durable page) without a separate manual step — the same
+    # behavior the /api/memory/capture surface already provides.
+    if getattr(request.app.state.config, "auto_consolidate", False):
+        background_tasks.add_task(run_auto_consolidation, request.app)
     return CaptureResponse(page=page)
 
 

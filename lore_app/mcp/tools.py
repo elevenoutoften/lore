@@ -19,6 +19,7 @@ from ..capture import (
 )
 from ..code_ingest.ingest_service import ingest_service_code
 from ..code_ingest.validate import IngestValidationError, validate_service_id, validate_source_dir
+from ..consolidation_worker import trigger_auto_consolidation
 from ..context_graph import build_context_graph, explain_context, query_neighbors, query_paths
 from ..distillation import distill_daily, get_daily_captures, promote_daily_note
 from ..frontmatter import update_frontmatter
@@ -32,7 +33,7 @@ from ..procedure_candidate import find_repeated_captures, propose_procedure_cand
 from ..provenance import get_capture_provenance, get_page_provenance
 from ..rag.chunker import chunk_page
 from ..rag.hybrid_retrieval import hybrid_retrieve_expanded
-from ..recall import weights_for_query
+from ..recall import count_pending_captures, recall_hint, weights_for_query
 from ..repository import InvalidPageId, LoreRepository
 from ..schemas import (
     CaptureRequest,
@@ -1195,11 +1196,17 @@ def _handle_lore_recall(ctx: McpContext) -> dict[str, Any]:
         record_access=record_access,
     )
     claims = [_recall_claim_payload(row) for row in rows]
+    # Self-diagnosing recall, matching the REST surface: a count=0 result carries the
+    # pending-consolidation count and a hint so an MCP agent never hits a silent dead end.
+    pending_captures = count_pending_captures(ctx.repo, ledger)
+    hint = recall_hint(len(claims), pending_captures)
     payload = {
         "query": query,
         "count": len(claims),
         "weights": weights_for_query(query),
         "claims": claims,
+        "pending_captures": pending_captures,
+        "hint": hint,
     }
     return tool_result(payload, summarize_recall(payload))
 
@@ -1400,6 +1407,10 @@ def _handle_lore_capture(ctx: McpContext) -> dict[str, Any]:
         ctx.search_index.upsert_page_from_detail(page)
     index_vector_page(ctx.vector_store, page)
     invalidate_graph_cache(ctx.graph_cache)
+    # Self-completing loop: schedule background consolidation so a capture made over
+    # MCP becomes recallable without a manual step, matching the REST capture routes.
+    if ctx.request is not None:
+        trigger_auto_consolidation(ctx.request.app)
     payload = {"page": page.model_dump()}
     return tool_result(payload, f"Captured Lore memory: {page.id}")
 
@@ -2307,6 +2318,9 @@ def summarize_recall(payload: dict[str, Any]) -> str:
             f"  [{claim.get('recall_score', 0):.3f}] {subject} {predicate} {obj}"
             f" (strength={claim.get('strength', 0):.2f}, accesses={claim.get('access_count', 0)})"
         )
+    hint = payload.get("hint")
+    if not claims and hint:
+        lines.append(hint)
     return "\n".join(lines)
 
 

@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import tempfile
+import threading
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -64,6 +65,23 @@ def run_auto_consolidation(app: Any) -> None:
                 break
     finally:
         lock.release()
+
+
+def trigger_auto_consolidation(app: Any) -> None:
+    """Fire-and-forget auto-consolidation for capture paths without BackgroundTasks.
+
+    The REST capture routes schedule run_auto_consolidation as a FastAPI background
+    task, but the MCP dispatch runs synchronously and has no such mechanism. Spawn a
+    daemon thread instead: run_auto_consolidation is self-coalescing (it acquires the
+    lock non-blocking and just flags a rerun otherwise), so a thread that arrives
+    while a run is in flight returns immediately without overlapping work.
+    """
+    if app is None:
+        return
+    config = getattr(getattr(app, "state", None), "config", None)
+    if not getattr(config, "auto_consolidate", True):
+        return
+    threading.Thread(target=run_auto_consolidation, args=(app,), daemon=True).start()
 
 
 class ConsolidationWorker:

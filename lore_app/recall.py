@@ -21,6 +21,11 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .ledger import LedgerDB
+    from .repository import LoreRepository
 
 # Recency half-life in days: a claim untouched for this long contributes half the
 # recency signal it would when freshly accessed.
@@ -144,3 +149,39 @@ def compute_recall_score(
         salience=salience_signal,
         relevance=relevance_signal,
     )
+
+
+def count_pending_captures(repo: LoreRepository, ledger: LedgerDB) -> int:
+    """Count draft captures that are not yet extracted into the ledger.
+
+    These are the captures that are NOT yet recallable. Once extraction turns a
+    capture into a candidate claim it is recallable immediately (recall ranks
+    candidate + active claims), even before its consolidation plan is applied — so
+    an already-extracted draft must not inflate this count, or a self-diagnosing
+    "N pending" hint would chase memory that is in fact already available.
+    """
+    return sum(
+        1
+        for page in repo.list_pages(kind="capture")
+        if page.status == "draft"
+        and page.id.startswith(("inbox/", "notes/"))
+        and not ledger.is_capture_extracted(page.id)
+    )
+
+
+def recall_hint(count: int, pending_captures: int) -> str | None:
+    """A self-diagnosing hint for an empty recall, shared by the REST and MCP surfaces.
+
+    A ``count == 0`` recall should never be silent: distinguish "no memory yet, N
+    captures pending consolidation" from "genuinely nothing matches" so an agent
+    knows whether to wait/consolidate or broaden the query.
+    """
+    if count > 0:
+        return None
+    if pending_captures > 0:
+        return (
+            f"No matching claims yet, but {pending_captures} capture(s) are pending consolidation. "
+            "They become recallable once consolidation runs (POST /api/consolidation/run); "
+            "with auto-consolidation enabled this usually happens within moments of capture."
+        )
+    return "No matching memory. Write some with POST /api/memory/capture (or broaden the query)."

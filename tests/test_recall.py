@@ -300,6 +300,75 @@ def test_recall_hint_flags_pending_captures_when_not_consolidated(tmp_path):
         assert recall["hint"] and "consolidation" in recall["hint"].lower()
 
 
+def test_rest_capture_auto_consolidates_and_is_recallable(tmp_path):
+    """The quickstart REST /api/capture surface must self-complete the loop too."""
+    from fastapi.testclient import TestClient
+
+    app = _app_with_auto_consolidate(tmp_path, enabled=True)
+    with TestClient(app) as c:
+        r = c.post(
+            "/api/capture",
+            json={
+                "observation": "Illustrious XL renders every logo as unreadable garbage.",
+                "title": "Illustrious logo limit",
+            },
+        )
+        assert r.status_code == 201, r.text
+
+        recall = c.get("/api/memory/recall", params={"query": "illustrious logo", "limit": 5}).json()
+        assert recall["count"] >= 1
+        assert recall["hint"] is None
+
+
+def _mcp_recall_until_count(client, arguments, *, attempts=120, delay=0.05):
+    """Poll MCP lore_recall until it returns a claim (MCP capture consolidates on a thread)."""
+    import time
+
+    structured = {"count": 0}
+    for _ in range(attempts):
+        structured = _mcp_call(client, "lore_recall", arguments)["structuredContent"]
+        if structured["count"] >= 1:
+            return structured
+        time.sleep(delay)
+    return structured
+
+
+def test_mcp_capture_auto_consolidates_and_is_recallable(tmp_path):
+    """An MCP lore_capture must become recallable without a manual consolidation step."""
+    from fastapi.testclient import TestClient
+
+    app = _app_with_auto_consolidate(tmp_path, enabled=True)
+    with TestClient(app) as c:
+        captured = _mcp_call(
+            c,
+            "lore_capture",
+            {"observation": "WAN i2v needs a dedicated style LoRA for the locked look.", "title": "WAN style lora"},
+        )
+        assert captured["isError"] is False
+
+        structured = _mcp_recall_until_count(c, {"query": "wan style lora", "limit": 5})
+        assert structured["count"] >= 1
+        assert structured["hint"] is None
+
+
+def test_mcp_recall_carries_pending_hint_when_unconsolidated(tmp_path):
+    from fastapi.testclient import TestClient
+
+    app = _app_with_auto_consolidate(tmp_path, enabled=False)
+    with TestClient(app) as c:
+        captured = _mcp_call(
+            c,
+            "lore_capture",
+            {"observation": "An unconsolidated MCP observation.", "title": "pending mcp"},
+        )
+        assert captured["isError"] is False
+
+        structured = _mcp_call(c, "lore_recall", {"query": "no-such-term-zzz", "limit": 5})["structuredContent"]
+        assert structured["count"] == 0
+        assert structured["pending_captures"] >= 1
+        assert structured["hint"] and "consolidation" in structured["hint"].lower()
+
+
 # ─── Ledger write-path correctness ──────────────────────────────────────────
 
 
