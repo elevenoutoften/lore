@@ -57,6 +57,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             auth = request.headers.get("Authorization", "")
             if auth.startswith("Bearer ") and self._check_token(auth[7:]):
                 request.state.lore_actor = "bearer"
+                # The holder of the single global secret is the trusted operator, so
+                # grant admin: this is the only identity in bearer/basic mode, and
+                # without it the documented /api-keys + /settings bootstrap dead-ends.
+                request.state.lore_role = "admin"
                 return await call_next(request)
             proxy_response = await self._trusted_proxy_response(request, call_next)
             if proxy_response is not None:
@@ -72,6 +76,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     decoded = ""
                 if secrets.compare_digest(decoded, self.secret):
                     request.state.lore_actor = decoded.split(":", 1)[0] or "basic"
+                    # Holder of the single global secret is the trusted admin operator.
+                    request.state.lore_role = "admin"
                     return await call_next(request)
             proxy_response = await self._trusted_proxy_response(request, call_next)
             if proxy_response is not None:

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
 
 from ..deps import get_api_key_store, get_templates
-from ..route_utils import template_context
+from ..route_utils import none_mode_local_operator, template_context
 from ..schemas import LoreApiKeyCreate, LoreApiKeyCreateResponse, LoreApiKeyResponse
 
 if TYPE_CHECKING:
@@ -23,11 +23,12 @@ def require_lore_key_admin(
     authorization: str | None = Header(default=None),
     store: LoreApiKeyStore = Depends(get_api_key_store),
 ) -> None:
-    # When auth is disabled (the default local/dev config, loopback-only per the
-    # insecure-bind guard) there is no auth boundary, so the local operator is
-    # treated as admin. Otherwise the keys/settings UI would dead-end on 401 with
-    # no way to mint the first key (use `lore key create` for non-local bootstrap).
-    if getattr(request.app.state.config, "auth_mode", None) == "none":
+    # When auth is disabled (the default local/dev config) there is no auth
+    # boundary, so the local operator is treated as admin. This bypass is gated on
+    # the request actually being local: under LORE_ALLOW_INSECURE_BIND a non-loopback
+    # auth='none' bind must not hand admin key-minting to arbitrary network clients.
+    # (Use `lore key create` for non-local bootstrap.)
+    if none_mode_local_operator(request):
         return
     state_role = str(getattr(request.state, "lore_role", "") or "").strip()
     if state_role == "admin":

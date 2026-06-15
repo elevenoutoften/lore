@@ -111,3 +111,42 @@ def test_local_none_mode_opens_key_and_settings_management(client):
     assert created.json()["api_key"].startswith("lore_")
     assert client.get("/api/api-keys").status_code == 200
     assert client.get("/api/settings/llm").status_code == 200
+
+
+def _configured_client(content_dir, search_db, **overrides) -> TestClient:
+    cfg = LoreConfig()
+    cfg.content_dir = content_dir
+    cfg.search_db = search_db
+    cfg.vector_db = search_db.with_name("vectors.db")
+    cfg.ledger_db = search_db.with_name("ledger.db")
+    cfg.api_keys_db = search_db.with_name("api_keys.db")
+    cfg.settings_db = search_db.with_name("settings.db")
+    cfg.auto_consolidate = False
+    for key, value in overrides.items():
+        setattr(cfg, key, value)
+    return TestClient(create_app(cfg))
+
+
+def test_bearer_mode_global_secret_operator_is_admin(content_dir, search_db):
+    """The bearer global-secret operator can run the documented keys/settings bootstrap."""
+    with _configured_client(content_dir, search_db, auth_mode="bearer", auth_secret="strong-secret-123") as c:
+        headers = {"Authorization": "Bearer strong-secret-123"}
+        # No token / wrong token: dead-ends as before.
+        assert c.get("/api/settings/llm").status_code == 401
+        # The trusted operator can read settings and mint admin keys from the UI.
+        assert c.get("/api/settings/llm", headers=headers).status_code == 200
+        created = c.post("/api/api-keys", json={"name": "first-admin", "role": "admin"}, headers=headers)
+        assert created.status_code == 201, created.text
+        assert created.json()["api_key"].startswith("lore_")
+
+
+def test_insecure_none_bind_denies_nonloopback_admin(content_dir, search_db):
+    """auth='none' on a non-loopback bind must not hand admin to a non-loopback client."""
+    with _configured_client(
+        content_dir, search_db, auth_mode="none", host="0.0.0.0", allow_insecure_bind=True
+    ) as c:
+        # TestClient is a non-loopback client ("testclient"); the open none-mode bypass
+        # must not apply, or any network client could mint keys / rewrite settings.
+        assert c.post("/api/api-keys", json={"name": "evil", "role": "admin"}).status_code == 401
+        assert c.get("/api/api-keys").status_code == 401
+        assert c.get("/api/settings/llm").status_code == 401

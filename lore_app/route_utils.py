@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import HTTPException, Request
 
 from .audit import AuditLog, new_audit_entry
-from .config import LoreConfig, WorkspaceConfig
+from .config import LOOPBACK_HOSTS, LoreConfig, WorkspaceConfig
 from .rag.chunker import chunk_page
 from .rag.hybrid_retrieval import hybrid_retrieve
 from .repository import InvalidPageId, LoreRepository, build_candidate_page_index, page_result_provenance
@@ -121,6 +121,25 @@ def is_rate_limited_write(request: Request) -> bool:
 
     # Rate-limit API mutations. MCP has its own call-aware limiter in routes/mcp.py.
     return bool(path.startswith("/api/"))
+
+
+def none_mode_local_operator(request: Request) -> bool:
+    """Whether to treat the caller as the trusted local operator under auth_mode='none'.
+
+    The default zero-config install runs auth_mode='none' bound loopback-only, so the
+    local operator is the only possible caller and the keys/settings UI is open with no
+    token. But auth='none' on a non-loopback bind is reachable via LORE_ALLOW_INSECURE_BIND
+    (the startup guard only warns), and there the open bypass would let any network client
+    mint admin keys or rewrite the LLM settings. So when the server is NOT loopback-bound,
+    require the request itself to originate from loopback before granting the bypass.
+    """
+    config = getattr(request.app.state, "config", None)
+    if getattr(config, "auth_mode", None) != "none":
+        return False
+    if getattr(config, "host", None) in LOOPBACK_HOSTS:
+        return True
+    client_host = request.client.host if request.client else None
+    return client_host in LOOPBACK_HOSTS
 
 
 def client_rate_limit_key(request: Request) -> str:
