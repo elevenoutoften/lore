@@ -219,8 +219,18 @@ class LoreSearchIndex:
         fts_query = f'"{clean}"'
         if "/" in clean or "." in clean or ":" in clean:
             fts_query = self._expand_path_query(clean)
-        if len(clean) >= 4 and re.fullmatch(r"[A-Za-z0-9_]+", clean):
-            fts_query = f"{fts_query} OR {clean}*"
+        elif re.fullmatch(r"[A-Za-z0-9_]+", clean):
+            if len(clean) >= 4:
+                fts_query = f"{fts_query} OR {clean}*"
+        elif " " in clean:
+            # Multi-word free text: match the exact phrase (boosted by
+            # _boost_exact_matches) OR any individual term as a prefix. Without this
+            # a multi-word query is a strict phrase match, so the FTS-backed surfaces
+            # (browser /search, /api/search, MCP lore_search once the index is built)
+            # return nothing for loose queries that the markdown-scan fallback matched.
+            terms = [token for token in re.findall(r"[A-Za-z0-9_]+", clean) if len(token) >= 2]
+            if terms:
+                fts_query = f"{fts_query} OR " + " OR ".join(f"{token}*" for token in terms)
         kind_filter = "AND p.kind = ?" if kind else ""
         lane_filter = "AND p.lane = ?" if lane else ""
         actor_filter = "AND p.actor = ?" if actor else ""

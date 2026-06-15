@@ -83,7 +83,9 @@ def test_mcp_search_read_and_upsert(client):
         "tools/call",
         {"name": "lore_search", "arguments": {"query": "gateway service"}},
     ).json()
-    assert searched["result"]["structuredContent"]["hits"][0]["page"]["id"] == "procedures/deploy-lore-service"
+    # With the FTS index built (the normal case), lore_search returns flat FTS hits.
+    hits = searched["result"]["structuredContent"]["hits"]
+    assert any(h["page_id"] == "procedures/deploy-lore-service" for h in hits)
 
     read = rpc(
         client,
