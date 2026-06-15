@@ -9,10 +9,18 @@
   <link rel="icon" href="{{ favicon_url }}">
   <link rel="stylesheet" href="/static/lore.css?v=20260614-graph">
   <style>
+    /* Pin the page to exactly one viewport so the graph stage gets a definite
+       height. A grid 1fr track only resolves to a definite pixel height when its
+       container has a definite height -- with the old min-height:100vh the track
+       was indefinite, #graphNetwork{height:100%} fell back to auto, and
+       vis-network ballooned its canvas to the full page height (blank fold). */
+    body { min-height: 100dvh; }
+
     .graph-shell {
       display: grid;
       grid-template-rows: auto auto minmax(0, 1fr);
-      min-height: 100vh;
+      height: 100vh;
+      height: 100dvh;
       padding: 1rem;
       gap: 0.85rem;
     }
@@ -130,15 +138,19 @@
       border: 1px solid var(--line);
       border-radius: var(--radius);
       background: rgba(9, 3, 7, 0.42);
-      min-height: 34rem;
+      /* The stage's height comes from the grid track (definite, viewport-bound),
+         so min-height:0 lets it shrink to that track instead of forcing growth. */
+      min-height: 0;
       overflow: hidden;
       position: relative;
     }
 
+    /* Fill the (definitely-sized) stage absolutely so the canvas size never
+       depends on a percentage-height chain -- inset:0 against the positioned
+       stage is always a definite box. */
     #graphNetwork {
-      height: 100%;
-      min-height: 34rem;
-      width: 100%;
+      position: absolute;
+      inset: 0;
     }
 
     /* vis-network keeps a focus outline on the canvas; suppress it. */
@@ -168,8 +180,6 @@
 
     @media (max-width: 760px) {
       .graph-shell { padding: 0.7rem; }
-      .graph-stage,
-      #graphNetwork { min-height: 30rem; }
       .graph-search { min-width: 9rem; }
     }
   </style>
@@ -581,6 +591,19 @@
       });
 
       backButton.addEventListener("click", () => renderOverview());
+
+      // Minimal automation handle for headless smoke tests: lets a browser test
+      // read render state and drive an ego interaction deterministically instead
+      // of guessing canvas pixel coordinates. Read-mostly; no app behaviour
+      // depends on it.
+      window.loreGraph = {
+        get mode() { return mode; },
+        get focusId() { return focusId; },
+        get nodeCount() { return network ? network.body.data.nodes.length : 0; },
+        nodeIds: () => allNodes.map((node) => node.id),
+        enterEgo: (id) => renderEgo(id),
+        showOverview: () => renderOverview()
+      };
 
       fetch("/api/graph/enriched")
         .then((response) => (response.ok ? response.json() : Promise.reject(response)))

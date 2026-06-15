@@ -44,6 +44,22 @@ jobs:
           mkdir -p /tmp/lore-ci-db /tmp/lore-ci-pages
           python -m pytest tests/test_eval_extraction.py -v
 
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps + Chromium
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test,browser]"
+          python -m playwright install --with-deps chromium
+      - name: Graph browser smoke test
+        run: |
+          python -m pytest tests/test_graph_browser.py -v --timeout=120
+
   lint:
     runs-on: ubuntu-latest
     steps:

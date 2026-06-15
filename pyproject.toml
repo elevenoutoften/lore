@@ -28,6 +28,9 @@ test = [
   "pytest-timeout>=2.3,<3.0",
   "pytest-cov>=5.0,<7.0",
 ]
+browser = [
+  "playwright>=1.40,<2.0",
+]
 dev = [
   "lore[test]",
   "ruff>=0.5,<1.0",

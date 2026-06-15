@@ -122,6 +122,26 @@ def test_graph_page(client):
     assert "/api/graph/enriched" in resp.text
 
 
+def test_graph_layout_is_viewport_bounded(client):
+    """Guard the L-GRAPH-01 blank-canvas regression at the CSS level.
+
+    The canvas went blank because the shell used `min-height: 100vh` (an
+    indefinite height) so the grid 1fr track never resolved and
+    `#graphNetwork { height: 100% }` fell back to auto, letting vis-network grow
+    its canvas to the full page height. The real rendered-dimension protection
+    lives in tests/test_graph_browser.py; this is the cheap always-on guard that
+    fails fast if the growth-prone CSS is reintroduced.
+    """
+    css = client.get("/graph").text
+    # The shell must be pinned to a definite viewport height, not min-height:100vh.
+    assert "100dvh" in css
+    assert "min-height: 100vh" not in css
+    # The network fills the bounded stage absolutely; the old growth combo
+    # (height:100% + a tall min-height on #graphNetwork) must not return.
+    assert "inset: 0" in css
+    assert "min-height: 34rem" not in css
+
+
 def test_empty_search_renders_gracefully(client):
     """An empty browser search renders the search page, not a raw JSON 422."""
     resp = client.get("/search")
