@@ -19,7 +19,7 @@ from ..capture import (
 )
 from ..code_ingest.ingest_service import ingest_service_code
 from ..code_ingest.validate import IngestValidationError, validate_service_id, validate_source_dir
-from ..consolidation_worker import trigger_auto_consolidation
+from ..consolidation_worker import run_auto_consolidation
 from ..context_graph import build_context_graph, explain_context, query_neighbors, query_paths
 from ..distillation import distill_daily, get_daily_captures, promote_daily_note
 from ..frontmatter import update_frontmatter
@@ -1407,10 +1407,13 @@ def _handle_lore_capture(ctx: McpContext) -> dict[str, Any]:
         ctx.search_index.upsert_page_from_detail(page)
     index_vector_page(ctx.vector_store, page)
     invalidate_graph_cache(ctx.graph_cache)
-    # Self-completing loop: schedule background consolidation so a capture made over
-    # MCP becomes recallable without a manual step, matching the REST capture routes.
+    # Self-completing loop: consolidate inline so a capture made over MCP is
+    # immediately recallable without a manual step. The MCP dispatch is synchronous
+    # (no FastAPI BackgroundTasks), and running here keeps capture -> recall
+    # consistent for the calling agent. run_auto_consolidation is self-coalescing,
+    # so a run already in flight is a fast no-op rather than an overlap.
     if ctx.request is not None:
-        trigger_auto_consolidation(ctx.request.app)
+        run_auto_consolidation(ctx.request.app)
     payload = {"page": page.model_dump()}
     return tool_result(payload, f"Captured Lore memory: {page.id}")
 
