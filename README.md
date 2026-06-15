@@ -59,7 +59,7 @@ pip-audit --local --desc
 ### Starting the server
 
 ```bash
-LORE_CONTENT_DIR=../../lore uvicorn lore_app.asgi:app --reload --port 8078
+LORE_CONTENT_DIR=./sample-vault uvicorn lore_app.asgi:app --reload --port 8078
 ```
 
 The public deployment runs behind a reverse proxy (e.g. Caddy). Browser
@@ -69,9 +69,11 @@ on Flow API keys.
 
 **Bootstrapping the first key.** On a default local install (`LORE_AUTH_MODE=none`,
 loopback) the `/api-keys` and `/settings` pages are open to the local operator —
-just create a key. When auth is enabled (`api_key`/`bearer`), mint the first admin
-key without a running server using the CLI, then paste it into the `/api-keys`
-page's bearer-token field:
+just create a key. With `LORE_AUTH_MODE=api_key`, mint the first admin key without
+a running server using the CLI below, then paste it into the `/api-keys` page's
+bearer-token field. With `LORE_AUTH_MODE=bearer`/`basic` the keys/settings pages
+are managed by the holder of `LORE_AUTH_SECRET` — send that secret as the bearer
+token:
 
 ```bash
 lore key create --name bootstrap --role admin

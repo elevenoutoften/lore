@@ -24,9 +24,10 @@ from lore_sdk import LoreClient
 client = LoreClient(base_url="https://lore.example.com", auth_token="token")
 hits = client.search("gpu runtime deployment")
 page = client.get_page(hits["hits"][0]["page"]["id"])
-client.capture(
-    observation="Deploy script expects Caddy before Lore restart.",
-    sources=["ops/deploy/Update-Server.sh"],
+client.create_capture(
+    title="Deploy ordering",
+    body="Deploy script expects Caddy before Lore restart.",
+    source="ops/deploy/Update-Server.sh",
     confidence="medium",
 )
 ```

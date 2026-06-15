@@ -10,7 +10,7 @@ def test_deploy_passes_all_db_env_vars():
         "LORE_VECTOR_DB": "/data/db/vectors.db",
         "LORE_LEDGER_DB": "/data/db/ledger.db",
         "LORE_SETTINGS_DB": "/data/db/settings.db",
-        "LORE_API_KEYS_DB": "/data/db/api-keys.db",
+        "LORE_API_KEYS_DB": "/data/db/api_keys.db",
         "LORE_AUTH_MODE": "${LORE_AUTH_MODE}",
         "LORE_AUTH_SECRET": "${LORE_AUTH_SECRET}",
     }
@@ -43,6 +43,22 @@ def test_dockerfile_sets_settings_db():
     assert "LORE_SETTINGS_DB=/data/db/settings.db" in content, (
         "Missing LORE_SETTINGS_DB=/data/db/settings.db in Dockerfile"
     )
+
+
+def test_api_keys_db_filename_is_consistent():
+    """Regression: Dockerfile, systemd unit, and the config default must agree on the
+    api-keys DB filename, or a CLI bootstrap and the server read different files."""
+    from lore_app.config import LoreConfig
+
+    default_name = LoreConfig().api_keys_db.name
+    assert default_name == "api_keys.db", default_name
+
+    repo_root = Path(__file__).resolve().parent.parent
+    dockerfile = (repo_root / "Dockerfile").read_text()
+    service = (repo_root / "deploy" / "axis-lore.service").read_text()
+    assert f"/data/db/{default_name}" in dockerfile, "Dockerfile api-keys DB filename drifted from the config default"
+    assert f"/data/db/{default_name}" in service, "systemd unit api-keys DB filename drifted from the config default"
+    assert "api-keys.db" not in dockerfile and "api-keys.db" not in service
 
 
 def test_release_gate_port_and_version_consistency():

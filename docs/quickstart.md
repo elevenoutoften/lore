@@ -23,15 +23,22 @@ By default Lore binds to `127.0.0.1` with auth disabled — the safe, zero-confi
 local setup. To expose it on a network, enable auth (see
 [configuration.md](configuration.md)).
 
-Run with Docker (production-style; the image defaults to `api_key` auth, so
-create a key with the CLI below and send it as a bearer token):
+Run with Docker (production-style). The image defaults to `api_key` auth, so
+persist a db volume, name the container, and mint an admin key to send as a
+bearer token:
 
 ```bash
 docker build -t lore-app .
-docker run --rm -p 8078:8000 \
+docker run -d --name lore -p 8078:8000 \
   -v "$PWD/sample-vault:/data/pages" \
+  -v "$PWD/lore-db:/data/db" \
   lore-app
+docker exec lore lore key create --name quickstart --role admin
 ```
+
+Copy the printed token; the Docker instance needs it on every API call as
+`-H "Authorization: Bearer <token>"`. (The loopback `uvicorn` flow above runs
+`LORE_AUTH_MODE=none` and needs no token — pick whichever server you started.)
 
 Set a base URL for examples:
 
@@ -121,10 +128,13 @@ client.create_capture(
 
 ## TypeScript SDK
 
-Install the SDK from npm (package name `axis-lore-sdk`):
+Build the SDK from the repository (it is not published to npm yet; `import` from
+the built output or add it as a local file dependency):
 
 ```bash
-npm install axis-lore-sdk
+cd sdk/typescript
+npm install
+npm run build
 ```
 
 ```ts
