@@ -496,6 +496,37 @@ def test_apply_and_reject_guarded_against_terminal_plans(tmp_path, monkeypatch):
     assert ctx.ledger.get_candidates(candidate_type="claim", status="active")
 
 
+def test_apply_plan_preflights_already_active_candidate(tmp_path, monkeypatch):
+    """A candidate already activated by another plan must fail BEFORE any page/plan write."""
+    ctx = make_context(tmp_path, monkeypatch)
+    add_capture(
+        ctx.repo,
+        "inbox/2026-05-10/shared",
+        kind="service",
+        summary="Shared candidate service.",
+        suggested_target_page="services/shared",
+    )
+    store_claims(
+        ctx.ledger,
+        "batch-shared",
+        "inbox/2026-05-10/shared",
+        [make_claim("services/shared", "Shared candidate service")],
+    )
+    [plan] = ctx.planner.plan_batch(batch_id="batch-shared")
+
+    # Simulate another plan that shares this candidate having been applied first.
+    for candidate_id in plan.candidate_ids:
+        ctx.ledger.activate_candidate(candidate_id)
+
+    assert ctx.repo.read_page("services/shared") is None
+    with pytest.raises(ValueError, match="already active"):
+        ctx.planner.apply_plan(plan.plan_id)
+
+    # No partial write: the page was never created and the plan was not flipped.
+    assert ctx.repo.read_page("services/shared") is None
+    assert ctx.ledger.get_patch_plan(plan.plan_id)["status"] != "applied"
+
+
 def test_consolidation_api_endpoints(tmp_path, monkeypatch):
     ctx = make_context(tmp_path, monkeypatch)
     add_capture(ctx.repo, "inbox/2026-05-10/api-apply", suggested_target_page="services/lore")

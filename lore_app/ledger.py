@@ -757,6 +757,19 @@ class LedgerDB:
                 raise ValueError(f"Candidate {old_candidate_id} not found")
             old_status = str(old_row["status"])
 
+            # A claim cannot supersede itself. With old == new the two UPDATEs below
+            # mark the row 'superseded' (dropping it from recall) and point it at
+            # itself as both predecessor and successor — silent memory loss plus a
+            # self-referential cycle, all reported as 200 OK.
+            if old_candidate_id == new_candidate_id:
+                raise ValueError("A claim cannot supersede itself.")
+
+            # Only a live claim can be superseded. Superseding a terminal claim
+            # (rejected/archived/already-superseded) would resurrect or overwrite that
+            # terminal state and clobber an existing superseded_by edge.
+            if old_status not in ("candidate", "active"):
+                raise ValueError(f"Candidate {old_candidate_id} cannot be superseded from status {old_status}.")
+
             # Validate the superseding claim exists BEFORE retiring the old one.
             # Without this, superseding against a non-existent id silently marks the
             # old claim 'superseded' (removing it from recall) and points it at a
@@ -1309,6 +1322,17 @@ class LedgerDB:
             (limit,),
         ).fetchall()
         return [str(row["capture_id"]) for row in rows]
+
+    def candidate_statuses(self, candidate_ids: list[str]) -> dict[str, str]:
+        """Return the current status for each given candidate id (missing ids omitted)."""
+        if not candidate_ids:
+            return {}
+        placeholders = ",".join("?" for _ in candidate_ids)
+        rows = self.connection.execute(
+            f"SELECT candidate_id, status FROM extraction_candidates WHERE candidate_id IN ({placeholders})",
+            list(candidate_ids),
+        ).fetchall()
+        return {str(row["candidate_id"]): str(row["status"]) for row in rows}
 
     def get_candidates(
         self,

@@ -120,6 +120,21 @@ class PatchPlanner:
         if not plan.auto_appliable and not force:
             raise ValueError(f"Patch plan {plan_id} is not auto-appliable; pass force=True to apply it.")
 
+        # Pre-flight the candidate activations BEFORE mutating the page or plan row.
+        # Two distinct plans can share a candidate (plan_batch with explicit
+        # candidate_ids skips the open-plan dedup). If another such plan was applied
+        # first, this candidate is already 'active'; _activate_candidates would then
+        # raise 'active -> active' AFTER the page was overwritten and the plan flipped
+        # to 'applied', leaving a partial, non-idempotent write reported as a 409.
+        # Failing here keeps the 409 actionable with no side effects.
+        statuses = self.ledger.candidate_statuses(plan.candidate_ids)
+        already_active = [cid for cid in plan.candidate_ids if statuses.get(cid) == "active"]
+        if already_active:
+            raise ValueError(
+                f"Patch plan {plan_id} cannot be applied: candidate(s) {', '.join(already_active)} "
+                "already active (applied by another plan)."
+            )
+
         preview = self.preview_patch(plan_id)
         before_hash = _content_hash(preview.current_content)
         after_hash = _content_hash(preview.proposed_content)

@@ -389,6 +389,55 @@ def test_supersede_rejects_phantom_new_candidate_and_preserves_old(tmp_path):
     assert old_id in still_live
 
 
+def test_supersede_rejects_self_reference(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    _seed(ledger, [ExtractedClaim(subject="s", predicate="p", object="o", confidence="high")])
+    cid = ledger.get_active_claims()[0]["candidate_id"]
+
+    try:
+        ledger.supersede_candidate(cid, cid, "self")
+        raise AssertionError("expected ValueError for self-supersede")
+    except ValueError as exc:
+        assert "supersede itself" in str(exc).lower()
+
+    # The claim must still be live, not silently retired into a self-referential cycle.
+    assert cid in [c["candidate_id"] for c in ledger.get_active_claims()]
+
+
+def test_supersede_rejects_terminal_old_claim(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    _seed(
+        ledger,
+        [
+            ExtractedClaim(subject="s1", predicate="p", object="o1", confidence="high"),
+            ExtractedClaim(subject="s2", predicate="p", object="o2", confidence="high"),
+        ],
+    )
+    ids = [c["candidate_id"] for c in ledger.get_active_claims()]
+    old_id, new_id = ids[0], ids[1]
+    ledger.reject_candidate(old_id, reason="rejected for test")
+
+    try:
+        ledger.supersede_candidate(old_id, new_id, "late supersede")
+        raise AssertionError("expected ValueError superseding a terminal claim")
+    except ValueError as exc:
+        assert "cannot be superseded" in str(exc).lower()
+
+
+def test_candidate_statuses_reports_known_ids(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    _seed(ledger, [ExtractedClaim(subject="s", predicate="p", object="o", confidence="high")])
+    cid = ledger.get_active_claims()[0]["candidate_id"]
+
+    statuses = ledger.candidate_statuses([cid, "missing-id"])
+    assert statuses[cid] == "candidate"
+    assert "missing-id" not in statuses
+    assert ledger.candidate_statuses([]) == {}
+
+
 def test_ledger_lifecycle_endpoints_return_4xx_not_500(client):
     # Missing candidate -> 404, not 500.
     assert client.post("/api/ledger/archive/missing-zzz").status_code == 404
@@ -405,3 +454,12 @@ def test_ledger_lifecycle_endpoints_return_4xx_not_500(client):
     cand_id = client.get("/api/ledger/claims").json()["claims"][0]["candidate_id"]
     invalid = client.post(f"/api/ledger/archive/{cand_id}")  # candidate -> archived is invalid
     assert invalid.status_code == 409
+
+    # Self-supersede is a 409, never a silent 200 that destroys the claim.
+    self_sup = client.post(
+        "/api/ledger/supersede",
+        json={"old_candidate_id": cand_id, "new_candidate_id": cand_id, "reason": "self"},
+    )
+    assert self_sup.status_code == 409
+    still_live = [c["candidate_id"] for c in client.get("/api/ledger/claims").json()["claims"]]
+    assert cand_id in still_live
