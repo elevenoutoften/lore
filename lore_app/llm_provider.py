@@ -61,6 +61,33 @@ class LLMProviderConfig:
         )
 
 
+def _parse_json_content(content: str | None) -> Any:
+    """Parse a JSON object from model content, tolerating markdown code fences.
+
+    Models — reasoning models especially — frequently wrap json_object responses
+    in ```json ... ``` fences or emit an empty content field. Strip the fence and
+    fall back to the outermost ``{...}`` object before giving up, so a well-formed
+    answer is not discarded over formatting. Raises LLMJsonError on empty content
+    and propagates json.JSONDecodeError when nothing parseable is found.
+    """
+    if content is None or not content.strip():
+        raise LLMJsonError("LLM returned empty content in json_object mode")
+    text = content.strip()
+    if text.startswith("```"):
+        newline = text.find("\n")
+        text = text[newline + 1 :] if newline != -1 else text[3:]
+        if text.rstrip().endswith("```"):
+            text = text.rstrip()[:-3]
+        text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start, end = text.find("{"), text.rfind("}")
+        if 0 <= start < end:
+            return json.loads(text[start : end + 1])
+        raise
+
+
 class LLMClient:
     """Synchronous OpenAI-compatible LLM client with retry and JSON-object mode."""
 
@@ -108,9 +135,11 @@ class LLMClient:
 
                 if response_format and response_format.get("type") == "json_object":
                     try:
-                        parsed = json.loads(content)
+                        parsed = _parse_json_content(content)
                     except json.JSONDecodeError as exc:
-                        raise LLMJsonError(f"LLM returned invalid JSON: {exc}\nContent: {content[:200]}") from exc
+                        raise LLMJsonError(
+                            f"LLM returned invalid JSON: {exc}\nContent: {(content or '')[:200]}"
+                        ) from exc
                     if isinstance(parsed, dict):
                         parsed["_lore_meta"] = {
                             "usage": data.get("usage", {}),

@@ -20,6 +20,7 @@ from lore_app.llm_provider import (
     LLMProviderConfig,
     LLMUnavailableError,
     NoLlmClient,
+    _parse_json_content,
     build_llm_client,
 )
 
@@ -110,6 +111,44 @@ class TestLLMClient:
         with pytest.raises(LLMJsonError):
             client.extract_json("sys", "user")
         client.close()
+
+    def test_extract_json_strips_markdown_code_fence(self, monkeypatch):
+        # Reasoning models (e.g. glm-5.1) wrap json_object output in ```json fences.
+        config = LLMProviderConfig(name="test", model="test-model", api_key="sk-test")
+        client = LLMClient(config)
+
+        fenced = "```json\n" + json.dumps({"entities": [], "claims": [{"subject": "services/lore"}]}) + "\n```"
+        mock_response = mock.MagicMock()
+        mock_response.json.return_value = {"choices": [{"message": {"content": fenced}}]}
+        mock_response.raise_for_status = mock.MagicMock()
+
+        monkeypatch.setattr(client._client, "post", mock.MagicMock(return_value=mock_response))
+
+        result = client.extract_json("sys", "user")
+        assert result["claims"] == [{"subject": "services/lore"}]
+        client.close()
+
+
+class TestParseJsonContent:
+    def test_plain_json(self):
+        assert _parse_json_content('{"a": 1}') == {"a": 1}
+
+    def test_fenced_with_language(self):
+        assert _parse_json_content('```json\n{"a": 1}\n```') == {"a": 1}
+
+    def test_fenced_without_language(self):
+        assert _parse_json_content('```\n{"a": 1}\n```') == {"a": 1}
+
+    def test_prose_wrapped_object_falls_back(self):
+        assert _parse_json_content('Here you go:\n{"a": 1}\nDone.') == {"a": 1}
+
+    def test_empty_content_raises(self):
+        with pytest.raises(LLMJsonError):
+            _parse_json_content("   ")
+
+    def test_unparseable_raises(self):
+        with pytest.raises(json.JSONDecodeError):
+            _parse_json_content("no json here")
 
     def test_chat_retry_on_connection_error(self, monkeypatch):
         config = LLMProviderConfig(name="test", model="test-model", api_key="sk-test", max_retries=2)
