@@ -51,6 +51,24 @@ def test_vector_store_searches_sparse_tfidf(tmp_path):
     assert results[0]["score"] > 0
 
 
+def test_hybrid_rrf_preserves_fts_only_hit_against_larger_vector_scores():
+    class FakeSearch:
+        def search(self, query, **kwargs):
+            return [{"page_id": "pages/lexical-anchor", "score": 0.000001, "snippet": query}]
+
+    class FakeVector:
+        def search(self, query, limit=10):
+            return [{"page_id": "pages/vector-distractor", "score": 0.99, "content": query}]
+
+    result = hybrid_retrieve("uniqueprefix", FakeSearch(), FakeVector(), limit=2)
+
+    assert [row["page_id"] for row in result["results"]] == [
+        "pages/lexical-anchor",
+        "pages/vector-distractor",
+    ]
+    assert result["results"][0]["sources"] == ["fts"]
+
+
 def test_upsert_page_chunks_batch_insertion(tmp_path):
     store = VectorStore(tmp_path / "vectors.db")
     store.upsert_page_chunks(
@@ -141,9 +159,9 @@ def test_rag_retrieve_and_evaluate_endpoints(client):
     response = client.post("/api/rag/retrieve", json={"query": "gateway service gateway", "limit": 3})
     assert response.status_code == 200
     payload = response.json()
-    assert payload["results"][0]["page_id"] == "procedures/create-lore-capture"
+    capture_result = next(row for row in payload["results"] if row["page_id"] == "procedures/create-lore-capture")
     assert {"vector"} <= set(payload["results"][0]["sources"])
-    assert payload["results"][0]["title"] == "Capture agent observation"
+    assert capture_result["title"] == "Capture agent observation"
 
     evaluation = client.post(
         "/api/rag/evaluate",

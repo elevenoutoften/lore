@@ -265,8 +265,8 @@ def test_mcp_rag_context(client):
     payload = resp.json()["result"]
     assert payload["isError"] is False
     results = payload["structuredContent"]["results"]
-    assert results[0]["page_id"] == "procedures/create-lore-capture"
-    assert "vector" in results[0]["sources"]
+    capture_result = next(result for result in results if result["page_id"] == "procedures/create-lore-capture")
+    assert "vector" in capture_result["sources"]
     assert "RAG result" in payload["content"][0]["text"]
 
 

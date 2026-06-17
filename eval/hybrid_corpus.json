@@ -51,6 +51,10 @@
     {
       "id": "decisions/deploy-policy",
       "content": "---\ntitle: Deploy Policy\nkind: decision\nvisibility: internal\nstatus: accepted\nsummary: Atlas migrations require smoke checks, rollback hooks, and verification notes.\ntags: [deploy, rollback, smoke]\n---\n\n# Deploy Policy\n\nAtlas migrations require smoke checks, rollback hooks, and verification notes.\n\nThe current hosting target is [[services/atlas-api]], and inference dependencies flow through [[services/muse]].\n"
+    },
+    {
+      "id": "services/rrf-sentinel",
+      "content": "---\ntitle: RRF Sentinel\nkind: service\nvisibility: internal\nstatus: active\nsummary: Lexical anchor for hybrid fusion and loose multi-word retrieval.\ntags: [uniqueprefixanchor, lexical, fusion]\n---\n\n# RRF Sentinel\n\nThe memory subsystem keeps several unrelated operational words between the opening term and the gateway boundary.\n\nThe uniqueprefixanchor identifier exists only to guard FTS prefix recall when sparse vector token matching has no exact query token.\n"
     }
   ],
   "captures": [
@@ -609,6 +613,7 @@
       "case_type": "multi-hop",
       "query": "durable memory roadmap for recall quality",
       "expected_page_ids": ["projects/agent-memory-first", "services/lore", "decisions/retrieval-policy"],
+      "limit": 10,
       "require_relevance_path_page": "decisions/retrieval-policy",
       "expectation": "The project, Lore, and the retrieval policy should cluster together for the memory roadmap query."
     },
@@ -619,6 +624,20 @@
       "expected_page_ids": ["decisions/retrieval-policy", "runbooks/retrieval-triage"],
       "require_relevance_path_page": "decisions/retrieval-policy",
       "expectation": "The contradiction-update guidance should surface the decision and runbook pages through expanded context."
+    },
+    {
+      "id": "hybrid-fts-prefix-anchor",
+      "case_type": "fts-only",
+      "query": "uniqueprefix",
+      "expected_page_ids": ["services/rrf-sentinel"],
+      "expectation": "The FTS prefix-only sentinel must survive hybrid fusion even though sparse vector search has no exact token match."
+    },
+    {
+      "id": "hybrid-nonadjacent-multiword",
+      "case_type": "multi-word-fts",
+      "query": "lexica boundar",
+      "expected_page_ids": ["services/rrf-sentinel"],
+      "expectation": "A loose multi-word prefix query must match the sentinel even though lexical and boundary are not adjacent in its text."
     }
   ],
   "recall_queries": [

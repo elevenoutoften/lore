@@ -44,6 +44,21 @@ def test_search_index_basic_query(content_dir, tmp_path):
     idx.close()
 
 
+def test_search_index_multiword_query_matches_non_adjacent_terms(content_dir, tmp_path):
+    repo = LoreRepository(content_dir)
+    repo.upsert_page(
+        "test/non-adjacent",
+        "---\ntitle: Non Adjacent\n---\n\n# Non Adjacent\n\nMemory keeps several unrelated words before gateway.",
+    )
+    idx = LoreSearchIndex(tmp_path / "search.db")
+    idx.rebuild(repo)
+
+    results = idx.search("memory gateway")
+
+    assert any(result["page_id"] == "test/non-adjacent" for result in results)
+    idx.close()
+
+
 def test_search_index_kind_filter(content_dir, tmp_path):
     """Kind filter limits results."""
     repo = LoreRepository(content_dir)

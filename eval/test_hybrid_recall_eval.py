@@ -216,7 +216,7 @@ def test_hybrid_retrieve_expanded_eval_gate(hybrid_eval_runtime: dict[str, Any])
             "/api/rag/retrieve",
             json={
                 "query": entry["query"],
-                "limit": 6,
+                "limit": entry.get("limit", 6),
                 "expand_hops": entry.get("expand_hops", 2),
                 "include_claims": True,
                 "include_decisions": True,
@@ -236,7 +236,8 @@ def test_hybrid_retrieve_expanded_eval_gate(hybrid_eval_runtime: dict[str, Any])
         required_page = entry.get("require_relevance_path_page")
         if required_page:
             row = find_page_result(results, required_page)
-            assert row is not None, f"{entry['id']} missing required page {required_page}"
+            result_ids = [result.get("page_id") for result in results]
+            assert row is not None, f"{entry['id']} missing required page {required_page}; got {result_ids}"
             assert row.get("relevance_paths"), f"{entry['id']} expected relevance path for {required_page}"
 
         status = "OK" if rank and rank <= 3 else "MISS"

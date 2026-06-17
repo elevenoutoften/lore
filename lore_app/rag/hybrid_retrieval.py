@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+RRF_K = 60
+
 
 def hybrid_retrieve(
     query: str,
@@ -33,30 +35,35 @@ def hybrid_retrieve(
     if actor:
         search_kwargs["actor"] = actor
     fts_results = fts_index.search(query, **search_kwargs) if hasattr(fts_index, "search") else []
+    fts_seen: set[str] = set()
     for result in fts_results:
         page_id = result.get("page_id", "")
-        score = float(result.get("score", result.get("rank", 0.0)) or 0.0)
-        if not page_id:
+        if not page_id or page_id in fts_seen:
             continue
+        fts_seen.add(page_id)
+        rank = len(fts_seen)
         page_scores[page_id] = {
             "page_id": page_id,
-            "score": score * fts_weight,
+            "score": _rrf_score(fts_weight, rank),
             "sources": ["fts"],
             "citations": [result.get("snippet", "")],
         }
 
     vec_results = vector_store.search(query, limit=limit * 2) if hasattr(vector_store, "search") else []
+    vector_seen: set[str] = set()
     for result in vec_results:
         page_id = result.get("page_id", "")
-        score = float(result.get("score", 0.0) or 0.0)
-        if not page_id:
+        if not page_id or page_id in vector_seen:
             continue
         if lane and result.get("lane") and result.get("lane") != lane:
             continue
         if actor and result.get("actor") and result.get("actor") != actor:
             continue
+        vector_seen.add(page_id)
+        rank = len(vector_seen)
+        score = _rrf_score(vector_weight, rank)
         if page_id in page_scores:
-            page_scores[page_id]["score"] += score * vector_weight
+            page_scores[page_id]["score"] += score
             page_scores[page_id]["sources"].append("vector")
             citation = str(result.get("content", ""))[:200]
             if citation:
@@ -64,7 +71,7 @@ def hybrid_retrieve(
         else:
             page_scores[page_id] = {
                 "page_id": page_id,
-                "score": score * vector_weight,
+                "score": score,
                 "sources": ["vector"],
                 "citations": [str(result.get("content", ""))[:200]],
             }
@@ -93,6 +100,11 @@ def hybrid_retrieve(
 
     results = sorted(page_scores.values(), key=lambda item: item["score"], reverse=True)[:limit]
     return {"query": query, "total": len(results), "results": results}
+
+
+def _rrf_score(weight: float, rank: int) -> float:
+    """Normalize a source ranking before applying its configured weight."""
+    return weight / (RRF_K + max(1, rank))
 
 
 def _resolve_graph(graph_cache: Any) -> Any | None:
@@ -190,7 +202,7 @@ def hybrid_retrieve_expanded(
                     "target_id": neighbor_id,
                     "direction": direction,
                 }
-                decay = 0.7 if direction == "outgoing" else 0.5
+                decay = 0.85 if direction == "outgoing" else 0.65
                 next_path = {
                     "source_id": path_info["source_id"],
                     "path": [*path_info["path"], step],
@@ -222,13 +234,17 @@ def hybrid_retrieve_expanded(
         if node_id not in hit_page_ids and node_type != "page":
             continue
 
+        graph_path_scores = [float(path.get("score", 0.0) or 0.0) for path in paths if path.get("path")]
+        graph_boost = max(graph_path_scores, default=0.0) * graph_weight
+
         if node_id in hit_by_page:
             result = _expanded_base_row(hit_by_page[node_id], hit_page_ids)
+            result["score"] += graph_boost
         else:
             best_score = max(float(path.get("score", 0.0) or 0.0) for path in paths)
             result = {
                 "page_id": node_id,
-                "score": best_score,
+                "score": best_score + graph_boost,
                 "sources": ["graph-expansion"],
                 "citations": [],
                 "relevance_paths": [],
