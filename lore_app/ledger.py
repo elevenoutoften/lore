@@ -1147,6 +1147,17 @@ class LedgerDB:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def get_deadletter(self, deadletter_id: str) -> dict[str, Any] | None:
+        row = self.connection.execute(
+            """
+            SELECT *
+            FROM extraction_deadletters
+            WHERE deadletter_id = ?
+            """,
+            (deadletter_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
     @retry_on_locked()
     def resolve_deadletter(self, deadletter_id: str, *, resolved_by: str | None = None) -> bool:
         with self._lock:

@@ -916,14 +916,14 @@ def test_both_fail_records_deadletter_with_kind_fallback_exhausted(tmp_path, fak
         )
 
     deadletters = ledger.list_deadletters(status="unresolved")
-    assert result.source_capture_ids == [failed_capture, healthy_capture]
+    assert result.source_capture_ids == [healthy_capture]
     assert len(result.claims) == 1
     assert result.claims[0].object == "Healthy capture processed."
     assert len(deadletters) == 1
     assert deadletters[0]["capture_id"] == failed_capture
     assert deadletters[0]["provider"] == "fallback"
     assert deadletters[0]["failure_kind"] == "fallback_exhausted"
-    assert failed_capture in result.source_capture_ids
+    assert failed_capture not in result.source_capture_ids
 
 
 def test_e2e_retry_resolves_deadletter(tmp_path, fake_llm_client, monkeypatch, capsys):

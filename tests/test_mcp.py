@@ -66,6 +66,7 @@ def test_mcp_initialize_and_tool_list(client):
         "lore_heartbeat_audit",
         "lore_find_repeated_captures",
         "lore_propose_procedure_candidate",
+        "lore_retry_extraction_deadletter",
         "lore_consolidation_status",
         "lore_consolidation_run",
         "lore_consolidation_rollback",
@@ -106,6 +107,44 @@ def test_mcp_search_read_and_upsert(client):
         },
     ).json()
     assert upserted["result"]["structuredContent"]["page"]["id"] == "runbooks/test"
+
+
+def test_mcp_retry_extraction_deadletter(client):
+    captured = client.post(
+        "/api/capture",
+        json={
+            "title": "MCP retry capture",
+            "observation": "MCP retry references [[services/workflow-engine]].",
+            "confidence": "high",
+            "suggested_target_page": "services/lore",
+        },
+    )
+    assert captured.status_code == 201, captured.text
+    capture_id = captured.json()["page"]["id"]
+    ledger = client.app.state.ledger_db
+    deadletter_id = ledger.store_deadletter(
+        capture_id=capture_id,
+        provider="fallback",
+        failure_kind="fallback_exhausted",
+        failure_detail="previous failure",
+        payload="{}",
+        batch_id="batch-deadletter",
+    )
+
+    retried = rpc(
+        client,
+        "tools/call",
+        {"name": "lore_retry_extraction_deadletter", "arguments": {"deadletter_id": deadletter_id}},
+    )
+
+    assert retried.status_code == 200, retried.text
+    payload = retried.json()["result"]["structuredContent"]
+    assert payload["deadletter_id"] == deadletter_id
+    assert payload["capture_id"] == capture_id
+    assert payload["retried"] is True
+    assert payload["resolved"] is True
+    assert payload["candidates"] > 0
+    assert payload["source_capture_ids"] == [capture_id]
 
 
 def test_mcp_write_tools_are_rate_limited(client):

@@ -166,6 +166,7 @@ Captures, heartbeat, distillation, extraction, and memory:
 - `POST /api/extraction/run`
 - `GET /api/extraction/status`
 - `POST /api/extraction/reset`
+- `POST /api/extraction/deadletters/{deadletter_id}/retry`
 - `GET /api/extraction/batches`
 - `GET /api/extraction/candidates`
 - `POST /api/memory/capture`

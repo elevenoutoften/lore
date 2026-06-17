@@ -1054,6 +1054,18 @@ class ExtractionResetResponse(BaseModel):
     reset_count: int
 
 
+class ExtractionRetryResponse(BaseModel):
+    """Result of retrying one extraction dead-letter."""
+
+    deadletter_id: str
+    capture_id: str | None = None
+    retried: bool
+    resolved: bool
+    candidates: int = 0
+    source_capture_ids: list[str] = Field(default_factory=list)
+    error: str | None = None
+
+
 class ClaimReinforcementResult(BaseModel):
     """Result of reinforcing or inserting a claim candidate."""
 

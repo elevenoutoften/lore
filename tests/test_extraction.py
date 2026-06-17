@@ -576,13 +576,13 @@ def test_extraction_failure_inserts_deadletter(tmp_path):
         result = extract_from_captures(
             repo,
             capture_ids=[capture_id],
-            dry_run=True,
+            dry_run=False,
             llm_client=mock_client,
             ledger_db=ledger,
         )
 
     deadletters = ledger.list_deadletters(status="unresolved")
-    assert result.source_capture_ids == [capture_id]
+    assert result.source_capture_ids == []
     assert len(deadletters) == 1
     assert deadletters[0]["capture_id"] == capture_id
     assert deadletters[0]["provider"] == "fallback"
@@ -590,6 +590,55 @@ def test_extraction_failure_inserts_deadletter(tmp_path):
     assert "Provider unavailable" in str(deadletters[0]["failure_detail"])
     payload = json.loads(str(deadletters[0]["payload"]))
     assert payload["capture_id"] == capture_id
+    assert ledger.is_capture_extracted(capture_id) is False
+    assert capture_id in [page.id for page in get_unprocessed_captures(repo, ledger_db=ledger)]
+
+
+def test_post_llm_failure_does_not_abort_batch(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    failed_capture = add_capture(repo, "inbox/2026-05-10/post-llm-broken")
+    healthy_capture = add_capture(repo, "inbox/2026-05-10/post-llm-healthy")
+    ledger = make_ledger(tmp_path)
+    mock_client = mock.MagicMock(spec=FallbackLLMClient)
+
+    def fake_llm_extract(capture, llm_client):
+        del llm_client
+        if capture.id == failed_capture:
+            return {"entities": [], "claims": [object()], "edges": [], "invalidations": []}
+        return {
+            "entities": [],
+            "claims": [
+                ExtractedClaim(
+                    subject="services/lore",
+                    predicate="states",
+                    object="Healthy post-LLM capture is recallable.",
+                    confidence="high",
+                    source_page_ids=[capture.id],
+                )
+            ],
+            "edges": [],
+            "invalidations": [],
+        }
+
+    with mock.patch("lore_app.llm_extractor.llm_extract_capture", side_effect=fake_llm_extract):
+        result = extract_from_captures(
+            repo,
+            capture_ids=[failed_capture, healthy_capture],
+            dry_run=False,
+            llm_client=mock_client,
+            ledger_db=ledger,
+        )
+
+    deadletters = ledger.list_deadletters(status="unresolved")
+    assert result.source_capture_ids == [healthy_capture]
+    assert ledger.is_capture_extracted(failed_capture) is False
+    assert ledger.is_capture_extracted(healthy_capture) is True
+    assert len(deadletters) == 1
+    assert deadletters[0]["capture_id"] == failed_capture
+    assert deadletters[0]["failure_kind"] == "processing_error"
+    candidates = ledger.get_candidates(candidate_type="claim", capture_id=healthy_capture, limit=20)
+    assert len(candidates) == 1
+    assert candidates[0]["content_json"]["object"] == "Healthy post-LLM capture is recallable."
 
 
 def test_retry_resolves_deadletter(tmp_path, monkeypatch, capsys):
@@ -768,3 +817,37 @@ def test_extraction_reset_endpoint(client):
     rerun = client.post("/api/extraction/run", json={"capture_ids": [capture_id], "dry_run": False})
     assert rerun.status_code == 200, rerun.text
     assert rerun.json()["source_capture_ids"] == [capture_id]
+
+
+def test_extraction_deadletter_retry_endpoint_returns_candidates(client):
+    response = client.post(
+        "/api/capture",
+        json={
+            "title": "Extraction retry capture",
+            "observation": "Lore retry endpoint references [[services/workflow-engine]].",
+            "confidence": "high",
+            "suggested_target_page": "services/lore",
+        },
+    )
+    assert response.status_code == 201, response.text
+    capture_id = response.json()["page"]["id"]
+    ledger = client.app.state.ledger_db
+    deadletter_id = ledger.store_deadletter(
+        capture_id=capture_id,
+        provider="fallback",
+        failure_kind="fallback_exhausted",
+        failure_detail="previous failure",
+        payload=json.dumps({"capture_id": capture_id}),
+        batch_id="batch-deadletter",
+    )
+
+    retry = client.post(f"/api/extraction/deadletters/{deadletter_id}/retry")
+
+    assert retry.status_code == 200, retry.text
+    payload = retry.json()
+    assert payload["deadletter_id"] == deadletter_id
+    assert payload["capture_id"] == capture_id
+    assert payload["retried"] is True
+    assert payload["resolved"] is True
+    assert payload["candidates"] > 0
+    assert payload["source_capture_ids"] == [capture_id]

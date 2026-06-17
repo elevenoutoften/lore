@@ -21,6 +21,7 @@ from ..code_ingest.ingest_service import ingest_service_code
 from ..code_ingest.validate import IngestValidationError, validate_service_id, validate_source_dir
 from ..context_graph import build_context_graph, explain_context, query_neighbors, query_paths
 from ..distillation import distill_daily, get_daily_captures, promote_daily_note
+from ..extraction import retry_deadletter
 from ..frontmatter import update_frontmatter
 from ..frontmatter_spec import get_frontmatter_spec
 from ..heartbeat import emit_heartbeat_captures, heartbeat_review
@@ -70,6 +71,7 @@ WRITE_TOOL_NAMES = {
     "lore_distill_daily",
     "lore_promote_daily",
     "lore_propose_procedure_candidate",
+    "lore_retry_extraction_deadletter",
     "lore_heartbeat_audit",
     "lore_promote_capture",
     "lore_reject_patch",
@@ -950,6 +952,18 @@ TOOLS: list[dict[str, Any]] = [
                 "lane": {"type": "string", "description": "Optional retrieval lane."},
             },
             "required": ["capture_ids"],
+        },
+    },
+    {
+        "name": "lore_retry_extraction_deadletter",
+        "title": "Retry Extraction Dead-Letter",
+        "description": "Reset and retry one extraction dead-letter by ID, resolving it when candidates are produced.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "deadletter_id": {"type": "string", "description": "Extraction dead-letter ID to retry."},
+            },
+            "required": ["deadletter_id"],
         },
     },
     {
@@ -1902,6 +1916,24 @@ def _handle_lore_propose_procedure_candidate(ctx: McpContext) -> dict[str, Any]:
     return tool_result(payload, result.message)
 
 
+def _handle_lore_retry_extraction_deadletter(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    deadletter_id = require_string(arguments.get("deadletter_id"), "deadletter_id")
+    app_state = getattr(getattr(ctx.request, "app", None), "state", None)
+    llm_client = getattr(app_state, "llm_client", None)
+    result = retry_deadletter(ctx.repo, deadletter_id, ledger_db=ledger, llm_client=llm_client)
+    if result is None:
+        raise JsonRpcError(-32602, f"Extraction dead-letter not found: {deadletter_id}")
+    payload = result.model_dump()
+    if result.resolved:
+        text = f"Retried extraction dead-letter {deadletter_id}: produced {result.candidates} candidate(s)."
+    else:
+        detail = f" Error: {result.error}" if result.error else ""
+        text = f"Retried extraction dead-letter {deadletter_id}, but it is not resolved yet.{detail}"
+    return tool_result(payload, text, is_error=not result.resolved)
+
+
 def _handle_lore_consolidation_status(ctx: McpContext) -> dict[str, Any]:
     tool_arguments(ctx.params)
     worker = require_service(ctx.consolidation_worker, "consolidation worker")
@@ -2049,6 +2081,7 @@ TOOL_HANDLERS: dict[str, Callable[[McpContext], dict[str, Any]]] = {
     "lore_heartbeat_audit": _handle_lore_heartbeat_audit,
     "lore_find_repeated_captures": _handle_lore_find_repeated_captures,
     "lore_propose_procedure_candidate": _handle_lore_propose_procedure_candidate,
+    "lore_retry_extraction_deadletter": _handle_lore_retry_extraction_deadletter,
     "lore_consolidation_status": _handle_lore_consolidation_status,
     "lore_consolidation_run": _handle_lore_consolidation_run,
     "lore_consolidation_rollback": _handle_lore_consolidation_rollback,

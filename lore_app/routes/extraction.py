@@ -6,13 +6,14 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from ..deps import get_ledger_db, get_repo
-from ..extraction import extract_from_captures, get_unprocessed_captures
+from ..extraction import extract_from_captures, get_unprocessed_captures, retry_deadletter
 from ..llm_provider import FallbackLLMClient, NoLlmClient
 from ..schemas import (
     ExtractionRequest,
     ExtractionResetRequest,
     ExtractionResetResponse,
     ExtractionResult,
+    ExtractionRetryResponse,
     ExtractionStatusResponse,
 )
 
@@ -79,6 +80,24 @@ def api_reset_extraction(
 ) -> ExtractionResetResponse:
     reset_count = ledger_db.reset_extraction(capture_ids=payload.capture_ids)
     return ExtractionResetResponse(reset_count=reset_count)
+
+
+@router.post("/api/extraction/deadletters/{deadletter_id}/retry", response_model=ExtractionRetryResponse)
+def api_retry_extraction_deadletter(
+    deadletter_id: str,
+    request: Request,
+    repo: LoreRepository = Depends(get_repo),
+    ledger_db: LedgerDB = Depends(get_ledger_db),
+) -> ExtractionRetryResponse:
+    result = retry_deadletter(
+        repo,
+        deadletter_id,
+        ledger_db=ledger_db,
+        llm_client=getattr(request.app.state, "llm_client", None),
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dead-letter not found.")
+    return result
 
 
 @router.get("/api/extraction/batches")

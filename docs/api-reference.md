@@ -195,6 +195,7 @@ curl -sS "$LORE_URL/api/promotions"
 | `POST` | `/api/extraction/run` | Run LLM/deterministic extraction. Body: `{provider?, capture_ids?, dry_run, batch_size}`. |
 | `GET` | `/api/extraction/status` | Extraction batch status. |
 | `POST` | `/api/extraction/reset` | Reset extraction state. |
+| `POST` | `/api/extraction/deadletters/{deadletter_id}/retry` | Retry one extraction dead-letter and resolve it when candidates are produced. |
 | `GET` | `/api/extraction/batches` | List extraction batches. |
 | `GET` | `/api/extraction/candidates` | List extracted candidates. Query: `status`, `type`, `page_id`. |
 | `POST` | `/api/memory/capture` | Lightweight memory capture. |

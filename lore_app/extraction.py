@@ -18,6 +18,7 @@ from .schemas import (
     ExtractedEntity,
     ExtractedInvalidation,
     ExtractionResult,
+    ExtractionRetryResponse,
     PageDetail,
     PageSummary,
 )
@@ -80,7 +81,6 @@ def extract_from_captures(
     active_llm_client = llm_client or NoLlmClient()
 
     for capture in selected:
-        source_capture_ids.append(capture.id)
         llm_result = None
         llm_failure: Exception | None = None
         from .llm_extractor import llm_extract_capture
@@ -97,6 +97,8 @@ def extract_from_captures(
                     llm_failure = escalation_exc
             else:
                 llm_failure = exc
+        except Exception as exc:
+            llm_failure = exc
 
         try:
             if llm_result is not None:
@@ -110,49 +112,65 @@ def extract_from_captures(
                         claim.observed_at = llm_observed_at
             else:
                 capture_entities, capture_claims, capture_edges, capture_invalidations = _extract_capture(repo, capture)
-        except Exception as fallback_exc:
-            if llm_failure is not None:
+
+            staged_entities: list[ExtractedEntity] = []
+            staged_entity_keys: set[tuple[str, str | None]] = set()
+            staged_claims: list[ExtractedClaim] = []
+            staged_edges: list[ExtractedEdge] = []
+            staged_edge_keys: set[tuple[str, str, str, tuple[str, ...]]] = set()
+
+            for entity in capture_entities:
+                key = (entity.name.casefold(), entity.target_page_hint)
+                if key not in seen_entities and key not in staged_entity_keys:
+                    staged_entities.append(entity)
+                    staged_entity_keys.add(key)
+            staged_claims.extend(capture_claims)
+            for edge in capture_edges:
+                key = (
+                    edge.source_entity.casefold(),
+                    edge.relationship_type,
+                    edge.target_entity.casefold(),
+                    tuple(sorted(edge.source_page_ids)),
+                )
+                if key not in seen_edges and key not in staged_edge_keys:
+                    staged_edges.append(edge)
+                    staged_edge_keys.add(key)
+
+            # Record LLM quality failures even when deterministic fallback succeeds.
+            # This preserves invalid or low-quality provider output for review.
+            if (
+                llm_failure is not None
+                and llm_result is None
+                and llm_client is not None
+                and not isinstance(active_llm_client, NoLlmClient)
+            ):
                 ledger.store_deadletter(
                     capture_id=capture.id,
-                    provider=_deadletter_provider(active_llm_client, fallback_failed=True),
-                    failure_kind=_deadletter_failure_kind(llm_failure, fallback_exc),
-                    failure_detail=_deadletter_failure_detail(llm_failure, fallback_exc),
+                    provider=_deadletter_provider(active_llm_client, fallback_failed=False),
+                    failure_kind=_deadletter_failure_kind(llm_failure, None),
+                    failure_detail=_deadletter_failure_detail(llm_failure, None),
                     payload=_deadletter_payload(capture),
                     batch_id=batch_id,
                 )
-                continue
-            raise
 
-        # Record LLM quality failures even when deterministic fallback succeeds.
-        # This preserves invalid or low-quality provider output for review.
-        if llm_failure is not None and llm_result is None and llm_client is not None:
+            entities.extend(staged_entities)
+            seen_entities.update(staged_entity_keys)
+            claims.extend(staged_claims)
+            edges.extend(staged_edges)
+            seen_edges.update(staged_edge_keys)
+            invalidations.extend(capture_invalidations)
+            source_capture_ids.append(capture.id)
+        except Exception as processing_exc:
+            fallback_failed = llm_failure is not None and llm_result is None
             ledger.store_deadletter(
                 capture_id=capture.id,
-                provider=_deadletter_provider(active_llm_client, fallback_failed=False),
-                failure_kind=_deadletter_failure_kind(llm_failure, None),
-                failure_detail=_deadletter_failure_detail(llm_failure, None),
+                provider=_deadletter_provider(active_llm_client, fallback_failed=fallback_failed),
+                failure_kind=_deadletter_failure_kind(llm_failure, processing_exc),
+                failure_detail=_deadletter_failure_detail(llm_failure, processing_exc),
                 payload=_deadletter_payload(capture),
                 batch_id=batch_id,
             )
-
-        for entity in capture_entities:
-            key = (entity.name.casefold(), entity.target_page_hint)
-            if key not in seen_entities:
-                entities.append(entity)
-                seen_entities.add(key)
-        for claim in capture_claims:
-            claims.append(claim)
-        for edge in capture_edges:
-            key = (
-                edge.source_entity.casefold(),
-                edge.relationship_type,
-                edge.target_entity.casefold(),
-                tuple(sorted(edge.source_page_ids)),
-            )
-            if key not in seen_edges:
-                edges.append(edge)
-                seen_edges.add(key)
-        invalidations.extend(capture_invalidations)
+            continue
 
     result = ExtractionResult(
         batch_id=batch_id,
@@ -192,6 +210,70 @@ def is_capture_extracted(ledger_db, capture_id: str) -> bool:
     """Check if a capture has already been processed by the extraction pipeline."""
 
     return bool(ledger_db.is_capture_extracted(capture_id))
+
+
+def retry_deadletter(
+    repo: LoreRepository,
+    deadletter_id: str,
+    *,
+    ledger_db: LedgerDB | None = None,
+    llm_client: Any | None = None,
+) -> ExtractionRetryResponse | None:
+    """Reset and retry one extraction dead-letter by id."""
+
+    ledger = _ledger(ledger_db)
+    deadletter = ledger.get_deadletter(deadletter_id)
+    if deadletter is None:
+        return None
+
+    capture_id = str(deadletter.get("capture_id") or "")
+    candidates_before = len(ledger.get_candidates(capture_id=capture_id, limit=500)) if capture_id else 0
+    if str(deadletter.get("status") or "") == "resolved":
+        return ExtractionRetryResponse(
+            deadletter_id=deadletter_id,
+            capture_id=capture_id or None,
+            retried=False,
+            resolved=True,
+            candidates=candidates_before,
+        )
+
+    active_llm_client = llm_client or NoLlmClient()
+    resolved_by = "deterministic" if isinstance(active_llm_client, NoLlmClient) else "llm"
+    ledger.increment_retry(deadletter_id)
+    if capture_id:
+        ledger.reset_extraction(capture_ids=[capture_id], delete_candidates=True)
+
+    try:
+        result = extract_from_captures(
+            repo,
+            capture_ids=[capture_id],
+            batch_size=1,
+            dry_run=False,
+            ledger_db=ledger,
+            llm_client=active_llm_client,
+        )
+    except Exception as exc:
+        return ExtractionRetryResponse(
+            deadletter_id=deadletter_id,
+            capture_id=capture_id or None,
+            retried=True,
+            resolved=False,
+            candidates=0,
+            error=str(exc),
+        )
+
+    candidates = len(ledger.get_candidates(capture_id=capture_id, limit=500)) if capture_id else 0
+    resolved = bool(capture_id and capture_id in result.source_capture_ids)
+    if resolved:
+        resolved = ledger.resolve_deadletter(deadletter_id, resolved_by=resolved_by)
+    return ExtractionRetryResponse(
+        deadletter_id=deadletter_id,
+        capture_id=capture_id or None,
+        retried=True,
+        resolved=resolved,
+        candidates=candidates,
+        source_capture_ids=result.source_capture_ids,
+    )
 
 
 def _select_captures(
@@ -319,9 +401,13 @@ def _deadletter_provider(llm_client: Any, *, fallback_failed: bool) -> str:
     return llm_client.__class__.__name__
 
 
-def _deadletter_failure_kind(llm_failure: Exception, fallback_exc: Exception | None) -> str:
+def _deadletter_failure_kind(llm_failure: Exception | None, fallback_exc: Exception | None) -> str:
     if fallback_exc is not None:
+        if llm_failure is None:
+            return "processing_error"
         return "fallback_exhausted"
+    if llm_failure is None:
+        return "processing_error"
     if isinstance(llm_failure, ValueError):
         return "schema_invalid"
     message = str(llm_failure).casefold()
@@ -330,9 +416,11 @@ def _deadletter_failure_kind(llm_failure: Exception, fallback_exc: Exception | N
     return "llm_error"
 
 
-def _deadletter_failure_detail(llm_failure: Exception, fallback_exc: Exception | None) -> str:
+def _deadletter_failure_detail(llm_failure: Exception | None, fallback_exc: Exception | None) -> str:
     if fallback_exc is None:
-        return str(llm_failure)
+        return str(llm_failure or "")
+    if llm_failure is None:
+        return str(fallback_exc)
     return f"llm={llm_failure}; fallback={fallback_exc}"
 
 
