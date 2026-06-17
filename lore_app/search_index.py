@@ -370,11 +370,17 @@ class LoreSearchIndex:
         ).fetchall()
         return [{"lane": row[0], "count": row[1]} for row in rows]
 
-    def list_actors(self) -> list[dict[str, Any]]:
+    def list_actors(self, *, actor: str | None = None) -> list[dict[str, Any]]:
         """Return known actors with capture/page counts."""
-        rows = self._conn.execute(
-            "SELECT actor, COUNT(*) as cnt FROM pages WHERE actor IS NOT NULL GROUP BY actor ORDER BY cnt DESC"
-        ).fetchall()
+        if actor:
+            rows = self._conn.execute(
+                "SELECT actor, COUNT(*) as cnt FROM pages WHERE actor = ? GROUP BY actor ORDER BY cnt DESC",
+                (actor,),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT actor, COUNT(*) as cnt FROM pages WHERE actor IS NOT NULL GROUP BY actor ORDER BY cnt DESC"
+            ).fetchall()
         return [{"actor": row[0], "count": row[1]} for row in rows]
 
 

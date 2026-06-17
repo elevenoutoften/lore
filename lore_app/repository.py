@@ -396,11 +396,16 @@ class LoreRepository:
         return row is not None
 
 
-def build_candidate_page_index(ledger: Any | None, *, limit: int = 500) -> dict[str, list[dict[str, Any]]]:
+def build_candidate_page_index(
+    ledger: Any | None,
+    *,
+    limit: int = 500,
+    actor: str | None = None,
+) -> dict[str, list[dict[str, Any]]]:
     if ledger is None:
         return {}
     try:
-        candidates = ledger.get_candidates(limit=limit)
+        candidates = ledger.get_candidates(limit=limit, actor=actor)
     except Exception:
         return {}
     indexed: dict[str, list[dict[str, Any]]] = {}

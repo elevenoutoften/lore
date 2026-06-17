@@ -278,10 +278,16 @@ def enrich_rag_results(repo: LoreRepository, result: dict[str, Any]) -> dict[str
     return enriched
 
 
-def enrich_expanded_results(repo: LoreRepository, result: dict[str, Any], ledger: Any | None = None) -> dict[str, Any]:
+def enrich_expanded_results(
+    repo: LoreRepository,
+    result: dict[str, Any],
+    ledger: Any | None = None,
+    *,
+    actor: str | None = None,
+) -> dict[str, Any]:
     enriched = dict(result)
     rows = []
-    ledger_candidates_by_page = build_candidate_page_index(ledger)
+    ledger_candidates_by_page = build_candidate_page_index(ledger, actor=actor)
     for item in result.get("results", []):
         row = dict(item)
         page = repo.read_page(str(row.get("page_id") or ""))

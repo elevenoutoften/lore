@@ -231,6 +231,7 @@ def api_memory_recall(
 @router.post("/api/memory/recall/ack", response_model=MemoryRecallAckResponse)
 def api_memory_recall_ack(
     payload: MemoryRecallAckRequest,
+    request: Request,
     ledger: LedgerDB = Depends(get_ledger_db),
 ) -> MemoryRecallAckResponse:
     """Explicitly acknowledge recall claims that a caller used.
@@ -239,7 +240,11 @@ def api_memory_recall_ack(
     idempotent and does not mutate access counters.
     """
     timestamp = datetime.now(UTC).isoformat()
-    acknowledged_count = ledger.record_claim_access(payload.candidate_ids, now=timestamp)
+    try:
+        actor = recall_actor_scope(request, requested_actor=payload.actor, cross_actor=payload.cross_actor)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    acknowledged_count = ledger.record_claim_access(payload.candidate_ids, now=timestamp, actor=actor)
     return MemoryRecallAckResponse(acknowledged_count=acknowledged_count, timestamp=timestamp)
 
 

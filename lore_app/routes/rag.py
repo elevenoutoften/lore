@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 
 from ..deps import get_ledger_db, get_repo, get_retrieve_context, get_templates
 from ..rag.eval_retrieval import evaluate_retrieval
-from ..route_utils import enrich_expanded_results, template_context
+from ..route_utils import enrich_expanded_results, recall_actor_scope, template_context
 from ..schemas import RagEvaluateRequest, RagEvaluateResult, RagExpandedResponse, RagExpandRequest, RagRetrieveRequest
 
 if TYPE_CHECKING:
@@ -34,6 +34,10 @@ def api_rag_retrieve(
     query = payload.query.strip()
     if not query:
         raise HTTPException(status_code=422, detail="Missing query.")
+    try:
+        claim_actor = recall_actor_scope(request, requested_actor=payload.actor, cross_actor=payload.cross_actor)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     ctx_graph = request.app.state.context_graph_cache.get(repo, ledger)
     result = hybrid_retrieve_expanded(
@@ -48,8 +52,9 @@ def api_rag_retrieve(
         include_claims=payload.include_claims,
         include_traces=payload.include_traces,
         include_decisions=payload.include_decisions,
+        claim_actor=claim_actor,
     )
-    return enrich_expanded_results(repo, result, ledger)
+    return enrich_expanded_results(repo, result, ledger, actor=claim_actor)
 
 
 @router.post("/api/rag/retrieve-expanded", response_model=RagExpandedResponse)
@@ -64,6 +69,10 @@ def api_rag_retrieve_expanded(
     query = payload.query.strip()
     if not query:
         raise HTTPException(status_code=422, detail="Missing query.")
+    try:
+        claim_actor = recall_actor_scope(request, requested_actor=payload.actor, cross_actor=payload.cross_actor)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     result = hybrid_retrieve_expanded(
         query,
@@ -77,8 +86,9 @@ def api_rag_retrieve_expanded(
         include_claims=payload.include_claims,
         include_traces=payload.include_traces,
         include_decisions=payload.include_decisions,
+        claim_actor=claim_actor,
     )
-    return enrich_expanded_results(repo, result, ledger)
+    return enrich_expanded_results(repo, result, ledger, actor=claim_actor)
 
 
 @router.post("/api/rag/evaluate", response_model=RagEvaluateResult)

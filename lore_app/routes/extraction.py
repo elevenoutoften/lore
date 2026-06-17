@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from ..deps import get_ledger_db, get_repo
 from ..extraction import extract_from_captures, get_unprocessed_captures, retry_deadletter
 from ..llm_provider import FallbackLLMClient, NoLlmClient
+from ..route_utils import recall_actor_scope
 from ..schemas import (
     ExtractionRequest,
     ExtractionResetRequest,
@@ -110,10 +111,17 @@ def api_extraction_batches(
 
 @router.get("/api/extraction/candidates")
 def api_extraction_candidates(
+    request: Request,
     candidate_type: str | None = Query(default=None, alias="type"),
     status: str | None = Query(default=None),
+    actor: str | None = Query(default=None),
+    cross_actor: bool = Query(default=False),
     limit: int = Query(default=100, ge=1, le=500),
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ):
-    candidates = ledger_db.get_candidates(candidate_type=candidate_type, status=status, limit=limit)
+    try:
+        actor = recall_actor_scope(request, requested_actor=actor, cross_actor=cross_actor)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    candidates = ledger_db.get_candidates(candidate_type=candidate_type, status=status, actor=actor, limit=limit)
     return {"count": len(candidates), "candidates": candidates}

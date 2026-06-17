@@ -3,11 +3,11 @@ from __future__ import annotations
 # ruff: noqa: B008
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..deps import get_ledger_db
 from ..extraction import compute_extraction_hash
-from ..route_utils import value_error_to_http
+from ..route_utils import actor_from_request, recall_actor_scope, value_error_to_http
 from ..schemas import (
     ClaimReinforcementResult,
     ClaimSupersedeResult,
@@ -26,22 +26,23 @@ ledger_router = APIRouter(prefix="/api/ledger", tags=["ledger"])
 
 @ledger_router.post("/reinforce", response_model=ClaimReinforcementResult)
 def reinforce_claim(
-    request: LedgerReinforceRequest,
+    payload: LedgerReinforceRequest,
+    request: Request,
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ) -> ClaimReinforcementResult:
     """Reinforce an existing compatible claim or insert a new one."""
     claim = ExtractedClaim(
-        subject=request.subject,
-        predicate=request.predicate,
-        object=request.object,
-        confidence=request.confidence,
-        actor=request.actor,
-        lane=request.lane,
-        observed_at=request.observed_at,
-        valid_from=request.valid_from,
-        valid_until=request.valid_until,
-        evidence=request.evidence,
-        source_page_ids=request.source_page_ids,
+        subject=payload.subject,
+        predicate=payload.predicate,
+        object=payload.object,
+        confidence=payload.confidence,
+        actor=actor_from_request(request),
+        lane=payload.lane,
+        observed_at=payload.observed_at,
+        valid_from=payload.valid_from,
+        valid_until=payload.valid_until,
+        evidence=payload.evidence,
+        source_page_ids=payload.source_page_ids,
     )
     dedupe_hash = compute_extraction_hash(claim.subject, claim.predicate, claim.object, claim.source_page_ids)
     metadata = {
@@ -65,15 +66,19 @@ def reinforce_claim(
 
 @ledger_router.post("/supersede", response_model=ClaimSupersedeResult)
 def supersede_claim(
-    request: LedgerSupersedeRequest,
+    payload: LedgerSupersedeRequest,
+    request: Request,
+    actor: str | None = Query(default=None),
+    cross_actor: bool = Query(default=False),
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ) -> ClaimSupersedeResult:
     """Supersede an old claim with a new one."""
     try:
         return ledger_db.supersede_candidate(
-            old_candidate_id=request.old_candidate_id,
-            new_candidate_id=request.new_candidate_id,
-            reason=request.reason,
+            old_candidate_id=payload.old_candidate_id,
+            new_candidate_id=payload.new_candidate_id,
+            reason=payload.reason,
+            actor=_actor_scope(request, actor, cross_actor),
         )
     except ValueError as exc:
         raise value_error_to_http(exc) from exc
@@ -82,11 +87,14 @@ def supersede_claim(
 @ledger_router.post("/activate/{candidate_id}")
 def activate_candidate(
     candidate_id: str,
+    request: Request,
+    actor: str | None = Query(default=None),
+    cross_actor: bool = Query(default=False),
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ) -> dict:
     """Activate a candidate claim."""
     try:
-        ledger_db.activate_candidate(candidate_id)
+        ledger_db.activate_candidate(candidate_id, actor=_actor_scope(request, actor, cross_actor))
     except ValueError as exc:
         raise value_error_to_http(exc) from exc
     return {"candidate_id": candidate_id, "status": "active"}
@@ -95,12 +103,15 @@ def activate_candidate(
 @ledger_router.post("/reject/{candidate_id}")
 def reject_candidate(
     candidate_id: str,
+    request: Request,
     reason: str | None = Query(default=None),
+    actor: str | None = Query(default=None),
+    cross_actor: bool = Query(default=False),
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ) -> dict:
     """Reject a candidate claim."""
     try:
-        ledger_db.reject_candidate(candidate_id, reason=reason)
+        ledger_db.reject_candidate(candidate_id, reason=reason, actor=_actor_scope(request, actor, cross_actor))
     except ValueError as exc:
         raise value_error_to_http(exc) from exc
     return {"candidate_id": candidate_id, "status": "rejected", "reason": reason}
@@ -109,11 +120,14 @@ def reject_candidate(
 @ledger_router.post("/archive/{candidate_id}")
 def archive_candidate(
     candidate_id: str,
+    request: Request,
+    actor: str | None = Query(default=None),
+    cross_actor: bool = Query(default=False),
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ) -> dict:
     """Archive an active claim."""
     try:
-        ledger_db.archive_candidate(candidate_id)
+        ledger_db.archive_candidate(candidate_id, actor=_actor_scope(request, actor, cross_actor))
     except ValueError as exc:
         raise value_error_to_http(exc) from exc
     return {"candidate_id": candidate_id, "status": "archived"}
@@ -121,29 +135,50 @@ def archive_candidate(
 
 @ledger_router.post("/decay", response_model=DecayResult)
 def apply_decay(
+    request: Request,
     days_since_access: int | None = Query(default=None),
+    actor: str | None = Query(default=None),
+    cross_actor: bool = Query(default=False),
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ) -> DecayResult:
     """Apply time-based decay to claim strength."""
-    return ledger_db.apply_decay(days_since_access=days_since_access)
+    return ledger_db.apply_decay(
+        days_since_access=days_since_access,
+        actor=_actor_scope(request, actor, cross_actor),
+    )
 
 
 @ledger_router.get("/claims")
 def get_claims(
+    request: Request,
     subject: str | None = Query(default=None),
     lane: str | None = Query(default=None),
     min_strength: float = Query(default=0.0),
     valid_at: str | None = Query(default=None),
+    actor: str | None = Query(default=None),
+    cross_actor: bool = Query(default=False),
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ) -> dict:
     """Query active claims with optional filters."""
+    try:
+        actor = recall_actor_scope(request, requested_actor=actor, cross_actor=cross_actor)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     claims = ledger_db.get_active_claims(
         subject=subject,
         lane=lane,
         min_strength=min_strength,
         valid_at=valid_at,
+        actor=actor,
     )
     return {"count": len(claims), "claims": claims}
+
+
+def _actor_scope(request: Request, actor: str | None, cross_actor: bool) -> str | None:
+    try:
+        return recall_actor_scope(request, requested_actor=actor, cross_actor=cross_actor)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 def _row_to_candidate_response(row: dict) -> ExtractedCandidateResponse:
@@ -189,10 +224,12 @@ def _row_to_candidate_response(row: dict) -> ExtractedCandidateResponse:
 
 @ledger_router.get("/candidates")
 def get_ledger_candidates(
+    request: Request,
     capture_id: str | None = Query(default=None, description="Filter by source capture ID."),
     page_id: str | None = Query(default=None, description="Filter by source page ID."),
     lane: str | None = Query(default=None, description="Filter by retrieval lane."),
     actor: str | None = Query(default=None, description="Filter by agent actor name."),
+    cross_actor: bool = Query(default=False, description="Admin-only: query outside the caller actor scope."),
     status: str | None = Query(
         default=None, description="Filter by status (candidate, active, rejected, archived, superseded)."
     ),
@@ -203,6 +240,10 @@ def get_ledger_candidates(
     ledger_db: LedgerDB = Depends(get_ledger_db),
 ) -> list[ExtractedCandidateResponse]:
     """Get extraction candidates with full provenance and filter support."""
+    try:
+        actor = recall_actor_scope(request, requested_actor=actor, cross_actor=cross_actor)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     candidates = ledger_db.get_candidates(
         candidate_type=candidate_type,
         status=status,

@@ -206,3 +206,75 @@ def test_mcp_recall_is_scoped_to_authenticated_actor(content_dir, search_db, tmp
 
     assert admin_default["result"]["structuredContent"]["count"] == 0
     assert any(claim["actor"] == "mcp-agent-b" for claim in admin_cross["result"]["structuredContent"]["claims"])
+
+
+def test_all_claim_read_and_ack_surfaces_enforce_actor_scope(content_dir, search_db, tmp_path):
+    app = _app(content_dir, search_db, tmp_path, auto_consolidate=True)
+    _, key_a = app.state.api_key_store.create_key(name="surface-agent-a", role="writer")
+    _, key_b = app.state.api_key_store.create_key(name="surface-agent-b", role="writer")
+    _, admin_key = app.state.api_key_store.create_key(name="surface-admin", role="admin")
+    unique_term = "TenantSurfaceNeedle"
+
+    with TestClient(app) as client:
+        captured = client.post(
+            "/api/memory/capture",
+            json={
+                "text": f"{unique_term} belongs only to surface agent B.",
+                "metadata": {"title": "Tenant surface B", "confidence": "high"},
+            },
+            headers=_headers(key_b),
+        )
+        assert captured.status_code == 201, captured.text
+
+        b_recall = client.get(
+            "/api/memory/recall",
+            params={"query": unique_term, "limit": 5},
+            headers=_headers(key_b),
+        )
+        candidate_id = b_recall.json()["claims"][0]["candidate_id"]
+
+        a_claims = client.get("/api/ledger/claims", headers=_headers(key_a))
+        b_claims = client.get("/api/ledger/claims", headers=_headers(key_b))
+        admin_claims = client.get(
+            "/api/ledger/claims",
+            params={"actor": "surface-agent-b", "cross_actor": "true"},
+            headers=_headers(admin_key),
+        )
+        a_candidates = client.get("/api/ledger/candidates", headers=_headers(key_a))
+        a_extraction = client.get("/api/extraction/candidates", headers=_headers(key_a))
+        a_rag = _mcp_call(client, _headers(key_a), "lore_rag_context", {"query": unique_term, "limit": 5})
+        a_actors = _mcp_call(client, _headers(key_a), "lore_list_actors", {})
+        a_graph = client.get("/api/context-graph", headers=_headers(key_a))
+
+        a_ack = client.post(
+            "/api/memory/recall/ack",
+            json={"candidate_ids": [candidate_id]},
+            headers=_headers(key_a),
+        )
+        a_mcp_ack = _mcp_call(
+            client,
+            _headers(key_a),
+            "lore_ack_recall",
+            {"candidate_ids": [candidate_id]},
+        )
+        b_ack = client.post(
+            "/api/memory/recall/ack",
+            json={"candidate_ids": [candidate_id]},
+            headers=_headers(key_b),
+        )
+
+    assert a_claims.status_code == 200
+    assert a_claims.json()["count"] == 0
+    assert any(claim["candidate_id"] == candidate_id for claim in b_claims.json()["claims"])
+    assert any(claim["candidate_id"] == candidate_id for claim in admin_claims.json()["claims"])
+    assert all(row["candidate_id"] != candidate_id for row in a_candidates.json())
+    assert all(row["candidate_id"] != candidate_id for row in a_extraction.json()["candidates"])
+    assert candidate_id not in str(a_rag["result"]["structuredContent"])
+    assert all(row["actor"] != "surface-agent-b" for row in a_actors["result"]["structuredContent"]["actors"])
+    assert candidate_id not in a_graph.text
+
+    assert a_ack.status_code == 200
+    assert a_ack.json()["acknowledged_count"] == 0
+    assert a_mcp_ack["result"]["structuredContent"]["acknowledged_count"] == 0
+    assert b_ack.status_code == 200
+    assert b_ack.json()["acknowledged_count"] == 1

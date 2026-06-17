@@ -123,8 +123,13 @@ def hybrid_retrieve_expanded(
     graph_weight: float = 0.2,
     lane: str | None = None,
     actor: str | None = None,
+    claim_actor: str | None = None,
 ) -> dict[str, Any]:
     """Run hybrid retrieval with bounded multi-hop context graph expansion."""
+    if claim_actor:
+        from ..context_graph import scope_context_graph
+
+        context_graph = scope_context_graph(context_graph, claim_actor)
     base_result = hybrid_retrieve(
         query,
         fts_index,
@@ -248,7 +253,14 @@ def hybrid_retrieve_expanded(
         all_results[node_id] = result
 
     if ledger is not None:
-        _enrich_with_ledger_context(ledger, all_results, include_claims, include_traces, include_decisions)
+        _enrich_with_ledger_context(
+            ledger,
+            all_results,
+            include_claims,
+            include_traces,
+            include_decisions,
+            claim_actor=claim_actor,
+        )
 
     # Populate matched_entities from graph expansion paths
     _populate_matched_entities(all_results, reachable)
@@ -366,11 +378,13 @@ def _enrich_with_ledger_context(
     include_claims: bool,
     include_traces: bool,
     include_decisions: bool,
+    *,
+    claim_actor: str | None = None,
 ) -> None:
     """Enrich expanded results with claim, trace, and decision context from the ledger."""
     if include_claims:
         try:
-            candidates = ledger.get_candidates(limit=500)
+            candidates = ledger.get_candidates(limit=500, actor=claim_actor)
         except Exception:
             candidates = []
         for candidate in candidates:

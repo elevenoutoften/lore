@@ -607,10 +607,11 @@ class LedgerDB:
                 FROM extraction_candidates
                 WHERE dedupe_hash = ? AND candidate_type = 'claim'
                   AND status IN ('candidate', 'active')
+                  AND actor IS ?
                 ORDER BY updated_at DESC
                 LIMIT 1
                 """,
-                (dedupe_hash,),
+                (dedupe_hash, metadata.get("actor")),
             ).fetchone()
 
             if existing is not None:
@@ -748,12 +749,21 @@ class LedgerDB:
     # ─── Invalidation ─────────────────────────────────────────────────────
 
     @retry_on_locked()
-    def supersede_candidate(self, old_candidate_id: str, new_candidate_id: str, reason: str) -> ClaimSupersedeResult:
+    def supersede_candidate(
+        self,
+        old_candidate_id: str,
+        new_candidate_id: str,
+        reason: str,
+        *,
+        actor: str | None = None,
+    ) -> ClaimSupersedeResult:
         """Mark old claim as superseded by new claim."""
         with self._lock:
+            actor_clause = " AND actor = ?" if actor else ""
+            old_params: tuple[Any, ...] = (old_candidate_id, actor) if actor else (old_candidate_id,)
             old_row = self.connection.execute(
-                "SELECT status FROM extraction_candidates WHERE candidate_id = ?",
-                (old_candidate_id,),
+                f"SELECT status FROM extraction_candidates WHERE candidate_id = ?{actor_clause}",
+                old_params,
             ).fetchone()
             if old_row is None:
                 raise ValueError(f"Candidate {old_candidate_id} not found")
@@ -776,9 +786,10 @@ class LedgerDB:
             # Without this, superseding against a non-existent id silently marks the
             # old claim 'superseded' (removing it from recall) and points it at a
             # phantom -> durable memory loss with no error.
+            new_params: tuple[Any, ...] = (new_candidate_id, actor) if actor else (new_candidate_id,)
             new_row = self.connection.execute(
-                "SELECT 1 FROM extraction_candidates WHERE candidate_id = ?",
-                (new_candidate_id,),
+                f"SELECT 1 FROM extraction_candidates WHERE candidate_id = ?{actor_clause}",
+                new_params,
             ).fetchone()
             if new_row is None:
                 raise ValueError(f"Candidate {new_candidate_id} not found")
@@ -831,28 +842,40 @@ class LedgerDB:
             """,
             (norm_subj, norm_pred, norm_obj),
         ).fetchall()
-        return [_decode_row(row) for row in rows]
+        decoded = [_decode_row(row) for row in rows]
+        if new_claim.actor:
+            decoded = [row for row in decoded if row.get("actor") == new_claim.actor]
+        return decoded
 
     # ─── Status lifecycle ──────────────────────────────────────────────────
 
-    def activate_candidate(self, candidate_id: str) -> None:
+    def activate_candidate(self, candidate_id: str, *, actor: str | None = None) -> None:
         """Transition candidate → active."""
-        self._transition_status(candidate_id, "active")
+        self._transition_status(candidate_id, "active", actor=actor)
 
-    def reject_candidate(self, candidate_id: str, reason: str | None = None) -> None:
+    def reject_candidate(self, candidate_id: str, reason: str | None = None, *, actor: str | None = None) -> None:
         """Transition candidate → rejected."""
-        self._transition_status(candidate_id, "rejected", reason=reason)
+        self._transition_status(candidate_id, "rejected", reason=reason, actor=actor)
 
-    def archive_candidate(self, candidate_id: str) -> None:
+    def archive_candidate(self, candidate_id: str, *, actor: str | None = None) -> None:
         """Transition active → archived."""
-        self._transition_status(candidate_id, "archived")
+        self._transition_status(candidate_id, "archived", actor=actor)
 
     @retry_on_locked()
-    def _transition_status(self, candidate_id: str, new_status: str, *, reason: str | None = None) -> None:
+    def _transition_status(
+        self,
+        candidate_id: str,
+        new_status: str,
+        *,
+        reason: str | None = None,
+        actor: str | None = None,
+    ) -> None:
         with self._lock:
+            actor_clause = " AND actor = ?" if actor else ""
+            params: tuple[Any, ...] = (candidate_id, actor) if actor else (candidate_id,)
             row = self.connection.execute(
-                "SELECT status FROM extraction_candidates WHERE candidate_id = ?",
-                (candidate_id,),
+                f"SELECT status FROM extraction_candidates WHERE candidate_id = ?{actor_clause}",
+                params,
             ).fetchone()
             if row is None:
                 raise ValueError(f"Candidate {candidate_id} not found")
@@ -884,20 +907,25 @@ class LedgerDB:
     # ─── Decay ─────────────────────────────────────────────────────────────
 
     @retry_on_locked()
-    def apply_decay(self, days_since_access: int | None = None) -> DecayResult:
+    def apply_decay(self, days_since_access: int | None = None, *, actor: str | None = None) -> DecayResult:
         """Apply time-based decay to claim strength.
 
         Decay formula: strength *= 0.995^days
         Floor: 0.01 (never zero — that would be deletion)
         """
         with self._lock:
+            actor_clause = " AND actor = ?" if actor else ""
+            params: tuple[Any, ...] = (actor,) if actor else ()
             rows = self.connection.execute(
-                """
+                f"""
                 SELECT candidate_id, strength,
                        COALESCE(last_decayed_at, created_at) AS decay_anchor
                 FROM extraction_candidates
                 WHERE status IN ('candidate', 'active')
-                """
+                  AND candidate_type = 'claim'
+                  {actor_clause}
+                """,
+                params,
             ).fetchall()
 
             if not rows:
@@ -1052,17 +1080,26 @@ class LedgerDB:
             self.record_claim_access(
                 [str(item["candidate_id"]) for item in top],
                 now=now_dt.isoformat(),
+                actor=actor,
             )
         return top
 
     @retry_on_locked()
-    def record_claim_access(self, candidate_ids: list[str], *, now: str | None = None) -> int:
+    def record_claim_access(
+        self,
+        candidate_ids: list[str],
+        *,
+        now: str | None = None,
+        actor: str | None = None,
+    ) -> int:
         """Increment access count and stamp last_accessed_at for recalled claims."""
         ids = [cid for cid in dict.fromkeys(candidate_ids) if cid]
         if not ids:
             return 0
         timestamp = now or utc_now()
         placeholders = ", ".join("?" for _ in ids)
+        actor_clause = " AND actor = ?" if actor else ""
+        params: tuple[Any, ...] = (timestamp, *ids, actor) if actor else (timestamp, *ids)
         with self._lock:
             cursor = self.connection.execute(
                 f"""
@@ -1070,8 +1107,10 @@ class LedgerDB:
                 SET access_count = COALESCE(access_count, 0) + 1,
                     last_accessed_at = ?
                 WHERE candidate_id IN ({placeholders})
+                  AND candidate_type = 'claim'
+                  {actor_clause}
                 """,
-                (timestamp, *ids),
+                params,
             )
             self.connection.commit()
             if cursor.rowcount > 0:

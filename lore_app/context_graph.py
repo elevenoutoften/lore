@@ -189,6 +189,30 @@ def build_context_graph(repo: LoreRepository, ledger: LedgerDB | None = None) ->
     return ContextGraph(nodes=nodes, edges=edges, stats=stats)
 
 
+def scope_context_graph(graph: ContextGraph, actor: str | None) -> ContextGraph:
+    """Remove graph nodes that expose another authenticated actor's memory."""
+    if not actor:
+        return graph
+
+    actor_node_id = f"actor:{actor}"
+    kept_nodes = []
+    for node in graph.nodes:
+        node_actor = optional_string(node.metadata.get("actor"))
+        if node.type == ContextNodeType.actor and node.id != actor_node_id:
+            continue
+        if node_actor and node_actor != actor:
+            continue
+        kept_nodes.append(node)
+
+    kept_ids = {node.id for node in kept_nodes}
+    kept_edges = [edge for edge in graph.edges if edge.source in kept_ids and edge.target in kept_ids]
+    stats: dict[str, int] = {}
+    for node in kept_nodes:
+        stats[node.type.value] = stats.get(node.type.value, 0) + 1
+    stats["edges"] = len(kept_edges)
+    return ContextGraph(nodes=kept_nodes, edges=kept_edges, stats=stats)
+
+
 def query_neighbors(graph: ContextGraph, query: ContextGraphNeighborQuery) -> ContextGraphNeighborResponse:
     """Find neighbors of a node in the context graph."""
 

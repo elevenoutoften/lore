@@ -19,7 +19,7 @@ from ..capture import (
 )
 from ..code_ingest.ingest_service import ingest_service_code
 from ..code_ingest.validate import IngestValidationError, validate_service_id, validate_source_dir
-from ..context_graph import build_context_graph, explain_context, query_neighbors, query_paths
+from ..context_graph import build_context_graph, explain_context, query_neighbors, query_paths, scope_context_graph
 from ..distillation import distill_daily, get_daily_captures, promote_daily_note
 from ..extraction import retry_deadletter
 from ..frontmatter import update_frontmatter
@@ -158,7 +158,10 @@ TOOLS: list[dict[str, Any]] = [
         "description": "List known agents (actors) that have produced captures or pages in Lore, with their counts.",
         "inputSchema": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "actor": {"type": "string", "description": "Admin-only actor filter with cross_actor."},
+                "cross_actor": {"type": "boolean", "default": False},
+            },
         },
     },
     {
@@ -170,6 +173,8 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "query": {"type": "string", "description": "Natural language query."},
                 "limit": {"type": "integer", "description": "Max results (default 5).", "default": 5},
+                "actor": {"type": "string", "description": "Admin-only claim actor filter with cross_actor."},
+                "cross_actor": {"type": "boolean", "default": False},
             },
             "required": ["query"],
         },
@@ -192,6 +197,8 @@ TOOLS: list[dict[str, Any]] = [
                 "include_claims": {"type": "boolean", "default": True},
                 "include_traces": {"type": "boolean", "default": False},
                 "include_decisions": {"type": "boolean", "default": True},
+                "actor": {"type": "string", "description": "Admin-only claim actor filter with cross_actor."},
+                "cross_actor": {"type": "boolean", "default": False},
             },
             "required": ["query"],
         },
@@ -244,6 +251,8 @@ TOOLS: list[dict[str, Any]] = [
                     "items": {"type": "string"},
                     "description": "Claim candidate IDs returned by lore_recall.",
                 },
+                "actor": {"type": "string", "description": "Admin-only actor scope with cross_actor."},
+                "cross_actor": {"type": "boolean", "default": False},
             },
             "required": ["candidate_ids"],
         },
@@ -1138,11 +1147,22 @@ def _handle_lore_list_lanes(ctx: McpContext) -> dict[str, Any]:
     return tool_result({"lanes": lanes}, f"Found {len(lanes)} retrieval lane(s).")
 
 
+def _mcp_actor_scope(ctx: McpContext, arguments: dict[str, Any]) -> str | None:
+    requested_actor = optional_string(arguments.get("actor"))
+    cross_actor = bool(arguments.get("cross_actor", False))
+    if ctx.request is None:
+        return requested_actor
+    try:
+        return recall_actor_scope(ctx.request, requested_actor=requested_actor, cross_actor=cross_actor)
+    except PermissionError as exc:
+        raise JsonRpcError(-32602, str(exc)) from exc
+
+
 def _handle_lore_list_actors(ctx: McpContext) -> dict[str, Any]:
-    tool_arguments(ctx.params)
+    arguments = tool_arguments(ctx.params)
     if ctx.search_index is None:
         return tool_result({"actors": []}, "Search index is not available.")
-    actors = ctx.search_index.list_actors()
+    actors = ctx.search_index.list_actors(actor=_mcp_actor_scope(ctx, arguments))
     return tool_result({"actors": actors}, f"Found {len(actors)} known actor(s).")
 
 
@@ -1157,6 +1177,7 @@ def _handle_lore_rag_context(ctx: McpContext) -> dict[str, Any]:
     include_claims = bool(arguments.get("include_claims", True))
     include_traces = bool(arguments.get("include_traces", False))
     include_decisions = bool(arguments.get("include_decisions", True))
+    claim_actor = _mcp_actor_scope(ctx, arguments)
     if ctx.vector_store is None:
         return tool_result({"query": query, "results": []}, "RAG vector store is not configured.", is_error=True)
     ledger = require_service(ctx.ledger_db, "ledger database")
@@ -1175,6 +1196,7 @@ def _handle_lore_rag_context(ctx: McpContext) -> dict[str, Any]:
             include_claims=include_claims,
             include_traces=include_traces,
             include_decisions=include_decisions,
+            claim_actor=claim_actor,
         ),
     )
     return tool_result(payload, summarize_rag_context(payload))
@@ -1191,6 +1213,7 @@ def _handle_lore_rag_context_expanded(ctx: McpContext) -> dict[str, Any]:
     include_claims = bool(arguments.get("include_claims", True))
     include_traces = bool(arguments.get("include_traces", False))
     include_decisions = bool(arguments.get("include_decisions", True))
+    claim_actor = _mcp_actor_scope(ctx, arguments)
     if ctx.vector_store is None:
         return tool_result({"query": query, "results": []}, "RAG vector store is not configured.", is_error=True)
     ledger = require_service(ctx.ledger_db, "ledger database")
@@ -1209,6 +1232,7 @@ def _handle_lore_rag_context_expanded(ctx: McpContext) -> dict[str, Any]:
             include_claims=include_claims,
             include_traces=include_traces,
             include_decisions=include_decisions,
+            claim_actor=claim_actor,
         ),
     )
     return tool_result(payload, summarize_rag_context(payload))
@@ -1262,8 +1286,9 @@ def _handle_lore_ack_recall(ctx: McpContext) -> dict[str, Any]:
         raise JsonRpcError(-32602, "candidate_ids must be an array.")
     candidate_ids = [str(candidate_id) for candidate_id in raw_ids if candidate_id]
     ledger = require_service(ctx.ledger_db, "ledger database")
+    actor = _mcp_actor_scope(ctx, arguments)
     timestamp = utc_now()
-    acknowledged_count = ledger.record_claim_access(candidate_ids, now=timestamp)
+    acknowledged_count = ledger.record_claim_access(candidate_ids, now=timestamp, actor=actor)
     payload = {"acknowledged_count": acknowledged_count, "timestamp": timestamp}
     return tool_result(payload, f"Acknowledged {acknowledged_count} recalled claim(s).")
 
@@ -1276,17 +1301,17 @@ def _handle_lore_link_graph(ctx: McpContext) -> dict[str, Any]:
 
 
 def _handle_lore_context_graph(ctx: McpContext) -> dict[str, Any]:
-    tool_arguments(ctx.params)
+    arguments = tool_arguments(ctx.params)
     ledger = require_service(ctx.ledger_db, "ledger database")
-    graph = build_context_graph(ctx.repo, ledger)
+    graph = scope_context_graph(build_context_graph(ctx.repo, ledger), _mcp_actor_scope(ctx, arguments))
     payload = graph.model_dump(mode="json")
     return tool_result(payload, f"Context graph: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
 
 
 def _handle_lore_graph_analytics(ctx: McpContext) -> dict[str, Any]:
-    tool_arguments(ctx.params)
+    arguments = tool_arguments(ctx.params)
     ledger = require_service(ctx.ledger_db, "ledger database")
-    graph = build_context_graph(ctx.repo, ledger)
+    graph = scope_context_graph(build_context_graph(ctx.repo, ledger), _mcp_actor_scope(ctx, arguments))
     result = GraphAnalytics(graph).compute()
     payload = result.model_dump(mode="json")
     return tool_result(payload, f"Graph analytics: {result.node_count} nodes, {len(result.communities)} communities")
@@ -1300,7 +1325,7 @@ def _handle_lore_context_graph_neighbors(ctx: McpContext) -> dict[str, Any]:
     node_types = arguments.get("node_types", [])
     limit = max(1, min(int(arguments.get("limit", 50)), 500))
     ledger = require_service(ctx.ledger_db, "ledger database")
-    graph = build_context_graph(ctx.repo, ledger)
+    graph = scope_context_graph(build_context_graph(ctx.repo, ledger), _mcp_actor_scope(ctx, arguments))
     query = ContextGraphNeighborQuery(
         node_id=node_id,
         direction=direction,
@@ -1320,7 +1345,7 @@ def _handle_lore_context_graph_paths(ctx: McpContext) -> dict[str, Any]:
     edge_types = arguments.get("edge_types", [])
     limit = max(1, min(int(arguments.get("limit", 10)), 50))
     ledger = require_service(ctx.ledger_db, "ledger database")
-    graph = build_context_graph(ctx.repo, ledger)
+    graph = scope_context_graph(build_context_graph(ctx.repo, ledger), _mcp_actor_scope(ctx, arguments))
     query = ContextGraphPathQuery(
         source_id=source_id,
         target_id=target_id,
@@ -1340,7 +1365,7 @@ def _handle_lore_explain_context(ctx: McpContext) -> dict[str, Any]:
     depth = max(1, min(int(arguments.get("depth", 2)), 3))
     edge_types = arguments.get("edge_types", [])
     ledger = require_service(ctx.ledger_db, "ledger database")
-    graph = build_context_graph(ctx.repo, ledger)
+    graph = scope_context_graph(build_context_graph(ctx.repo, ledger), _mcp_actor_scope(ctx, arguments))
     query = ContextExplainQuery(node_id=node_id, depth=depth, edge_types=edge_types)
     result = explain_context(graph, query)
     return tool_result(result.model_dump(mode="json"), result.explanation)
