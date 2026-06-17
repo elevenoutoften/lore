@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from lore_app.ledger import LedgerDB
@@ -142,10 +142,15 @@ def test_repeated_recall_is_idempotent_for_recency_and_decay_anchor(tmp_path):
         processed_at="2026-01-01T00:00:00+00:00",
     )
 
-    now = datetime(2026, 6, 1, tzinfo=UTC)
+    # Keep the scoring clock well after the insertion wall-clock. This makes
+    # recency fractional, so accidentally using last_accessed_at as the anchor
+    # jumps recency back to 1.0 and the assertions below fail.
+    now = datetime.now(UTC) + timedelta(days=365)
     first = ledger.recall_claims(limit=5, now=now)[0]
     first_recency = first["recall_signals"]["recency"]
     first_age_days = first["age_days"]
+    assert 0.0 < first_recency < 1.0
+    assert first_age_days > 300
 
     for _ in range(5):
         repeated = ledger.recall_claims(limit=5, now=now)[0]
@@ -157,7 +162,7 @@ def test_repeated_recall_is_idempotent_for_recency_and_decay_anchor(tmp_path):
     assert row["last_accessed_at"] is None
     assert row["last_decayed_at"] is None
 
-    ledger.record_claim_access([row["candidate_id"]], now="2026-06-01T00:00:00+00:00")
+    ledger.record_claim_access([row["candidate_id"]], now=now.isoformat())
     acknowledged = ledger.recall_claims(limit=5, now=now)[0]
     assert acknowledged["access_count"] == 1
     assert acknowledged["recall_signals"]["salience"] > 0.0
