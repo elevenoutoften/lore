@@ -199,6 +199,8 @@ curl -sS "$LORE_URL/api/promotions"
 | `GET` | `/api/extraction/batches` | List extraction batches. |
 | `GET` | `/api/extraction/candidates` | List extracted candidates. Query: `status`, `type`, `page_id`. |
 | `POST` | `/api/memory/capture` | Lightweight memory capture. |
+| `GET` | `/api/memory/recall` | Ranked claim recall. Read-only by default; `record_access=false` unless explicitly set. |
+| `POST` | `/api/memory/recall/ack` | Acknowledge used recall claims. Body: `{candidate_ids}`. |
 | `GET` | `/api/memory/health` | Memory subsystem health counts. |
 
 ## Runtime Settings

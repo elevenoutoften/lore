@@ -154,6 +154,7 @@ class LedgerDB:
             ("model_version", "TEXT DEFAULT NULL"),
             ("prompt_hash", "TEXT DEFAULT NULL"),
             ("token_usage", "TEXT DEFAULT NULL"),
+            ("last_decayed_at", "TEXT DEFAULT NULL"),
         ],
         "patch_plans": [
             ("batch_id", "TEXT DEFAULT NULL"),
@@ -258,6 +259,7 @@ class LedgerDB:
                 strength REAL DEFAULT 0.5,
                 access_count INTEGER DEFAULT 0,
                 last_accessed_at TEXT,
+                last_decayed_at TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (batch_id) REFERENCES extraction_batches(batch_id)
@@ -889,13 +891,10 @@ class LedgerDB:
         Floor: 0.01 (never zero — that would be deletion)
         """
         with self._lock:
-            # last_accessed_at is not yet populated by any write path, so fall
-            # back to updated_at/created_at; otherwise decay would always match
-            # zero rows and the documented /api/ledger/decay endpoint is a no-op.
             rows = self.connection.execute(
                 """
                 SELECT candidate_id, strength,
-                       COALESCE(last_accessed_at, updated_at, created_at) AS decay_anchor
+                       COALESCE(last_decayed_at, created_at) AS decay_anchor
                 FROM extraction_candidates
                 WHERE status IN ('candidate', 'active')
                 """
@@ -921,7 +920,7 @@ class LedgerDB:
                 self.connection.execute(
                     """
                     UPDATE extraction_candidates
-                    SET strength = ?, updated_at = ?
+                    SET strength = ?, last_decayed_at = ?
                     WHERE candidate_id = ?
                     """,
                     (new_strength, now.isoformat(), str(row["candidate_id"])),
@@ -1001,20 +1000,20 @@ class LedgerDB:
         valid_at: str | None = None,
         limit: int = 20,
         pool_limit: int = 500,
-        record_access: bool = True,
+        record_access: bool = False,
         now: datetime | None = None,
     ) -> list[dict[str, Any]]:
         """Rank active/candidate claims by recency/salience-weighted recall.
 
         Claims are scored on strength (reinforce/decay), recency (freshness of the
-        last-access/update anchor), salience (recall frequency), and -- when a
+        update anchor), salience (acknowledged-use frequency), and -- when a
         query is supplied -- lexical relevance. The strongest, freshest, most
-        frequently recalled, most relevant claims rank first. Each returned row
+        frequently acknowledged, most relevant claims rank first. Each returned row
         carries ``recall_score``, a ``recall_signals`` breakdown, and ``age_days``.
 
         When ``record_access`` is true, the returned claims have their access
-        count incremented and ``last_accessed_at`` stamped, which feeds both the
-        salience signal and the decay anchor on subsequent recalls.
+        count incremented and ``last_accessed_at`` stamped for explicit salience
+        acknowledgement. It does not affect recency or the decay anchor.
         """
         now_dt = now or datetime.now(UTC)
         pool = self.get_active_claims(
@@ -1028,7 +1027,7 @@ class LedgerDB:
 
         scored: list[dict[str, Any]] = []
         for row in pool:
-            anchor = row.get("last_accessed_at") or row.get("updated_at") or row.get("created_at")
+            anchor = row.get("updated_at") or row.get("created_at")
             age_days = _age_in_days(anchor, now_dt)
             score = compute_recall_score(
                 strength=float(row.get("strength") or 0.0),

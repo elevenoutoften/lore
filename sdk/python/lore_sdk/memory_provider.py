@@ -131,7 +131,7 @@ class MemoryProvider:
         actor: str | None = None,
         min_strength: float = 0.0,
         limit: int = 20,
-        record_access: bool = True,
+        record_access: bool = False,
     ) -> list[dict[str, Any]]:
         """Recall durable memory ranked by recency/salience-weighted score.
 
@@ -145,7 +145,8 @@ class MemoryProvider:
             actor: Filter to claims produced by a specific agent.
             min_strength: Minimum ledger strength to consider.
             limit: Max claims to return.
-            record_access: Stamp access (salience + recency) on returned claims.
+            record_access: Explicitly stamp access on returned claims. Defaults
+                false so reads are idempotent.
         """
         params: dict[str, str] = {"limit": str(int(limit))}
         if query:
@@ -163,6 +164,11 @@ class MemoryProvider:
         result = self._send_with_retry("GET", path)
         claims = result.get("claims") if isinstance(result, dict) else None
         return claims if isinstance(claims, list) else []
+
+    def acknowledge_recall(self, candidate_ids: list[str]) -> dict[str, Any]:
+        """Acknowledge recalled claims that were used, boosting salience."""
+        result = self._post_with_retry("/api/memory/recall/ack", {"candidate_ids": candidate_ids})
+        return result if isinstance(result, dict) else {}
 
     def page_promote(
         self,

@@ -73,10 +73,14 @@ memory.capture(
 claims = memory.recall("illustrious text rendering", lane="project", limit=5)
 for claim in claims:
     print(claim["recall_score"], claim["subject"], claim["object"])
+
+# If these claims informed an answer/action, explicitly acknowledge use.
+memory.acknowledge_recall([claim["candidate_id"] for claim in claims])
 ```
 
 Each recalled claim includes a `recall_score` and a `recall_signals` breakdown
-(`strength`, `recency`, `salience`, `relevance`).
+(`strength`, `recency`, `salience`, `relevance`). Recall is read-only by
+default; `acknowledge_recall` is the explicit salience boost path.
 
 ## Trace-Linked Capture
 

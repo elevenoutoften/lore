@@ -114,6 +114,39 @@ def test_recall_records_access_and_populates_salience(tmp_path):
     assert again[0]["recall_signals"]["salience"] > 0.0
 
 
+def test_repeated_recall_is_idempotent_for_recency_and_decay_anchor(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    _seed(
+        ledger,
+        [ExtractedClaim(subject="old", predicate="p", object="o", confidence="high")],
+        processed_at="2026-01-01T00:00:00+00:00",
+    )
+
+    now = datetime(2026, 6, 1, tzinfo=UTC)
+    first = ledger.recall_claims(limit=5, now=now)[0]
+    first_recency = first["recall_signals"]["recency"]
+    first_age_days = first["age_days"]
+
+    for _ in range(5):
+        repeated = ledger.recall_claims(limit=5, now=now)[0]
+        assert repeated["recall_signals"]["recency"] == first_recency
+        assert repeated["age_days"] == first_age_days
+
+    row = ledger.get_active_claims()[0]
+    assert row["access_count"] == 0
+    assert row["last_accessed_at"] is None
+    assert row["last_decayed_at"] is None
+
+    ledger.record_claim_access([row["candidate_id"]], now="2026-06-01T00:00:00+00:00")
+    acknowledged = ledger.recall_claims(limit=5, now=now)[0]
+    assert acknowledged["access_count"] == 1
+    assert acknowledged["recall_signals"]["salience"] > 0.0
+    assert acknowledged["recall_signals"]["recency"] == first_recency
+    assert acknowledged["age_days"] == first_age_days
+    assert ledger.get_active_claims()[0]["last_decayed_at"] is None
+
+
 def test_recall_prefers_stronger_claim_without_query(tmp_path):
     ledger = LedgerDB(tmp_path / "ledger.db")
     ledger.initialize()
@@ -188,6 +221,32 @@ def test_memory_recall_endpoint_no_query_drops_relevance_weight(client):
     assert "relevance" not in resp.json()["weights"]
 
 
+def test_memory_recall_endpoint_default_does_not_write_access(client):
+    _reinforce(client, "services/lore", "is", "an agent memory backend")
+    before = client.get("/api/ledger/claims").json()["claims"][0]
+
+    resp = client.get("/api/memory/recall", params={"query": "memory backend"})
+
+    assert resp.status_code == 200, resp.text
+    after = client.get("/api/ledger/claims").json()["claims"][0]
+    assert after["candidate_id"] == before["candidate_id"]
+    assert after["access_count"] == before["access_count"] == 0
+    assert after["last_accessed_at"] == before["last_accessed_at"] is None
+
+
+def test_memory_recall_ack_endpoint_writes_access(client):
+    _reinforce(client, "services/lore", "is", "an agent memory backend")
+    candidate_id = client.get("/api/ledger/claims").json()["claims"][0]["candidate_id"]
+
+    resp = client.post("/api/memory/recall/ack", json={"candidate_ids": [candidate_id]})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["acknowledged_count"] == 1
+    after = client.get("/api/ledger/claims").json()["claims"][0]
+    assert after["access_count"] == 1
+    assert after["last_accessed_at"] is not None
+
+
 # ─── MCP surface ────────────────────────────────────────────────────────────
 
 
@@ -216,6 +275,22 @@ def test_mcp_lore_recall_tool_listed_and_callable(client):
     structured = result["structuredContent"]
     assert structured["count"] >= 1
     assert structured["claims"][0]["subject"] == "services/lore"
+    after = client.get("/api/ledger/claims").json()["claims"][0]
+    assert after["access_count"] == 0
+    assert after["last_accessed_at"] is None
+
+
+def test_mcp_lore_ack_recall_tool_writes_access(client):
+    _reinforce(client, "services/lore", "is", "an agent memory backend")
+    candidate_id = client.get("/api/ledger/claims").json()["claims"][0]["candidate_id"]
+
+    result = _mcp_call(client, "lore_ack_recall", {"candidate_ids": [candidate_id]})
+
+    assert result["isError"] is False
+    assert result["structuredContent"]["acknowledged_count"] == 1
+    after = client.get("/api/ledger/claims").json()["claims"][0]
+    assert after["access_count"] == 1
+    assert after["last_accessed_at"] is not None
 
 
 # ─── SDK surface ────────────────────────────────────────────────────────────
@@ -241,10 +316,37 @@ def test_sdk_memory_provider_recall_parses_claims(monkeypatch):
     assert captured["method"] == "GET"
     assert captured["path"].startswith("/api/memory/recall?")
     assert "query=memory+backend" in captured["path"]
+    assert "record_access=false" in captured["path"]
     assert claims[0]["candidate_id"] == "c1"
 
 
 # ─── Self-completing loop + self-diagnosing recall ──────────────────────────
+
+
+def test_sdk_memory_provider_acknowledge_recall_posts_candidate_ids(monkeypatch):
+    sdk_path = Path(__file__).resolve().parents[1] / "sdk" / "python"
+    if str(sdk_path) not in sys.path:
+        sys.path.insert(0, str(sdk_path))
+    from lore_sdk.memory_provider import MemoryProvider
+
+    provider = MemoryProvider(base_url="http://lore.test", api_key="k")
+    captured: dict = {}
+
+    def fake_request(method, path, data=None):
+        captured["method"] = method
+        captured["path"] = path
+        captured["data"] = data
+        return {"acknowledged_count": 1, "timestamp": "2026-06-01T00:00:00+00:00"}
+
+    monkeypatch.setattr(provider, "_request", fake_request)
+    result = provider.acknowledge_recall(["c1"])
+
+    assert captured == {
+        "method": "POST",
+        "path": "/api/memory/recall/ack",
+        "data": {"candidate_ids": ["c1"]},
+    }
+    assert result["acknowledged_count"] == 1
 
 
 def _app_with_auto_consolidate(tmp_path, enabled: bool):

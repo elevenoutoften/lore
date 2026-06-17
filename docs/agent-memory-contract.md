@@ -89,8 +89,8 @@ an agent can see *why* a claim surfaced.
 | Signal | Meaning | Source |
 | --- | --- | --- |
 | **strength** | Reinforce/decay value. Repeated, corroborated claims rise; untouched claims decay. | ledger `strength` (`[0.01, 1.0]`) |
-| **recency** | Exponential freshness from the claim's last-access/update anchor. Half-life 30 days. | decay anchor |
-| **salience** | How often the claim has been recalled, log-scaled and saturating. | `access_count` |
+| **recency** | Exponential freshness from the claim's update time. Half-life 30 days. | `updated_at` |
+| **salience** | How often a caller has explicitly acknowledged using the claim, log-scaled and saturating. | `access_count` |
 | **relevance** | Lexical overlap between the query and the claim text. Only mixed in when a query is supplied. | query vs. subject/predicate/object |
 
 Default weights are `strength 0.45, recency 0.25, salience 0.15, relevance 0.15`.
@@ -98,10 +98,12 @@ When no query is supplied, the relevance weight is redistributed across the othe
 three signals (so the weights always sum to 1). The exact weights used for a request
 are returned in the response `weights` field.
 
-Recalling a claim **records access**: its `access_count` is incremented and
-`last_accessed_at` is stamped. This feeds both the salience signal and the recency
-anchor on subsequent recalls — frequently-needed memory stays hot. Pass
-`record_access=false` for read-only inspection that must not perturb ranking.
+Recalling a claim is read-only by default: repeated `GET /api/memory/recall`
+requests do not increment `access_count`, stamp `last_accessed_at`, change recency,
+or reset decay age. When a caller intentionally uses returned claims and wants to
+boost salience, call `POST /api/memory/recall/ack` with their `candidate_id`
+values. The compatibility query flag `record_access=true` still stamps access on
+the returned claims, but new clients should prefer the explicit ack endpoint.
 
 ### Example
 
@@ -136,6 +138,18 @@ Filters: `subject`, `lane`, `actor`, `min_strength`, `valid_at`, `limit`.
 
 MCP tool: `lore_recall` (same parameters and ranking). Python SDK:
 `MemoryProvider.recall(query=..., lane=..., actor=...)`.
+
+To acknowledge use:
+
+```bash
+curl -sS -X POST "https://lore.example/api/memory/recall/ack" \
+  -H "Authorization: Bearer $LORE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"candidate_ids":["..."]}'
+```
+
+MCP tool: `lore_ack_recall`. Python SDK:
+`MemoryProvider.acknowledge_recall(candidate_ids)`.
 
 ### Recall vs. search vs. RAG
 

@@ -29,6 +29,8 @@ from ..schemas import (
     MemoryCaptureRequest,
     MemoryCaptureResponse,
     MemoryHealthResponse,
+    MemoryRecallAckRequest,
+    MemoryRecallAckResponse,
     MemoryRecallClaim,
     MemoryRecallResponse,
 )
@@ -171,7 +173,10 @@ def api_memory_recall(
     min_strength: float = Query(default=0.0, ge=0.0, le=1.0, description="Minimum ledger strength to consider."),
     valid_at: str | None = Query(default=None, description="Only claims valid at this ISO timestamp."),
     limit: int = Query(default=20, ge=1, le=200, description="Max claims to return."),
-    record_access: bool = Query(default=True, description="Stamp access (salience + recency) on the returned claims."),
+    record_access: bool = Query(
+        default=False,
+        description="Explicitly stamp access on returned claims. Defaults false so reads are idempotent.",
+    ),
     ledger: LedgerDB = Depends(get_ledger_db),
     repo: LoreRepository = Depends(get_repo),
 ) -> MemoryRecallResponse:
@@ -211,6 +216,21 @@ def api_memory_recall(
         pending_captures=pending_captures,
         hint=hint,
     )
+
+
+@router.post("/api/memory/recall/ack", response_model=MemoryRecallAckResponse)
+def api_memory_recall_ack(
+    payload: MemoryRecallAckRequest,
+    ledger: LedgerDB = Depends(get_ledger_db),
+) -> MemoryRecallAckResponse:
+    """Explicitly acknowledge recall claims that a caller used.
+
+    This is the opt-in write path for salience boosts. Plain GET recall remains
+    idempotent and does not mutate access counters.
+    """
+    timestamp = datetime.now(UTC).isoformat()
+    acknowledged_count = ledger.record_claim_access(payload.candidate_ids, now=timestamp)
+    return MemoryRecallAckResponse(acknowledged_count=acknowledged_count, timestamp=timestamp)
 
 
 def _recall_row_to_claim(row: dict[str, Any]) -> MemoryRecallClaim:

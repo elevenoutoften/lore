@@ -171,6 +171,7 @@ Captures, heartbeat, distillation, extraction, and memory:
 - `GET /api/extraction/candidates`
 - `POST /api/memory/capture`
 - `GET /api/memory/recall`
+- `POST /api/memory/recall/ack`
 - `GET /api/memory/health`
 
 Ledger, consolidation, provenance, traces, policies, and precedents:
@@ -293,6 +294,7 @@ Tools:
 - `lore_rag_context`
 - `lore_rag_context_expanded`
 - `lore_recall`
+- `lore_ack_recall`
 - `lore_link_graph`
 - `lore_context_graph`
 - `lore_graph_analytics`

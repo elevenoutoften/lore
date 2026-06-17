@@ -881,6 +881,19 @@ class MemoryRecallResponse(BaseModel):
     hint: str | None = None
 
 
+class MemoryRecallAckRequest(BaseModel):
+    """Explicit acknowledgement that returned recall claims were used."""
+
+    candidate_ids: list[str] = Field(default_factory=list, description="Claim candidate IDs to boost salience for.")
+
+
+class MemoryRecallAckResponse(BaseModel):
+    """Result of acknowledging recall use for salience."""
+
+    acknowledged_count: int = 0
+    timestamp: str
+
+
 class RepeatedCaptureGroup(BaseModel):
     """A group of captures with similar content suggesting a repeated procedure."""
 

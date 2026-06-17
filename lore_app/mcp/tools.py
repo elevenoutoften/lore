@@ -25,6 +25,7 @@ from ..extraction import retry_deadletter
 from ..frontmatter import update_frontmatter
 from ..frontmatter_spec import get_frontmatter_spec
 from ..heartbeat import emit_heartbeat_captures, heartbeat_review
+from ..ledger import utc_now
 from ..link_graph import build_link_graph, page_links
 from ..lint import lint_contradiction_review, lint_lore, lint_stale_queue
 from ..lint_config import LintConfig
@@ -67,6 +68,7 @@ WRITE_TOOL_NAMES = {
     "lore_create_procedure",
     "lore_create_stub",
     "lore_update_metadata",
+    "lore_ack_recall",
     "lore_transition_capture",
     "lore_distill_daily",
     "lore_promote_daily",
@@ -218,10 +220,26 @@ TOOLS: list[dict[str, Any]] = [
                 "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 20},
                 "record_access": {
                     "type": "boolean",
-                    "default": True,
-                    "description": "Stamp access (salience + recency) on the returned claims.",
+                    "default": False,
+                    "description": "Explicitly stamp access on returned claims. Defaults false so reads are idempotent.",
                 },
             },
+        },
+    },
+    {
+        "name": "lore_ack_recall",
+        "title": "Acknowledge Lore Recall",
+        "description": "Explicitly acknowledge that recalled claims were used, incrementing access_count and last_accessed_at for salience without affecting recency or decay age.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "candidate_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Claim candidate IDs returned by lore_recall.",
+                },
+            },
+            "required": ["candidate_ids"],
         },
     },
     {
@@ -1199,7 +1217,7 @@ def _handle_lore_recall(ctx: McpContext) -> dict[str, Any]:
     actor = optional_string(arguments.get("actor"))
     min_strength = max(0.0, min(float(arguments.get("min_strength") or 0.0), 1.0))
     limit = max(1, min(int(arguments.get("limit") or 20), 200))
-    record_access = bool(arguments.get("record_access", True))
+    record_access = bool(arguments.get("record_access", False))
     rows = ledger.recall_claims(
         query=query,
         subject=subject,
@@ -1223,6 +1241,19 @@ def _handle_lore_recall(ctx: McpContext) -> dict[str, Any]:
         "hint": hint,
     }
     return tool_result(payload, summarize_recall(payload))
+
+
+def _handle_lore_ack_recall(ctx: McpContext) -> dict[str, Any]:
+    arguments = tool_arguments(ctx.params)
+    raw_ids = arguments.get("candidate_ids")
+    if not isinstance(raw_ids, list):
+        raise JsonRpcError(-32602, "candidate_ids must be an array.")
+    candidate_ids = [str(candidate_id) for candidate_id in raw_ids if candidate_id]
+    ledger = require_service(ctx.ledger_db, "ledger database")
+    timestamp = utc_now()
+    acknowledged_count = ledger.record_claim_access(candidate_ids, now=timestamp)
+    payload = {"acknowledged_count": acknowledged_count, "timestamp": timestamp}
+    return tool_result(payload, f"Acknowledged {acknowledged_count} recalled claim(s).")
 
 
 def _handle_lore_link_graph(ctx: McpContext) -> dict[str, Any]:
@@ -2041,6 +2072,7 @@ TOOL_HANDLERS: dict[str, Callable[[McpContext], dict[str, Any]]] = {
     "lore_rag_context": _handle_lore_rag_context,
     "lore_rag_context_expanded": _handle_lore_rag_context_expanded,
     "lore_recall": _handle_lore_recall,
+    "lore_ack_recall": _handle_lore_ack_recall,
     "lore_link_graph": _handle_lore_link_graph,
     "lore_context_graph": _handle_lore_context_graph,
     "lore_graph_analytics": _handle_lore_graph_analytics,

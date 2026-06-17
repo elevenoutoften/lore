@@ -35,6 +35,39 @@ def test_apply_decay_affects_candidates_without_last_accessed_at(tmp_path):
     assert result.max_strength < 0.5
 
 
+def test_apply_decay_uses_dedicated_anchor_without_refreshing_updated_at(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-decay-anchor",
+            processed_at="2026-05-10T00:00:00+00:00",
+            source_capture_ids=["inbox/2026-05-10/decay-anchor"],
+            claims=[
+                ExtractedClaim(
+                    subject="services/decay",
+                    predicate="states",
+                    object="Decay has its own anchor.",
+                    confidence="high",
+                )
+            ],
+            entities=[],
+            edges=[],
+            invalidations=[],
+        )
+    )
+    before = ledger.get_active_claims()[0]
+
+    result = ledger.apply_decay(days_since_access=10)
+
+    assert result.decayed_count == 1
+    after = ledger.get_active_claims()[0]
+    assert after["strength"] < before["strength"]
+    assert after["updated_at"] == before["updated_at"]
+    assert after["last_decayed_at"] is not None
+    assert after["last_accessed_at"] is None
+
+
 def test_deadletter_store_list_and_resolve(tmp_path):
     ledger = LedgerDB(tmp_path / "ledger.db")
     ledger.initialize()
