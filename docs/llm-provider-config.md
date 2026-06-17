@@ -17,6 +17,7 @@ bootstrap, and stored settings override env.
 | `LORE_LLM_PROVIDER` | `none` | `ollama` | LLM provider name; `none` disables LLM extraction |
 | `LORE_LLM_MODEL` | *(empty)* | `glm-5.1` | Primary model; defaults to `glm-5.1` once a provider is set |
 | `LORE_LLM_BASE_URL` | *(empty)* | `https://ollama.com/v1` | API base URL (Ollama Cloud OpenAI-compatible endpoint) |
+| `LORE_LLM_EMBEDDING_MODEL` | *(empty)* | `embeddinggemma` | Optional OpenAI-compatible embedding model for dense retrieval |
 | `LORE_LLM_API_KEY` | *(required to enable)* | — | API key (set via secret store, never committed) |
 | `LORE_LLM_MAX_TOKENS` | `4096` | — | Max response tokens |
 | `LORE_LLM_TEMPERATURE` | `0.3` | — | Sampling temperature |
@@ -27,6 +28,16 @@ bootstrap, and stored settings override env.
 
 `minimax-m3` is configured only as an optional higher-capability escalation
 provider for difficult/ambiguous batches. It is not the default extraction model.
+
+### Optional dense retrieval
+
+Set an embedding model in `/settings`, `PUT /api/settings/llm`, or
+`LORE_LLM_EMBEDDING_MODEL` to enable semantic retrieval. Lore sends embedding
+requests to the configured `base_url` with the primary API key, stores vectors
+locally in sqlite-vec, and adds `semantic_similarity` to memory recall signals.
+Changing the model rebuilds the dense index immediately. If either the embedding
+model or API key is absent, Lore makes no embedding calls and retains its local
+TF-IDF retrieval and existing recall ranking.
 
 ### No Anthropic
 

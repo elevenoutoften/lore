@@ -13,6 +13,7 @@ from .llm_provider import LLMProviderConfig
 from .settings_store import (
     SETTINGS_LLM_API_KEY,
     SETTINGS_LLM_BASE_URL,
+    SETTINGS_LLM_EMBEDDING_MODEL,
     SETTINGS_LLM_ESCALATION_API_KEY,
     SETTINGS_LLM_ESCALATION_MODEL,
     SETTINGS_LLM_MAX_RETRIES,
@@ -130,6 +131,7 @@ class LoreConfig:
         )  # 50 MiB
         self.llm_provider: str = os.environ.get("LORE_LLM_PROVIDER", "none")
         self.llm_model: str = os.environ.get("LORE_LLM_MODEL", "")
+        self.llm_embedding_model: str = os.environ.get("LORE_LLM_EMBEDDING_MODEL", "")
         self.llm_base_url: str = os.environ.get("LORE_LLM_BASE_URL", "")
         self.llm_api_key: str | None = os.environ.get("LORE_LLM_API_KEY")
         self.llm_max_tokens: int = int(os.environ.get("LORE_LLM_MAX_TOKENS", "4096"))
@@ -179,6 +181,7 @@ class LoreConfig:
             "code_ingest_max_total_bytes": self.code_ingest_max_total_bytes,
             "llm_provider": self.llm_provider,
             "llm_model": self.llm_model,
+            "llm_embedding_model": self.llm_embedding_model,
             "llm_base_url": self.llm_base_url,
             "llm_api_key_configured": self.llm_api_key is not None,
             "llm_max_tokens": self.llm_max_tokens,
@@ -229,6 +232,7 @@ def merged_llm_config(config: LoreConfig, settings_store: SettingsStore) -> LLMP
 
     provider = settings_store.get(SETTINGS_LLM_PROVIDER) or config.llm_provider
     model = settings_store.get(SETTINGS_LLM_MODEL) or config.llm_model or DEFAULT_EXTRACTION_MODEL
+    embedding_model = settings_store.get(SETTINGS_LLM_EMBEDDING_MODEL) or config.llm_embedding_model
     base_url = settings_store.get(SETTINGS_LLM_BASE_URL) or config.llm_base_url
     api_key = settings_store.get(SETTINGS_LLM_API_KEY) or config.llm_api_key
     escalation_model = (
@@ -244,6 +248,7 @@ def merged_llm_config(config: LoreConfig, settings_store: SettingsStore) -> LLMP
     return LLMProviderConfig(
         name=provider,
         model=model,
+        embedding_model=embedding_model or None,
         base_url=base_url or None,
         api_key=api_key or None,
         max_tokens=int(max_tokens_setting) if max_tokens_setting else config.llm_max_tokens,

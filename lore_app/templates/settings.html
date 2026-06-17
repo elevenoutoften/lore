@@ -251,6 +251,10 @@
               <dd data-field="model">Loading...</dd>
             </div>
             <div class="settings-field">
+              <dt>Embedding Model</dt>
+              <dd data-field="embedding_model">Loading...</dd>
+            </div>
+            <div class="settings-field">
               <dt>Base URL</dt>
               <dd data-field="base_url">Loading...</dd>
             </div>
@@ -296,6 +300,10 @@
               <label>
                 <span>Model</span>
                 <input name="model" autocomplete="off" placeholder="gpt-4.1-mini">
+              </label>
+              <label>
+                <span>Embedding Model</span>
+                <input name="embedding_model" autocomplete="off" placeholder="embeddinggemma">
               </label>
               <label class="settings-form-full">
                 <span>Base URL</span>
@@ -354,7 +362,7 @@
       Array.from(document.querySelectorAll("[data-field]")).map((element) => [element.dataset.field, element])
     );
 
-    const textFields = ["provider", "model", "base_url", "escalation_model"];
+    const textFields = ["provider", "model", "embedding_model", "base_url", "escalation_model"];
     const secretFields = ["api_key", "escalation_api_key"];
     const numberFields = {
       max_tokens: Number.parseInt,
@@ -416,6 +424,7 @@
       updateProviderState(data.provider);
       currentFields.get("provider").textContent = formatValue(data.provider);
       currentFields.get("model").textContent = formatValue(data.model);
+      currentFields.get("embedding_model").textContent = formatValue(data.embedding_model);
       currentFields.get("base_url").textContent = formatValue(data.base_url);
       currentFields.get("api_key").textContent = describeSecret(data.api_key_configured, data.api_key_hint);
       currentFields.get("escalation_model").textContent = formatValue(data.escalation_model);

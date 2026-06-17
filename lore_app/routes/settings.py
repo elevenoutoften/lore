@@ -16,6 +16,7 @@ from ..settings_store import (
     SECRET_SETTINGS_KEYS,
     SETTINGS_LLM_API_KEY,
     SETTINGS_LLM_BASE_URL,
+    SETTINGS_LLM_EMBEDDING_MODEL,
     SETTINGS_LLM_ESCALATION_API_KEY,
     SETTINGS_LLM_ESCALATION_MODEL,
     SETTINGS_LLM_MAX_RETRIES,
@@ -120,6 +121,7 @@ def api_delete_llm_settings(
 _FIELD_TO_KEY: dict[str, str] = {
     "provider": SETTINGS_LLM_PROVIDER,
     "model": SETTINGS_LLM_MODEL,
+    "embedding_model": SETTINGS_LLM_EMBEDDING_MODEL,
     "base_url": SETTINGS_LLM_BASE_URL,
     "api_key": SETTINGS_LLM_API_KEY,
     "escalation_model": SETTINGS_LLM_ESCALATION_MODEL,
@@ -136,6 +138,8 @@ def _llm_settings_response(config: LoreConfig, settings_store: SettingsStore) ->
     return LlmSettingsResponse(
         provider=provider_config.name,
         model=provider_config.model,
+        embedding_model=provider_config.embedding_model or "",
+        embeddings_enabled=bool(provider_config.embedding_model and provider_config.api_key),
         base_url=provider_config.base_url or "",
         api_key_configured=bool(provider_config.api_key),
         api_key_hint=mask_secret(provider_config.api_key) or "",

@@ -10,6 +10,7 @@ from .db_utils import retry_on_locked
 
 SETTINGS_LLM_PROVIDER = "llm_provider"
 SETTINGS_LLM_MODEL = "llm_model"
+SETTINGS_LLM_EMBEDDING_MODEL = "llm_embedding_model"
 SETTINGS_LLM_BASE_URL = "llm_base_url"
 SETTINGS_LLM_API_KEY = "llm_api_key"
 SETTINGS_LLM_ESCALATION_MODEL = "llm_escalation_model"
@@ -22,6 +23,7 @@ SETTINGS_LLM_MAX_RETRIES = "llm_max_retries"
 LLM_SETTINGS_KEYS = (
     SETTINGS_LLM_PROVIDER,
     SETTINGS_LLM_MODEL,
+    SETTINGS_LLM_EMBEDDING_MODEL,
     SETTINGS_LLM_BASE_URL,
     SETTINGS_LLM_API_KEY,
     SETTINGS_LLM_ESCALATION_MODEL,

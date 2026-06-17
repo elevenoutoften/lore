@@ -35,6 +35,7 @@ class LLMProviderConfig:
 
     name: str
     model: str
+    embedding_model: str | None = None
     base_url: str | None = DEFAULT_BASE_URL
     api_key: str | None = None
     max_tokens: int = 4096
@@ -52,6 +53,7 @@ class LLMProviderConfig:
         return cls(
             name=os.environ.get(f"{prefix}_PROVIDER", "none"),
             model=os.environ.get(f"{prefix}_MODEL", default_model),
+            embedding_model=os.environ.get(f"{prefix}_EMBEDDING_MODEL"),
             base_url=os.environ.get(f"{prefix}_BASE_URL", DEFAULT_BASE_URL),
             api_key=os.environ.get(f"{prefix}_API_KEY"),
             max_tokens=int(os.environ.get(f"{prefix}_MAX_TOKENS", "4096")),
@@ -208,6 +210,44 @@ class LLMClient:
         self._client.close()
 
 
+class EmbeddingClient:
+    """Small synchronous client for an OpenAI-compatible embeddings endpoint."""
+
+    def __init__(self, config: LLMProviderConfig):
+        if not config.embedding_model:
+            raise ValueError("An embedding model is required")
+        self.model = config.embedding_model
+        headers = {"Content-Type": "application/json"}
+        if config.api_key:
+            headers["Authorization"] = f"Bearer {config.api_key}"
+        self._client = Client(
+            base_url=config.base_url or DEFAULT_BASE_URL,
+            headers=headers,
+            timeout=config.timeout_seconds,
+        )
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        response = self._client.post("/embeddings", json={"model": self.model, "input": texts})
+        response.raise_for_status()
+        rows = sorted(response.json()["data"], key=lambda row: int(row.get("index", 0)))
+        vectors = [[float(value) for value in row["embedding"]] for row in rows]
+        if len(vectors) != len(texts) or not vectors or any(len(row) != len(vectors[0]) for row in vectors):
+            raise LLMError("Embedding endpoint returned malformed vectors")
+        return vectors
+
+    def close(self) -> None:
+        self._client.close()
+
+
+def build_embedding_client_from_config(config: LLMProviderConfig) -> EmbeddingClient | None:
+    """Build dense retrieval only when both a model and API key are configured."""
+    if not config.embedding_model or not config.api_key:
+        return None
+    return EmbeddingClient(config)
+
+
 class LLMError(Exception):
     """Permanent LLM request failure."""
 
@@ -296,6 +336,7 @@ def _primary_config_from_lore_config(config: LoreConfig) -> LLMProviderConfig:
     return LLMProviderConfig(
         name=config.llm_provider,
         model=config.llm_model or DEFAULT_EXTRACTION_MODEL,
+        embedding_model=config.llm_embedding_model or None,
         base_url=config.llm_base_url or None,
         api_key=config.llm_api_key,
         max_tokens=config.llm_max_tokens,

@@ -51,6 +51,55 @@ def test_vector_store_searches_sparse_tfidf(tmp_path):
     assert results[0]["score"] > 0
 
 
+class SynonymEmbeddings:
+    model = "test-paraphrase-v1"
+
+    def embed(self, texts):
+        vectors = []
+        for text in texts:
+            lowered = text.lower()
+            if any(token in lowered for token in ("auth", "login", "token", "failure", "fails")):
+                vectors.append([1.0, 0.0, 0.0])
+            elif "render" in lowered:
+                vectors.append([0.0, 1.0, 0.0])
+            else:
+                vectors.append([0.0, 0.0, 1.0])
+        return vectors
+
+    def close(self):
+        pass
+
+
+def test_vector_store_dense_paraphrase_search_persists_in_sqlite_vec(tmp_path):
+    path = tmp_path / "vectors.db"
+    store = VectorStore(path)
+    store.configure_embedding_backend(SynonymEmbeddings())
+    store.upsert_page_chunks(
+        "auth-runbook",
+        [{"chunk_id": "auth#0", "page_id": "auth-runbook", "chunk_index": 0, "content": "login token failure"}],
+    )
+    store.upsert_page_chunks(
+        "rendering",
+        [{"chunk_id": "render#0", "page_id": "rendering", "chunk_index": 0, "content": "GPU render queue"}],
+    )
+
+    results = store.search("auth fails", limit=2)
+
+    assert results[0]["page_id"] == "auth-runbook"
+    assert results[0]["semantic_similarity"] == 1.0
+    assert store._conn.execute("SELECT COUNT(*) FROM dense_vectors").fetchone() == (2,)
+
+
+def test_vector_store_without_embedding_backend_keeps_sparse_fallback(tmp_path):
+    store = VectorStore(tmp_path / "vectors.db")
+    store.upsert_page_chunks(
+        "auth-runbook",
+        [{"chunk_id": "auth#0", "page_id": "auth-runbook", "chunk_index": 0, "content": "login token failure"}],
+    )
+
+    assert store.search("auth fails") == []
+
+
 def test_hybrid_rrf_preserves_fts_only_hit_against_larger_vector_scores():
     class FakeSearch:
         def search(self, query, **kwargs):

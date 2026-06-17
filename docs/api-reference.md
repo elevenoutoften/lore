@@ -218,8 +218,12 @@ Secrets are never returned: responses expose `*_configured` (bool) and a masked
 curl -sS "$LORE_URL/api/settings/llm" -H "Authorization: Bearer $LORE_TOKEN"
 curl -sS -X PUT "$LORE_URL/api/settings/llm" \
   -H "Authorization: Bearer $LORE_ADMIN_TOKEN" -H "Content-Type: application/json" \
-  -d '{"provider":"ollama","model":"glm-5.1","base_url":"https://ollama.com/v1","api_key":"sk-..."}'
+  -d '{"provider":"ollama","model":"glm-5.1","embedding_model":"embeddinggemma","base_url":"https://ollama.com/v1","api_key":"sk-..."}'
 ```
+
+`embedding_model` is optional. When it and the primary API key are configured,
+Lore hot-rebuilds its sqlite-vec dense index and uses semantic similarity in RAG
+and memory recall. Omitting either value preserves the keyless TF-IDF fallback.
 
 ## Decisions and Procedures
 

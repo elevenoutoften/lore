@@ -7,7 +7,10 @@ import threading
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from .db_utils import retry_on_locked
 from .provenance import merge_trace_provenance
@@ -103,6 +106,14 @@ class LedgerDB:
         self._conn_lock = threading.Lock()
         self._lock = threading.RLock()
         self._generation: int = 0
+        self._semantic_scorer: Callable[[str, list[str]], list[float] | None] | None = None
+
+    @property
+    def semantic_recall_enabled(self) -> bool:
+        return self._semantic_scorer is not None
+
+    def configure_semantic_scorer(self, scorer: Callable[[str, list[str]], list[float] | None] | None) -> None:
+        self._semantic_scorer = scorer
 
     @property
     def generation(self) -> int:
@@ -1053,8 +1064,16 @@ class LedgerDB:
             limit=pool_limit,
         )
 
+        claim_texts = [_claim_text(row) for row in pool]
+        semantic_scores: list[float] | None = None
+        if query and self._semantic_scorer is not None:
+            try:
+                semantic_scores = self._semantic_scorer(query, claim_texts)
+            except Exception:
+                semantic_scores = None
+
         scored: list[dict[str, Any]] = []
-        for row in pool:
+        for index, row in enumerate(pool):
             anchor = row.get("updated_at") or row.get("created_at")
             age_days = _age_in_days(anchor, now_dt)
             score = compute_recall_score(
@@ -1062,7 +1081,8 @@ class LedgerDB:
                 age_days=age_days,
                 access_count=int(row.get("access_count") or 0),
                 query=query,
-                text=_claim_text(row),
+                text=claim_texts[index],
+                semantic_similarity=semantic_scores[index] if semantic_scores is not None else None,
             )
             entry = dict(row)
             entry["recall_score"] = round(score.total, 6)

@@ -62,6 +62,25 @@ def test_compute_recall_score_query_biases_relevant_claim():
     assert irrelevant.relevance == 0.0
 
 
+def test_semantic_similarity_lifts_paraphrase_without_changing_sparse_default():
+    sparse = compute_recall_score(
+        strength=0.5, age_days=0, access_count=0, query="auth fails", text="login token failure"
+    )
+    dense = compute_recall_score(
+        strength=0.5,
+        age_days=0,
+        access_count=0,
+        query="auth fails",
+        text="login token failure",
+        semantic_similarity=1.0,
+    )
+
+    assert sparse.semantic_similarity == 0.0
+    assert dense.semantic_similarity == 1.0
+    assert dense.total > sparse.total
+    assert "semantic_similarity" in weights_for_query("auth fails", semantic_available=True)
+
+
 # ─── Ledger recall ──────────────────────────────────────────────────────────
 
 
@@ -211,7 +230,14 @@ def test_memory_recall_endpoint_returns_ranked_claims(client):
     assert body["latency_ms"] >= 0.0
     top = body["claims"][0]
     assert top["subject"] == "services/lore"
-    assert set(top["recall_signals"]) == {"total", "strength", "recency", "salience", "relevance"}
+    assert set(top["recall_signals"]) == {
+        "total",
+        "strength",
+        "recency",
+        "salience",
+        "relevance",
+        "semantic_similarity",
+    }
 
 
 def test_memory_recall_endpoint_no_query_drops_relevance_weight(client):

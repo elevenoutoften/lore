@@ -62,6 +62,7 @@ class LoreApiKeyCreateResponse(LoreApiKeyResponse):
 class LlmSettingsUpdate(BaseModel):
     provider: str | None = None
     model: str | None = None
+    embedding_model: str | None = None
     base_url: str | None = None
     api_key: str | None = None
     escalation_model: str | None = None
@@ -75,6 +76,8 @@ class LlmSettingsUpdate(BaseModel):
 class LlmSettingsResponse(BaseModel):
     provider: str
     model: str
+    embedding_model: str
+    embeddings_enabled: bool
     base_url: str
     api_key_configured: bool
     api_key_hint: str

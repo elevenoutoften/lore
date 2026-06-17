@@ -21,7 +21,7 @@ from .context_graph import ContextGraphCache
 from .ledger import LedgerDB
 from .link_graph import LinkGraphCache
 from .lint_config import LintConfig
-from .llm_provider import build_llm_client_from_config
+from .llm_provider import build_embedding_client_from_config, build_llm_client_from_config
 from .observability import MetricsCollector, log_request
 from .patch_planner import PatchPlanner
 from .policy_engine import PolicyEngine
@@ -81,6 +81,14 @@ def rebuild_llm_client(app: FastAPI) -> None:
         old_client = app.state.llm_client
         provider_config = merged_llm_config(app.state.config, app.state.settings_store)
         app.state.llm_client = build_llm_client_from_config(provider_config)
+        rebuild_dense = app.state.vector_store.configure_embedding_backend(
+            build_embedding_client_from_config(provider_config)
+        )
+        app.state.ledger_db.configure_semantic_scorer(
+            app.state.vector_store.semantic_similarities if app.state.vector_store.dense_enabled else None
+        )
+        if rebuild_dense:
+            rebuild_vector_index(app.state.repository, app.state.vector_store)
         old_client.close()
 
 
@@ -125,6 +133,11 @@ def create_app(
     api_key_store.initialize()
     settings_store = SettingsStore(lore_config.settings_db)
     settings_store.initialize()
+    provider_config = merged_llm_config(lore_config, settings_store)
+    dense_rebuild_required = vector_store.configure_embedding_backend(
+        build_embedding_client_from_config(provider_config)
+    )
+    ledger_db.configure_semantic_scorer(vector_store.semantic_similarities if vector_store.dense_enabled else None)
     audit_log = AuditLog(
         Path(lore_config.content_dir) / ".lore" / "audit", retention_days=lore_config.audit_retention_days
     )
@@ -151,7 +164,7 @@ def create_app(
             except Exception:  # pragma: no cover - best-effort startup index
                 logging.getLogger("lore").exception("Startup full-text index build failed; run /api/search/reindex.")
             try:
-                if vector_store.chunk_count() == 0:
+                if vector_store.chunk_count() == 0 or dense_rebuild_required:
                     # The vector build can be expensive, so it is capped; very large
                     # vaults must opt in with /api/search/reindex. Warn loudly rather
                     # than skip silently, or lore_rag_context returns 0 with no clue why.
@@ -213,7 +226,7 @@ def create_app(
     app.state.metrics = metrics
     app.state.templates = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
     app.state.code_inventories = {}
-    app.state.llm_client = build_llm_client_from_config(merged_llm_config(lore_config, settings_store))
+    app.state.llm_client = build_llm_client_from_config(provider_config)
     app.state.write_rate_limiter = RateLimiter(
         max_requests=lore_config.write_rate_limit,
         window_seconds=lore_config.write_rate_window_seconds,

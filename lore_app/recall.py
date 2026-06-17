@@ -1,6 +1,6 @@
 """Recency- and salience-weighted recall scoring over the claim ledger.
 
-Recall ranks ledger claims for an agent's query by combining four signals:
+Recall ranks ledger claims for an agent's query by combining explainable signals:
 
 - **strength** — the reinforce/decay ledger value (repeated, corroborated claims
   rise; untouched claims decay). Already normalised to ``[0.01, 1.0]``.
@@ -40,7 +40,8 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "strength": 0.45,
     "recency": 0.25,
     "salience": 0.15,
-    "relevance": 0.15,
+    "relevance": 0.05,
+    "semantic_similarity": 0.10,
 }
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -55,6 +56,7 @@ class RecallScore:
     recency: float
     salience: float
     relevance: float
+    semantic_similarity: float
 
     def as_dict(self) -> dict[str, float]:
         return {
@@ -63,6 +65,7 @@ class RecallScore:
             "recency": round(self.recency, 6),
             "salience": round(self.salience, 6),
             "relevance": round(self.relevance, 6),
+            "semantic_similarity": round(self.semantic_similarity, 6),
         }
 
 
@@ -103,8 +106,10 @@ def text_relevance(query: str, text: str) -> float:
     return len(overlap) / len(query_tokens)
 
 
-def _effective_weights(query: str | None) -> dict[str, float]:
+def _effective_weights(query: str | None, *, semantic_available: bool = False) -> dict[str, float]:
     weights = dict(DEFAULT_WEIGHTS)
+    if not semantic_available:
+        weights["relevance"] += weights.pop("semantic_similarity")
     if query and query.strip():
         return weights
     # No query: drop relevance and renormalise the remaining signals to sum to 1.
@@ -116,9 +121,11 @@ def _effective_weights(query: str | None) -> dict[str, float]:
     return {key: value * scale for key, value in weights.items()}
 
 
-def weights_for_query(query: str | None) -> dict[str, float]:
+def weights_for_query(query: str | None, *, semantic_available: bool = False) -> dict[str, float]:
     """The effective signal weights recall uses for a given query (rounded)."""
-    return {key: round(value, 6) for key, value in _effective_weights(query).items()}
+    return {
+        key: round(value, 6) for key, value in _effective_weights(query, semantic_available=semantic_available).items()
+    }
 
 
 def compute_recall_score(
@@ -128,19 +135,22 @@ def compute_recall_score(
     access_count: int,
     query: str | None = None,
     text: str = "",
+    semantic_similarity: float | None = None,
 ) -> RecallScore:
     """Combine strength, recency, salience, and relevance into one recall score."""
-    weights = _effective_weights(query)
+    weights = _effective_weights(query, semantic_available=semantic_similarity is not None)
     strength_signal = max(0.0, min(1.0, float(strength)))
     recency_signal = recency_score(age_days)
     salience_signal = salience_score(access_count)
     relevance_signal = text_relevance(query or "", text) if "relevance" in weights else 1.0
+    semantic_signal = max(0.0, min(1.0, float(semantic_similarity or 0.0)))
 
     total = (
         weights.get("strength", 0.0) * strength_signal
         + weights.get("recency", 0.0) * recency_signal
         + weights.get("salience", 0.0) * salience_signal
         + weights.get("relevance", 0.0) * relevance_signal
+        + weights.get("semantic_similarity", 0.0) * semantic_signal
     )
     return RecallScore(
         total=total,
@@ -148,6 +158,7 @@ def compute_recall_score(
         recency=recency_signal,
         salience=salience_signal,
         relevance=relevance_signal,
+        semantic_similarity=semantic_signal,
     )
 
 

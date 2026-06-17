@@ -9,6 +9,7 @@ import sys
 from .config import LoreConfig
 from .ledger import LedgerDB
 from .link_graph import LinkGraphCache
+from .llm_provider import _primary_config_from_lore_config, build_embedding_client_from_config
 from .mcp import PROJECT_NAME, PROTOCOL_VERSION, TOOLS
 from .rag.vector_store import VectorStore
 from .repository import LoreRepository
@@ -24,6 +25,10 @@ def main() -> int:
     vector_store = VectorStore(str(config.vector_db))
     ledger_db = LedgerDB(config.ledger_db)
     ledger_db.initialize()
+    vector_store.configure_embedding_backend(
+        build_embedding_client_from_config(_primary_config_from_lore_config(config))
+    )
+    ledger_db.configure_semantic_scorer(vector_store.semantic_similarities if vector_store.dense_enabled else None)
     graph_cache = LinkGraphCache()
 
     for line in sys.stdin:
