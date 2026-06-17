@@ -79,6 +79,7 @@ def _create_capture(client) -> str:
             "task_id": "flow_000586",
             "source_paths": ["captures/context.md"],
         },
+        headers={"X-Lore-Actor": "nyx"},
     )
     assert response.status_code == 201, response.text
     return response.json()["page"]["id"]

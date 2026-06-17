@@ -86,8 +86,10 @@ value causes Lore to fail to start rather than silently running without auth.
 
 `bearer` and `basic` require `LORE_AUTH_SECRET` to be set to a non-empty value.
 `api_key` uses the API key database configured by `LORE_API_KEYS_DB`.
-`none` disables auth entirely and is only suitable for private, trusted
-networks.
+`none` disables auth entirely and is single-tenant/shared behavior: capture
+actor/agent is stamped as the local request actor (`anonymous` unless trusted
+proxy headers are enabled), and recall is not isolated by API key. Use it only
+for private loopback or otherwise trusted local deployments.
 
 ## API
 
@@ -234,10 +236,13 @@ advisory; raw Markdown remains the source of truth.
 The capture endpoint writes rough agent memory into ordinary draft Markdown
 pages for autonomous consolidation. Shared captures go under
 `inbox/YYYY-MM-DD/<slug>`; agent-scoped notes go under
-`notes/<agent>/YYYY-MM-DD/<slug>`. Captures can include a source task, related
-pages, confidence, suggested target page, and sources. Captured memory is not
-accepted project truth until an agent, automation, or explicit operator action
-promotes or incorporates it into canonical Lore pages.
+`notes/<agent>/YYYY-MM-DD/<slug>`. In authenticated modes Lore server-stamps the
+capture actor and notes agent from the bearer key actor; body-provided actor or
+agent values are advisory and cannot impersonate another tenant. Captures can
+include a source task, related pages, confidence, suggested target page, and
+sources. Captured memory is not accepted project truth until an agent,
+automation, or explicit operator action promotes or incorporates it into
+canonical Lore pages.
 
 The captures endpoint lists the intake queue. It defaults to draft captures and
 accepts `status=all` to show every capture status. Human review is an escalation

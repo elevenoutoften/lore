@@ -18,7 +18,7 @@ from .security import sanitize_content, sanitize_page_id
 if TYPE_CHECKING:
     from .link_graph import LinkGraphCache
     from .rag.vector_store import VectorStore
-    from .schemas import LinkEdge, PageDetail, PageLinks, PageSummary
+    from .schemas import CaptureRequest, LinkEdge, PageDetail, PageLinks, PageSummary
     from .search_index import LoreSearchIndex
 
 GIT_REF_CACHE_TTL_SECONDS = 300
@@ -84,6 +84,42 @@ def actor_from_request(request: Request) -> str:
         if header_actor:
             return header_actor
     return "anonymous"
+
+
+def stamp_capture_actor(payload: CaptureRequest, request: Request) -> CaptureRequest:
+    """Return a capture payload attributed to the server-resolved caller."""
+    actor = actor_from_request(request)
+    return payload.model_copy(update={"actor": actor, "agent": actor})
+
+
+def recall_actor_scope(
+    request: Request,
+    *,
+    requested_actor: str | None,
+    cross_actor: bool = False,
+) -> str | None:
+    """Resolve the actor filter that must be applied to recall queries.
+
+    Authenticated modes are tenant-scoped by default. In auth_mode='none', Lore is
+    a single shared local tenant, so caller-supplied actor filters keep their old
+    meaning and no mandatory actor scope is applied.
+    """
+    config = getattr(request.app.state, "config", None)
+    if getattr(config, "auth_mode", "none") == "none":
+        return requested_actor
+
+    caller_actor = actor_from_request(request)
+    caller_role = str(getattr(request.state, "lore_role", "") or "").strip()
+    requested = str(requested_actor or "").strip() or None
+
+    if cross_actor:
+        if caller_role != "admin":
+            raise PermissionError("Admin role is required for cross-actor recall.")
+        return requested
+
+    if requested and requested != caller_actor:
+        raise PermissionError("Cross-actor recall requires admin role and cross_actor=true.")
+    return caller_actor
 
 
 def validate_page_id_input(page_id: str) -> None:

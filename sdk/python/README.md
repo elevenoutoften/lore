@@ -80,7 +80,10 @@ memory.acknowledge_recall([claim["candidate_id"] for claim in claims])
 
 Each recalled claim includes a `recall_score` and a `recall_signals` breakdown
 (`strength`, `recency`, `salience`, `relevance`). Recall is read-only by
-default; `acknowledge_recall` is the explicit salience boost path.
+default; `acknowledge_recall` is the explicit salience boost path. On
+authenticated servers, capture actor/agent is stamped from the token actor and
+recall is scoped to that actor by default. Admin tokens can pass
+`cross_actor=True` to explicitly recall across actors.
 
 ## Trace-Linked Capture
 

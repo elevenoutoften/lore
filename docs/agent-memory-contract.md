@@ -11,10 +11,17 @@ actually use.
 Every agent connects with a single bearer token. The token is the tenancy boundary:
 
 - In `api_key` auth mode the token resolves to an **actor** (the key's `name`) and a
-  **role** (`admin`, `editor`, or `reader`). Reader tokens are rejected on any
+  **role** (`admin`, `writer`, or `reader`). Reader tokens are rejected on any
   mutating request (`POST`/`PUT`/`PATCH`/`DELETE`). See [security.md](security.md).
 - The resolved actor is attached to the request and used for attribution and for
   actor-scoped reads. Agents never share a token; each agent is its own actor.
+- In `bearer` and `basic` auth modes the single configured secret is treated as an
+  admin operator actor. Recall is still scoped to that resolved actor unless the
+  admin explicitly requests cross-actor recall.
+- In `auth_mode=none`, Lore is single-tenant/shared local memory. There is no API
+  key boundary: capture actor/agent is the local request actor (`anonymous` by
+  default, or a trusted proxy header when enabled), and recall is not isolated by
+  token. Use this only for loopback/private trusted deployments.
 
 ```
 Authorization: Bearer <lore-api-key>
@@ -49,6 +56,11 @@ curl -sS https://lore.example/api/memory/capture \
     "metadata": {"confidence": "high", "source_task": "flow_000770"}
   }'
 ```
+
+In authenticated modes the server ignores `actor` and `agent_name`/`agent` values
+for tenancy. It stamps the capture actor and notes namespace agent from the
+authenticated request actor. Body values are advisory context only and cannot
+write memory as another actor.
 
 MCP tool: `lore_capture`. Python SDK: `MemoryProvider.capture(...)`.
 
@@ -134,10 +146,18 @@ curl -sS "https://lore.example/api/memory/recall?query=memory+backend&limit=5" \
 }
 ```
 
-Filters: `subject`, `lane`, `actor`, `min_strength`, `valid_at`, `limit`.
+By default, authenticated recall is scoped to the caller's actor even when no
+`actor` filter is supplied. A non-admin caller cannot read another actor's claims
+by passing `actor`. Admin callers are also scoped by default; to recall across
+actors they must explicitly set `cross_actor=true`. With `cross_actor=true`, an
+admin may either omit `actor` to query all actors or set `actor` to target one
+actor.
 
-MCP tool: `lore_recall` (same parameters and ranking). Python SDK:
-`MemoryProvider.recall(query=..., lane=..., actor=...)`.
+Filters: `subject`, `lane`, `actor`, `min_strength`, `valid_at`, `limit`,
+`cross_actor`.
+
+MCP tool: `lore_recall` (same parameters and ranking, including
+`cross_actor`). Python SDK: `MemoryProvider.recall(query=..., lane=..., actor=...)`.
 
 To acknowledge use:
 

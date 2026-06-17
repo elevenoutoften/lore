@@ -20,11 +20,14 @@ def make_client(tmp_path) -> TestClient:
     return TestClient(create_app(config))
 
 
-def rpc(client: TestClient, method: str, params: dict | None = None, request_id: int = 1):
+def rpc(client: TestClient, method: str, params: dict | None = None, request_id: int = 1, headers: dict | None = None):
+    request_headers = {"Mcp-Method": method}
+    if headers:
+        request_headers.update(headers)
     return client.post(
         "/mcp",
         json={"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}},
-        headers={"Mcp-Method": method},
+        headers=request_headers,
     )
 
 
@@ -78,6 +81,7 @@ See [[dailies/{capture_date}]].
                 "constraints": ["offline-only"],
                 "policies_applied": ["L-MEM-05"],
             },
+            headers={"X-Lore-Actor": "codex"},
         )
         assert captured.status_code == 201, captured.text
         capture_id = captured.json()["capture_id"]
@@ -209,6 +213,7 @@ See [[dailies/{capture_date}]].
                     "suggested_target_page": durable_page_id,
                 },
             },
+            headers={"X-Lore-Actor": "codex"},
         )
         assert mcp_capture.status_code == 200, mcp_capture.text
         mcp_capture_id = mcp_capture.json()["result"]["structuredContent"]["page"]["id"]

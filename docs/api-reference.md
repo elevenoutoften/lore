@@ -198,8 +198,8 @@ curl -sS "$LORE_URL/api/promotions"
 | `POST` | `/api/extraction/deadletters/{deadletter_id}/retry` | Retry one extraction dead-letter and resolve it when candidates are produced. |
 | `GET` | `/api/extraction/batches` | List extraction batches. |
 | `GET` | `/api/extraction/candidates` | List extracted candidates. Query: `status`, `type`, `page_id`. |
-| `POST` | `/api/memory/capture` | Lightweight memory capture. |
-| `GET` | `/api/memory/recall` | Ranked claim recall. Read-only by default; `record_access=false` unless explicitly set. |
+| `POST` | `/api/memory/capture` | Lightweight memory capture. Authenticated modes server-stamp actor/agent from the token actor. |
+| `GET` | `/api/memory/recall` | Ranked claim recall. Authenticated modes are scoped to the token actor; admins must set `cross_actor=true` for cross-actor reads. Read-only by default; `record_access=false` unless explicitly set. |
 | `POST` | `/api/memory/recall/ack` | Acknowledge used recall claims. Body: `{candidate_ids}`. |
 | `GET` | `/api/memory/health` | Memory subsystem health counts. |
 

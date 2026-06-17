@@ -37,6 +37,7 @@ from ..rag.chunker import chunk_page
 from ..rag.hybrid_retrieval import hybrid_retrieve_expanded
 from ..recall import count_pending_captures, recall_hint, weights_for_query
 from ..repository import InvalidPageId, LoreRepository
+from ..route_utils import recall_actor_scope, stamp_capture_actor
 from ..schemas import (
     CaptureRequest,
     ContextExplainQuery,
@@ -222,6 +223,11 @@ TOOLS: list[dict[str, Any]] = [
                     "type": "boolean",
                     "default": False,
                     "description": "Explicitly stamp access on returned claims. Defaults false so reads are idempotent.",
+                },
+                "cross_actor": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Admin-only: explicitly allow recall outside the authenticated actor scope.",
                 },
             },
         },
@@ -1218,6 +1224,12 @@ def _handle_lore_recall(ctx: McpContext) -> dict[str, Any]:
     min_strength = max(0.0, min(float(arguments.get("min_strength") or 0.0), 1.0))
     limit = max(1, min(int(arguments.get("limit") or 20), 200))
     record_access = bool(arguments.get("record_access", False))
+    cross_actor = bool(arguments.get("cross_actor", False))
+    if ctx.request is not None:
+        try:
+            actor = recall_actor_scope(ctx.request, requested_actor=actor, cross_actor=cross_actor)
+        except PermissionError as exc:
+            raise JsonRpcError(-32602, str(exc)) from exc
     rows = ledger.recall_claims(
         query=query,
         subject=subject,
@@ -1443,7 +1455,10 @@ def _handle_lore_export_procedure(ctx: McpContext) -> dict[str, Any]:
 def _handle_lore_capture(ctx: McpContext) -> dict[str, Any]:
     arguments = tool_arguments(ctx.params)
     try:
-        page = capture_memory(ctx.repo, CaptureRequest(**arguments))
+        capture_request = CaptureRequest(**arguments)
+        if ctx.request is not None:
+            capture_request = stamp_capture_actor(capture_request, ctx.request)
+        page = capture_memory(ctx.repo, capture_request)
     except InvalidPageId as exc:
         raise JsonRpcError(-32602, str(exc)) from exc
     except ValidationError as exc:

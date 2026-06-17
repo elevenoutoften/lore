@@ -132,6 +132,7 @@ class MemoryProvider:
         min_strength: float = 0.0,
         limit: int = 20,
         record_access: bool = False,
+        cross_actor: bool = False,
     ) -> list[dict[str, Any]]:
         """Recall durable memory ranked by recency/salience-weighted score.
 
@@ -147,6 +148,8 @@ class MemoryProvider:
             limit: Max claims to return.
             record_access: Explicitly stamp access on returned claims. Defaults
                 false so reads are idempotent.
+            cross_actor: Admin-only flag to explicitly recall outside the
+                authenticated actor scope.
         """
         params: dict[str, str] = {"limit": str(int(limit))}
         if query:
@@ -160,6 +163,8 @@ class MemoryProvider:
         if min_strength:
             params["min_strength"] = str(float(min_strength))
         params["record_access"] = "true" if record_access else "false"
+        if cross_actor:
+            params["cross_actor"] = "true"
         path = "/api/memory/recall?" + urllib.parse.urlencode(params)
         result = self._send_with_retry("GET", path)
         claims = result.get("claims") if isinstance(result, dict) else None

@@ -29,6 +29,7 @@ def test_round_trip_provenance_chain(client):
             "source_paths": [source_path],
             "source_urls": [source_url],
         },
+        headers={"X-Lore-Actor": actor},
     )
     assert capture.status_code == 201, capture.text
     capture_page = capture.json()["page"]

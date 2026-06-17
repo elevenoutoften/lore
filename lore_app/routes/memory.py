@@ -23,7 +23,7 @@ from ..heartbeat import heartbeat_review
 from ..post_capture import run_post_capture_side_effects
 from ..recall import count_pending_captures, recall_hint, weights_for_query
 from ..repository import InvalidPageId, LoreRepository
-from ..route_utils import record_audit, validate_content
+from ..route_utils import recall_actor_scope, record_audit, stamp_capture_actor, validate_content
 from ..schemas import (
     CaptureRequest,
     MemoryCaptureRequest,
@@ -96,6 +96,7 @@ def api_memory_capture(
         policies_applied=payload.policies_applied
         or (metadata.get("policies_applied") if isinstance(metadata.get("policies_applied"), list) else []),
     )
+    capture_request = stamp_capture_actor(capture_request, request)
 
     try:
         page = capture_memory(repo, capture_request)
@@ -164,6 +165,7 @@ def api_memory_health(
 
 @router.get("/api/memory/recall", response_model=MemoryRecallResponse)
 def api_memory_recall(
+    request: Request,
     query: str | None = Query(
         default=None, description="Optional natural-language query to bias by lexical relevance."
     ),
@@ -177,6 +179,10 @@ def api_memory_recall(
         default=False,
         description="Explicitly stamp access on returned claims. Defaults false so reads are idempotent.",
     ),
+    cross_actor: bool = Query(
+        default=False,
+        description="Admin-only: explicitly allow recall outside the authenticated actor scope.",
+    ),
     ledger: LedgerDB = Depends(get_ledger_db),
     repo: LoreRepository = Depends(get_repo),
 ) -> MemoryRecallResponse:
@@ -187,6 +193,10 @@ def api_memory_recall(
     returning the score breakdown so agents can see why each claim surfaced.
     """
     start = time.perf_counter()
+    try:
+        actor = recall_actor_scope(request, requested_actor=actor, cross_actor=cross_actor)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     rows = ledger.recall_claims(
         query=query,
         subject=subject,

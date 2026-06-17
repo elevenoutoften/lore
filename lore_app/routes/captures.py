@@ -30,6 +30,7 @@ from ..repository import InvalidPageId, LoreRepository, optional_string, string_
 from ..route_utils import (
     index_vectors_for_page,
     record_audit,
+    stamp_capture_actor,
     template_context,
     validate_content,
     validate_optional_content,
@@ -97,6 +98,7 @@ def api_capture(
     for related_page_id in payload.related_pages:
         validate_page_id_input(related_page_id)
     validate_optional_page_id_input(payload.suggested_target_page)
+    payload = stamp_capture_actor(payload, request)
     try:
         page = capture_memory(repo, payload)
     except InvalidPageId as exc:

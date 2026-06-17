@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 
-def rpc(client, method, params=None, request_id=1):
+def rpc(client, method, params=None, request_id=1, headers=None):
+    request_headers = {"Mcp-Method": method}
+    if headers:
+        request_headers.update(headers)
     return client.post(
         "/mcp",
         json={"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}},
-        headers={"Mcp-Method": method},
+        headers=request_headers,
     )
 
 
@@ -331,6 +334,7 @@ def test_mcp_capture(client):
                 "related_pages": ["services/workflow-engine"],
             },
         },
+        headers={"X-Lore-Actor": "codex"},
     ).json()
 
     page = captured["result"]["structuredContent"]["page"]

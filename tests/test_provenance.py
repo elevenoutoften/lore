@@ -56,6 +56,7 @@ def test_legacy_fields_merged_into_provenance(client):
             "constraints": ["Keep legacy fields."],
             "policies_applied": ["trace-protocol"],
         },
+        headers={"X-Lore-Actor": "nyx"},
     )
 
     assert response.status_code == 201, response.text
