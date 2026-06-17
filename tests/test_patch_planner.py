@@ -12,7 +12,7 @@ from lore_app.audit import AuditLog
 from lore_app.config import LoreConfig
 from lore_app.ledger import LedgerDB
 from lore_app.main import create_app
-from lore_app.patch_planner import PatchPlanner
+from lore_app.patch_planner import PatchPlanner, _insert_into_section
 from lore_app.repository import LoreRepository
 from lore_app.schemas import ExtractedClaim, ExtractionResult, PatchOperation, RiskLevel
 
@@ -303,6 +303,16 @@ status: accepted
 
     assert plan.operation != PatchOperation.mark_stale
     assert plan.risk_level != RiskLevel.high
+
+
+def test_stale_marker_insertion_is_idempotent():
+    marker = "<!-- stale: auto-consolidation detected a contradiction requiring review -->"
+    content = "# Deploy Lore\n"
+
+    content = _insert_into_section(content, "## Review Notes", marker)
+    content = _insert_into_section(content, "## Review Notes", marker)
+
+    assert content.count(marker) == 1
 
 
 def test_apply_plan_creates_stub_page_with_expected_frontmatter(tmp_path, monkeypatch):

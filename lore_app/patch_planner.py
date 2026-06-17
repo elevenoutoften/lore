@@ -872,6 +872,9 @@ def _dedupe_block_for_section(content: str, heading: str, block: str) -> str:
     incoming_paragraphs = _split_paragraphs(block)
     if not incoming_paragraphs:
         return ""
+    existing_paragraphs = {
+        " ".join(paragraph.casefold().split()) for paragraph in _section_paragraphs(content, heading)
+    }
     existing_facts = {
         fact
         for paragraph in _section_paragraphs(content, heading)
@@ -883,7 +886,11 @@ def _dedupe_block_for_section(content: str, heading: str, block: str) -> str:
         fact = _normalized_fact_text(paragraph)
         if fact and fact in existing_facts:
             continue
+        raw_paragraph = " ".join(paragraph.casefold().split())
+        if not fact and raw_paragraph in existing_paragraphs:
+            continue
         kept.append(paragraph)
+        existing_paragraphs.add(raw_paragraph)
         if fact:
             existing_facts.add(fact)
     return "\n\n".join(kept)
