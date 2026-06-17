@@ -298,12 +298,14 @@ def cmd_info() -> int:
 
 def cmd_consolidate(args: argparse.Namespace) -> int:
     from .audit import AuditLog
-    from .config import LoreConfig
+    from .config import LoreConfig, merged_llm_config
     from .consolidation_worker import ConsolidationWorker
     from .ledger import LedgerDB
+    from .llm_provider import build_llm_client_from_config
     from .patch_planner import PatchPlanner
     from .policy_engine import PolicyEngine
     from .repository import LoreRepository
+    from .settings_store import SettingsStore
 
     config = LoreConfig()
     dry_run = not args.apply
@@ -320,12 +322,24 @@ def cmd_consolidate(args: argparse.Namespace) -> int:
     planner = PatchPlanner(repo, ledger, audit, policy_engine=PolicyEngine(ledger))
     worker = ConsolidationWorker(repo, ledger, planner, config, audit)
 
-    result = worker.run(
-        dry_run=dry_run,
-        batch_size=args.batch_size,
-        max_auto_apply=max_auto_apply,
-        force_reextract=args.force_reextract,
-    )
+    # The scheduled runner has no app.state, so build the configured LLM client
+    # from runtime settings here and hand it to the run.
+    settings_store = SettingsStore(config.settings_db)
+    settings_store.initialize()
+    llm_client = build_llm_client_from_config(merged_llm_config(config, settings_store))
+
+    try:
+        result = worker.run(
+            dry_run=dry_run,
+            batch_size=args.batch_size,
+            max_auto_apply=max_auto_apply,
+            force_reextract=args.force_reextract,
+            llm_client=llm_client,
+        )
+    finally:
+        close = getattr(llm_client, "close", None)
+        if callable(close):
+            close()
 
     print(json.dumps(result.model_dump(), indent=2, default=str))
     return 1 if result.errors else 0

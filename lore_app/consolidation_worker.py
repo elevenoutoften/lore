@@ -24,6 +24,8 @@ from .schemas import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from .config import LoreConfig
 
 logger = logging.getLogger("lore.consolidation")
@@ -76,12 +78,17 @@ class ConsolidationWorker:
         planner: PatchPlanner,
         config: LoreConfig,
         audit_log: AuditLog | None = None,
+        llm_client_provider: Callable[[], Any] | None = None,
     ):
         self.repo = repo
         self.ledger = ledger
         self.planner = planner
         self.config = config
         self.audit_log = audit_log
+        # Resolves the current LLM client at run time. The web app hot-swaps
+        # app.state.llm_client on settings changes, so the worker must fetch the
+        # live client per run rather than capture a stale reference.
+        self._llm_client_provider = llm_client_provider
 
     def run(
         self,
@@ -90,8 +97,15 @@ class ConsolidationWorker:
         batch_size: int = 10,
         max_auto_apply: int = 5,
         force_reextract: bool = False,
+        llm_client: Any | None = None,
     ) -> ConsolidationRunResult:
-        """Run extraction, planning, and bounded safe auto-apply."""
+        """Run extraction, planning, and bounded safe auto-apply.
+
+        ``llm_client`` overrides the configured provider for this run; when it is
+        None the worker resolves the live client from ``llm_client_provider`` so
+        LLM-backed extraction runs on the auto-consolidation/scheduled paths, not
+        just the manual extraction route.
+        """
 
         errors: list[str] = []
         batch_id = str(uuid.uuid4())
@@ -103,12 +117,17 @@ class ConsolidationWorker:
             except Exception as exc:  # pragma: no cover - defensive boundary
                 errors.append(f"re-extraction reset failed: {exc}")
 
+        active_llm_client = llm_client
+        if active_llm_client is None and self._llm_client_provider is not None:
+            active_llm_client = self._llm_client_provider()
+
         try:
             extraction_result = extract_from_captures(
                 self.repo,
                 batch_size=batch_size,
                 dry_run=dry_run,
                 ledger_db=self.ledger,
+                llm_client=active_llm_client,
             )
             batch_id = extraction_result.batch_id
         except Exception as exc:  # pragma: no cover - defensive boundary

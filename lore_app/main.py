@@ -203,6 +203,9 @@ def create_app(
         app.state.patch_planner,
         lore_config,
         audit_log,
+        # Resolve the live, hot-reloadable client per run so auto-consolidation
+        # and the scheduled worker use the configured LLM extractor.
+        llm_client_provider=lambda: getattr(app.state, "llm_client", None),
     )
     # Coalescing guard for background auto-consolidation triggered off captures.
     app.state.auto_consolidate_lock = threading.Lock()

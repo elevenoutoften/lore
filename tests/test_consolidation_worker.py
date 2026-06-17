@@ -3,14 +3,17 @@ from __future__ import annotations
 import json
 from argparse import Namespace
 from dataclasses import dataclass
+from unittest import mock
 
 from fastapi.testclient import TestClient
+from tests.test_extraction import valid_llm_response
 
 from lore_app.audit import AuditLog
 from lore_app.cli import cmd_status
 from lore_app.config import LoreConfig
 from lore_app.consolidation_worker import ConsolidationWorker
 from lore_app.ledger import LedgerDB
+from lore_app.llm_provider import FallbackLLMClient
 from lore_app.main import create_app
 from lore_app.patch_planner import PatchPlanner
 from lore_app.repository import LoreRepository
@@ -587,3 +590,42 @@ def test_force_reextract_still_produces_plans(tmp_path, monkeypatch):
 
     reprocessed = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=5, force_reextract=True)
     assert reprocessed.plans_generated >= 1  # was silently 0 before the no-batch-filter fix
+
+
+def _stub_llm_client(capture_id: str, fact: str) -> FallbackLLMClient:
+    primary = mock.MagicMock()
+    primary.extract_json.return_value = valid_llm_response(capture_id, fact)
+    return FallbackLLMClient(primary=primary, escalation=None)
+
+
+def test_run_passes_explicit_llm_client_to_extraction(tmp_path, monkeypatch):
+    # Regression: the worker used to drop the LLM client, so auto-consolidation
+    # and the scheduled runner always extracted deterministically regardless of
+    # the configured provider.
+    ctx = make_context(tmp_path, monkeypatch)
+    add_capture(ctx.repo, "inbox/llm-explicit")
+    client = _stub_llm_client("inbox/llm-explicit", "Lore runs LLM-backed extraction.")
+
+    ctx.worker.run(dry_run=True, batch_size=10, llm_client=client)
+
+    assert client.primary.extract_json.call_count >= 1
+
+
+def test_run_resolves_llm_client_from_provider(tmp_path, monkeypatch):
+    # The web app supplies the live client via llm_client_provider so hot-reloaded
+    # settings take effect without re-creating the worker.
+    ctx = make_context(tmp_path, monkeypatch)
+    add_capture(ctx.repo, "inbox/llm-provider")
+    client = _stub_llm_client("inbox/llm-provider", "Lore runs LLM-backed extraction.")
+    worker = ConsolidationWorker(
+        ctx.repo,
+        ctx.ledger,
+        ctx.planner,
+        ctx.config,
+        ctx.audit_log,
+        llm_client_provider=lambda: client,
+    )
+
+    worker.run(dry_run=True, batch_size=10)
+
+    assert client.primary.extract_json.call_count >= 1
