@@ -63,8 +63,8 @@ def test_round_trip_provenance_chain(client):
     assert candidate["actor"] == actor
     assert candidate["lane"] == lane
     assert candidate["observed_at"] == observed_at
-    assert candidate["valid_from"] == valid_from
-    assert candidate["valid_until"] == valid_until
+    assert candidate["valid_from"] == "2026-05-01T00:00:00+00:00"
+    assert candidate["valid_until"] == "2026-12-31T00:00:00+00:00"
 
     graph = client.get("/api/context-graph")
     assert graph.status_code == 200, graph.text
@@ -72,8 +72,8 @@ def test_round_trip_provenance_chain(client):
     assert candidate_node["metadata"]["actor"] == actor
     assert candidate_node["metadata"]["lane"] == lane
     assert candidate_node["metadata"]["observed_at"] == observed_at
-    assert candidate_node["metadata"]["valid_from"] == valid_from
-    assert candidate_node["metadata"]["valid_until"] == valid_until
+    assert candidate_node["metadata"]["valid_from"] == "2026-05-01T00:00:00+00:00"
+    assert candidate_node["metadata"]["valid_until"] == "2026-12-31T00:00:00+00:00"
 
     reindex = client.post("/api/search/reindex")
     assert reindex.status_code == 200, reindex.text
@@ -82,8 +82,8 @@ def test_round_trip_provenance_chain(client):
     assert search.status_code == 200, search.text
     search_hit = next(hit for hit in search.json()["hits"] if hit["page"]["id"] == capture_id)
     assert search_hit["observed_at"] == observed_at
-    assert search_hit["valid_from"] == valid_from
-    assert search_hit["valid_until"] == valid_until
+    assert search_hit["valid_from"] == "2026-05-01T00:00:00+00:00"
+    assert search_hit["valid_until"] == "2026-12-31T00:00:00+00:00"
     assert search_hit["actor"] == actor
     assert search_hit["lane"] == lane
     assert source_path in search_hit["source_refs"]
@@ -93,8 +93,8 @@ def test_round_trip_provenance_chain(client):
     assert rag.status_code == 200, rag.text
     rag_result = next(result for result in rag.json()["results"] if result["page_id"] == capture_id)
     assert rag_result["observed_at"] == observed_at
-    assert rag_result["valid_from"] == valid_from
-    assert rag_result["valid_until"] == valid_until
+    assert rag_result["valid_from"] == "2026-05-01T00:00:00+00:00"
+    assert rag_result["valid_until"] == "2026-12-31T00:00:00+00:00"
     assert rag_result["actor"] == actor
     assert rag_result["lane"] == lane
     assert source_path in rag_result["source_refs"]

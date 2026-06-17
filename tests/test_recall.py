@@ -201,6 +201,76 @@ def test_recall_prefers_recent_claim_for_equal_strength(tmp_path):
     assert results[0]["content_json"]["subject"] == "new"
 
 
+def test_recall_prefers_newer_contradiction_and_flags_loser(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    _seed(
+        ledger,
+        [
+            ExtractedClaim(
+                subject="services/lore",
+                predicate="uses",
+                object="legacy login",
+                confidence="high",
+                valid_from="2026-01-01",
+            )
+        ],
+        batch="old",
+    )
+    _seed(
+        ledger,
+        [
+            ExtractedClaim(
+                subject="services/lore",
+                predicate="uses",
+                object="token login",
+                confidence="high",
+                valid_from="2026-06-01T07:00:00+07:00",
+            )
+        ],
+        batch="new",
+    )
+
+    results = ledger.recall_claims(now=datetime(2026, 6, 10, tzinfo=UTC), limit=5)
+
+    assert results[0]["content_json"]["object"] == "token login"
+    assert results[1]["content_json"]["object"] == "legacy login"
+    assert results[1]["contradicted_by"] == results[0]["candidate_id"]
+
+
+def test_recall_normalizes_mixed_validity_forms_and_excludes_expired_by_default(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    _seed(
+        ledger,
+        [
+            ExtractedClaim(
+                subject="service",
+                predicate="state",
+                object="expired",
+                confidence="high",
+                valid_from="2026-01-01",
+                valid_until="2026-06-01",
+            ),
+            ExtractedClaim(
+                subject="service",
+                predicate="state",
+                object="current",
+                confidence="high",
+                valid_from="2026-06-01T07:00:00+07:00",
+                valid_until="2026-07-01T07:00:00+07:00",
+            ),
+        ],
+    )
+
+    historical = ledger.recall_claims(valid_at="2026-06-01T00:30:00Z", now=datetime(2026, 6, 18, tzinfo=UTC))
+    current = ledger.recall_claims(now=datetime(2026, 6, 18, tzinfo=UTC))
+
+    assert [row["content_json"]["object"] for row in historical] == ["current"]
+    assert [row["content_json"]["object"] for row in current] == ["current"]
+    assert current[0]["valid_from"] == "2026-06-01T00:00:00+00:00"
+
+
 def test_record_claim_access_is_noop_for_empty_ids(tmp_path):
     ledger = LedgerDB(tmp_path / "ledger.db")
     ledger.initialize()

@@ -840,6 +840,8 @@ class LedgerDB:
         norm_subj = _normalize(new_claim.subject)
         norm_pred = _normalize(new_claim.predicate)
         norm_obj = _normalize(new_claim.object)
+        new_valid_from = _canonical_utc(new_claim.valid_from or new_claim.observed_at or utc_now())
+        new_valid_until = _canonical_utc(new_claim.valid_until)
 
         rows = self.connection.execute(
             """
@@ -849,9 +851,11 @@ class LedgerDB:
               AND normalized_subject = ?
               AND normalized_predicate = ?
               AND normalized_object != ?
+              AND (valid_until IS NULL OR datetime(valid_until) > datetime(?))
+              AND (? IS NULL OR valid_from IS NULL OR datetime(valid_from) < datetime(?))
             ORDER BY strength DESC
             """,
-            (norm_subj, norm_pred, norm_obj),
+            (norm_subj, norm_pred, norm_obj, new_valid_from, new_valid_until, new_valid_until),
         ).fetchall()
         decoded = [_decode_row(row) for row in rows]
         if new_claim.actor:
@@ -1007,10 +1011,11 @@ class LedgerDB:
             clauses.append("strength >= ?")
             params.append(min_strength)
         if valid_at:
-            clauses.append("(valid_from IS NULL OR valid_from <= ?)")
-            params.append(valid_at)
-            clauses.append("(valid_until IS NULL OR valid_until > ?)")
-            params.append(valid_at)
+            canonical_valid_at = _canonical_utc(valid_at)
+            clauses.append("(valid_from IS NULL OR datetime(valid_from) <= datetime(?))")
+            params.append(canonical_valid_at)
+            clauses.append("(valid_until IS NULL OR datetime(valid_until) > datetime(?))")
+            params.append(canonical_valid_at)
 
         where = " AND ".join(clauses)
         params.append(max(1, min(limit, 1000)))
@@ -1060,7 +1065,7 @@ class LedgerDB:
             lane=lane,
             actor=actor,
             min_strength=min_strength,
-            valid_at=valid_at,
+            valid_at=valid_at or now_dt.isoformat(),
             limit=pool_limit,
         )
 
@@ -1092,6 +1097,27 @@ class LedgerDB:
 
         scored.sort(
             key=lambda item: (item["recall_score"], float(item.get("strength") or 0.0)),
+            reverse=True,
+        )
+        contradiction_groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for entry in scored:
+            key = (str(entry.get("normalized_subject") or ""), str(entry.get("normalized_predicate") or ""))
+            contradiction_groups.setdefault(key, []).append(entry)
+        for group in contradiction_groups.values():
+            objects = {str(entry.get("normalized_object") or "") for entry in group}
+            if len(group) < 2 or len(objects) < 2:
+                continue
+            winner = max(group, key=_claim_temporal_key)
+            for loser in group:
+                if loser is winner or loser.get("normalized_object") == winner.get("normalized_object"):
+                    continue
+                loser["contradicted_by"] = winner["candidate_id"]
+                loser["recall_score"] = round(
+                    min(float(loser["recall_score"]), max(0.0, float(winner["recall_score"]) - 0.000001)),
+                    6,
+                )
+        scored.sort(
+            key=lambda item: (item["recall_score"], _claim_temporal_key(item), float(item.get("strength") or 0.0)),
             reverse=True,
         )
         top = scored[: max(1, min(limit, 200))]
@@ -1814,8 +1840,8 @@ def _candidate_metadata(candidate: Any) -> dict[str, Any]:
             "actor": candidate.actor,
             "lane": candidate.lane,
             "observed_at": candidate.observed_at,
-            "valid_from": candidate.valid_from,
-            "valid_until": candidate.valid_until,
+            "valid_from": _canonical_utc(candidate.valid_from),
+            "valid_until": _canonical_utc(candidate.valid_until),
             "target_section": candidate.section,
             "model_version": candidate.model_version,
             "prompt_hash": candidate.prompt_hash,
@@ -1837,6 +1863,31 @@ def _age_in_days(anchor: Any, now_dt: datetime) -> float:
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=UTC)
     return max(0.0, (now_dt - ts).total_seconds() / 86400.0)
+
+
+def _canonical_utc(value: str | None) -> str | None:
+    """Normalize ISO dates/timestamps to an offset-aware UTC timestamp."""
+    if value is None or not str(value).strip():
+        return None
+    text = str(value).strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return text
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).isoformat()
+
+
+def _claim_temporal_key(row: dict[str, Any]) -> datetime:
+    for field in ("valid_from", "observed_at", "updated_at", "created_at"):
+        canonical = _canonical_utc(str(row.get(field) or ""))
+        if canonical:
+            try:
+                return datetime.fromisoformat(canonical)
+            except ValueError:
+                continue
+    return datetime.min.replace(tzinfo=UTC)
 
 
 def _claim_text(row: dict[str, Any]) -> str:

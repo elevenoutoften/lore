@@ -274,6 +274,37 @@ Use Docker Compose for deployment.
     assert plan.auto_appliable is False
 
 
+def test_plan_batch_ignores_contradiction_from_non_overlapping_validity_window(tmp_path, monkeypatch):
+    ctx = make_context(tmp_path, monkeypatch)
+    capture_id = "inbox/2026-05-10/windowed-contradiction"
+    add_capture(ctx.repo, capture_id, suggested_target_page="procedures/deploy-lore")
+    write_page(
+        ctx.repo,
+        "procedures/deploy-lore",
+        """---
+title: Deploy Lore
+kind: procedure
+visibility: internal
+status: accepted
+---
+
+# Deploy Lore
+""",
+    )
+    old = make_claim("procedures/deploy-lore", "uses Docker Compose")
+    old.valid_from = "2025-01-01"
+    old.valid_until = "2026-01-01"
+    new = make_claim("procedures/deploy-lore", "uses systemd units")
+    new.valid_from = "2026-05-10T07:00:00+07:00"
+    store_claims(ctx.ledger, "batch-old-window", capture_id, [old])
+    store_claims(ctx.ledger, "batch-new-window", capture_id, [new])
+
+    [plan] = ctx.planner.plan_batch(batch_id="batch-new-window")
+
+    assert plan.operation != PatchOperation.mark_stale
+    assert plan.risk_level != RiskLevel.high
+
+
 def test_apply_plan_creates_stub_page_with_expected_frontmatter(tmp_path, monkeypatch):
     ctx = make_context(tmp_path, monkeypatch)
     add_capture(

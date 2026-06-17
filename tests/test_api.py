@@ -326,8 +326,8 @@ def test_ledger_candidates_endpoint(client):
     assert cand["actor"] == "nyx"
     assert cand["lane"] == "project"
     assert cand["observed_at"] == "2026-05-10T00:00:00+00:00"
-    assert cand["valid_from"] == "2026-05-01"
-    assert cand["valid_until"] == "2026-12-31"
+    assert cand["valid_from"] == "2026-05-01T00:00:00+00:00"
+    assert cand["valid_until"] == "2026-12-31T00:00:00+00:00"
     assert "captures/cap-001" in cand["source_page_ids"]
     assert "test-prov-cap" in cand["source_capture_ids"] or "inbox/test-prov-cap" in cand["source_capture_ids"]
     assert cand["model_version"] == "glm-5.1"
