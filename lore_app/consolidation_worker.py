@@ -319,10 +319,15 @@ class ConsolidationWorker:
         """Return consolidation status enriched with repository capture counts."""
 
         status = self.ledger.get_consolidation_status()
+        extraction_status = self.ledger.get_extraction_status()
+        candidate_counts = self.ledger.get_candidate_status_counts()
         captures = self.repo.list_pages(kind="capture")
         status["total_captures"] = len([page for page in captures if page.status in {"draft", "accepted"}])
         status["total_draft_captures"] = len([page for page in captures if page.status == "draft"])
         status["total_extracted_captures"] = len([page for page in captures if page.status == "accepted"])
+        status["total_extracted"] = extraction_status.total_extracted
+        status["candidates"] = sum(candidate_counts.values())
+        status["candidates_by_status"] = candidate_counts
         return status
 
     def _page_kind(self, page_id: str) -> str:

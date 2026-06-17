@@ -19,7 +19,6 @@ from ..capture import (
 )
 from ..code_ingest.ingest_service import ingest_service_code
 from ..code_ingest.validate import IngestValidationError, validate_service_id, validate_source_dir
-from ..consolidation_worker import run_auto_consolidation
 from ..context_graph import build_context_graph, explain_context, query_neighbors, query_paths
 from ..distillation import distill_daily, get_daily_captures, promote_daily_note
 from ..frontmatter import update_frontmatter
@@ -28,6 +27,7 @@ from ..heartbeat import emit_heartbeat_captures, heartbeat_review
 from ..link_graph import build_link_graph, page_links
 from ..lint import lint_contradiction_review, lint_lore, lint_stale_queue
 from ..lint_config import LintConfig
+from ..post_capture import run_post_capture_side_effects
 from ..precedent_search import search_precedents
 from ..procedure_candidate import find_repeated_captures, propose_procedure_candidate
 from ..provenance import get_capture_provenance, get_page_provenance
@@ -1403,17 +1403,19 @@ def _handle_lore_capture(ctx: McpContext) -> dict[str, Any]:
         raise JsonRpcError(-32602, str(exc)) from exc
     except ValidationError as exc:
         raise JsonRpcError(-32602, str(exc)) from exc
-    if ctx.search_index is not None:
-        ctx.search_index.upsert_page_from_detail(page)
-    index_vector_page(ctx.vector_store, page)
-    invalidate_graph_cache(ctx.graph_cache)
-    # Self-completing loop: consolidate inline so a capture made over MCP is
-    # immediately recallable without a manual step. The MCP dispatch is synchronous
-    # (no FastAPI BackgroundTasks), and running here keeps capture -> recall
-    # consistent for the calling agent. run_auto_consolidation is self-coalescing,
-    # so a run already in flight is a fast no-op rather than an overlap.
     if ctx.request is not None:
-        run_auto_consolidation(ctx.request.app)
+        run_post_capture_side_effects(
+            app=ctx.request.app,
+            page=page,
+            search_idx=ctx.search_index,
+            vector_store=ctx.vector_store,
+            graph_cache=ctx.graph_cache,
+        )
+    else:
+        if ctx.search_index is not None:
+            ctx.search_index.upsert_page_from_detail(page)
+        index_vector_page(ctx.vector_store, page)
+        invalidate_graph_cache(ctx.graph_cache)
     payload = {"page": page.model_dump()}
     return tool_result(payload, f"Captured Lore memory: {page.id}")
 

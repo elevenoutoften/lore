@@ -15,7 +15,6 @@ from ..capture import (
     promote_capture,
     transition_capture_status,
 )
-from ..consolidation_worker import run_auto_consolidation
 from ..deps import (
     get_audit_log,
     get_context_graph_cache,
@@ -26,6 +25,7 @@ from ..deps import (
     get_templates,
     get_vector_store,
 )
+from ..post_capture import run_post_capture_side_effects
 from ..repository import InvalidPageId, LoreRepository, optional_string, string_list
 from ..route_utils import (
     index_vectors_for_page,
@@ -102,10 +102,15 @@ def api_capture(
     except InvalidPageId as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     metrics.increment_index_size()
-    search_idx.upsert_page_from_detail(page)
-    background_tasks.add_task(index_vectors_for_page, vector_store, page)
-    graph_cache.invalidate()
-    context_graph_cache.invalidate()
+    run_post_capture_side_effects(
+        app=request.app,
+        page=page,
+        search_idx=search_idx,
+        vector_store=vector_store,
+        graph_cache=graph_cache,
+        context_graph_cache=context_graph_cache,
+        background_tasks=background_tasks,
+    )
     record_audit(
         request,
         audit_log,
@@ -114,11 +119,6 @@ def api_capture(
         summary=f"Captured {page.title}",
         diff_size=len(page.content.encode("utf-8")),
     )
-    # Self-completing loop: consolidate in the background so this capture becomes
-    # recallable (and a durable page) without a separate manual step — the same
-    # behavior the /api/memory/capture surface already provides.
-    if getattr(request.app.state.config, "auto_consolidate", False):
-        background_tasks.add_task(run_auto_consolidation, request.app)
     return CaptureResponse(page=page)
 
 

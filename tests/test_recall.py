@@ -315,9 +315,15 @@ def test_rest_capture_auto_consolidates_and_is_recallable(tmp_path):
         )
         assert r.status_code == 201, r.text
 
+        status = c.get("/api/consolidation/status").json()
+        assert status["total_extracted"] > 0
+        assert status["candidates"] > 0
+        assert status["candidates_by_status"]["candidate"] > 0
+
         recall = c.get("/api/memory/recall", params={"query": "illustrious logo", "limit": 5}).json()
         assert recall["count"] >= 1
         assert recall["hint"] is None
+        assert any("unreadable garbage" in claim["object"].lower() for claim in recall["claims"])
 
 
 def test_mcp_capture_auto_consolidates_and_is_recallable(tmp_path):
@@ -333,9 +339,15 @@ def test_mcp_capture_auto_consolidates_and_is_recallable(tmp_path):
         )
         assert captured["isError"] is False
 
+        status = _mcp_call(c, "lore_consolidation_status", {})["structuredContent"]
+        assert status["total_extracted"] > 0
+        assert status["candidates"] > 0
+        assert status["candidates_by_status"]["candidate"] > 0
+
         structured = _mcp_call(c, "lore_recall", {"query": "wan style lora", "limit": 5})["structuredContent"]
         assert structured["count"] >= 1
         assert structured["hint"] is None
+        assert any("style lora" in claim["object"].lower() for claim in structured["claims"])
 
 
 def test_mcp_recall_carries_pending_hint_when_unconsolidated(tmp_path):

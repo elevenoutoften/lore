@@ -1378,6 +1378,23 @@ class LedgerDB:
         ).fetchall()
         return [_decode_row(row) for row in rows]
 
+    def get_candidate_status_counts(self, candidate_type: str | None = None) -> dict[str, int]:
+        params: list[Any] = []
+        where = ""
+        if candidate_type:
+            where = "WHERE candidate_type = ?"
+            params.append(candidate_type)
+        rows = self.connection.execute(
+            f"""
+            SELECT status, COUNT(*) AS count
+            FROM extraction_candidates
+            {where}
+            GROUP BY status
+            """,
+            params,
+        ).fetchall()
+        return {str(row["status"]): int(row["count"]) for row in rows}
+
     def get_batch(self, batch_id: str) -> dict[str, Any] | None:
         row = self.connection.execute(
             "SELECT * FROM extraction_batches WHERE batch_id = ?",
