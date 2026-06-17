@@ -3,6 +3,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import re
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
@@ -849,7 +850,9 @@ def _any_trace_id(bundles: list[_CandidateBundle]) -> str | None:
 
 
 def _insert_into_section(content: str, heading: str, block: str) -> str:
-    normalized_block = block.strip()
+    normalized_block = _dedupe_block_for_section(content, heading, block)
+    if not normalized_block:
+        return content
     if not content:
         return f"{heading}\n\n{normalized_block}\n"
     lines = content.splitlines()
@@ -863,6 +866,63 @@ def _insert_into_section(content: str, heading: str, block: str) -> str:
     if not content.endswith("\n"):
         content += "\n"
     return content.rstrip() + f"\n\n{heading}\n\n{normalized_block}\n"
+
+
+def _dedupe_block_for_section(content: str, heading: str, block: str) -> str:
+    incoming_paragraphs = _split_paragraphs(block)
+    if not incoming_paragraphs:
+        return ""
+    existing_facts = {
+        fact
+        for paragraph in _section_paragraphs(content, heading)
+        for fact in [_normalized_fact_text(paragraph)]
+        if fact
+    }
+    kept: list[str] = []
+    for paragraph in incoming_paragraphs:
+        fact = _normalized_fact_text(paragraph)
+        if fact and fact in existing_facts:
+            continue
+        kept.append(paragraph)
+        if fact:
+            existing_facts.add(fact)
+    return "\n\n".join(kept)
+
+
+def _split_paragraphs(block: str) -> list[str]:
+    paragraphs: list[str] = []
+    current: list[str] = []
+    for line in block.strip().splitlines():
+        if line.strip():
+            current.append(line)
+            continue
+        if current:
+            paragraphs.append("\n".join(current).strip())
+            current = []
+    if current:
+        paragraphs.append("\n".join(current).strip())
+    return paragraphs
+
+
+def _section_paragraphs(content: str, heading: str) -> list[str]:
+    lines = content.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() != heading:
+            continue
+        body_start = index + 1
+        while body_start < len(lines) and lines[body_start].strip() == "":
+            body_start += 1
+        body_end = body_start
+        while body_end < len(lines) and not lines[body_end].startswith("## "):
+            body_end += 1
+        return _split_paragraphs("\n".join(lines[body_start:body_end]))
+    return []
+
+
+def _normalized_fact_text(paragraph: str) -> str:
+    without_comments = re.sub(r"<!--.*?-->", "", paragraph, flags=re.DOTALL)
+    statement = re.split(r"\s+Source:\s*", without_comments, maxsplit=1)[0]
+    return re.sub(r"\s+", " ", statement).strip().casefold()
 
 
 def _split_frontmatter(content: str) -> tuple[str, str]:

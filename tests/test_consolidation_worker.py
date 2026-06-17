@@ -592,6 +592,28 @@ def test_force_reextract_still_produces_plans(tmp_path, monkeypatch):
     assert reprocessed.plans_generated >= 1  # was silently 0 before the no-batch-filter fix
 
 
+def test_force_reextract_does_not_duplicate_already_applied_fact(tmp_path, monkeypatch):
+    ctx = make_context(tmp_path, monkeypatch)
+    write_page(ctx.repo, "services/lore")
+    add_capture(
+        ctx.repo,
+        "inbox/2026-05-10/idempotent",
+        summary="Lore force re-extract stays content-idempotent.",
+    )
+    fact = "services/lore states Lore force re-extract stays content-idempotent."
+
+    first = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=5)
+    second = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=5, force_reextract=True)
+    third = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=5, force_reextract=True)
+    page = ctx.repo.read_page("services/lore")
+
+    assert first.auto_applied == 1
+    assert second.plans_generated >= 1
+    assert third.plans_generated >= 1
+    assert page is not None
+    assert page.content.count(fact) == 1
+
+
 def _stub_llm_client(capture_id: str, fact: str) -> FallbackLLMClient:
     primary = mock.MagicMock()
     primary.extract_json.return_value = valid_llm_response(capture_id, fact)
