@@ -1,0 +1,705 @@
+{
+  "floors": {
+    "hybrid": {
+      "recall_at_3": 1.0,
+      "mrr": 0.75,
+      "precision_at_3": 0.4
+    },
+    "recall": {
+      "recall_at_3": 1.0,
+      "mrr": 0.9,
+      "precision_at_3": 0.4
+    }
+  },
+  "pages": [
+    {
+      "id": "services/lore",
+      "content": "---\ntitle: Lore\nkind: service\nvisibility: internal\nstatus: active\nsummary: Durable agent memory, long-lived notes, and consolidated handoff context.\ntags: [memory, notes, recall]\n---\n\n# Lore\n\nLore keeps durable agent memory, long-lived notes, and consolidated session captures for Hermes handoffs.\n\nIt works beside [[services/flow]] for work-state and links to [[runbooks/retrieval-triage]] and [[projects/agent-memory-first]].\n"
+    },
+    {
+      "id": "services/flow",
+      "content": "---\ntitle: Flow\nkind: service\nvisibility: internal\nstatus: active\nsummary: Agent-first work queue with review lanes, auto-claim, and durable notes.\ntags: [board, queue, review]\n---\n\n# Flow\n\nFlow is the agent-first work queue and review board.\n\nIt auto-claims todo work on start, keeps review-lane audit trails, and expects verification notes with commit SHAs.\n\nSee [[services/lore]] for durable memory and [[runbooks/retrieval-triage]] for the nightly review routine.\n"
+    },
+    {
+      "id": "services/hermes",
+      "content": "---\ntitle: Hermes\nkind: service\nvisibility: internal\nstatus: active\nsummary: Session recap agent that bridges handoffs into Lore and follow-up work into Flow.\ntags: [handoff, recap, agent]\n---\n\n# Hermes\n\nHermes writes session recaps, pushes durable handoff context into [[services/lore]], and opens follow-up work in [[services/flow]].\n\nThe broader roadmap lives in [[projects/agent-memory-first]].\n"
+    },
+    {
+      "id": "services/muse",
+      "content": "---\ntitle: Muse\nkind: service\nvisibility: internal\nstatus: active\nsummary: Inference service that now routes generation through a vLLM gateway.\ntags: [inference, gateway, runtime]\n---\n\n# Muse\n\nMuse now routes inference through a vLLM gateway for Hermes and Atlas workloads.\n\nThe retrieval and memory roadmap is tracked in [[projects/agent-memory-first]].\n"
+    },
+    {
+      "id": "services/atlas-api",
+      "content": "---\ntitle: Atlas API\nkind: service\nvisibility: internal\nstatus: active\nsummary: Atlas API now deploys on Fly.io with post-migration smoke checks.\ntags: [deploy, flyio, api]\n---\n\n# Atlas API\n\nAtlas API now deploys on Fly.io after the Render migration.\n\nRollback and smoke-test expectations are captured in [[decisions/deploy-policy]], and Atlas uses [[services/muse]] for inference.\n"
+    },
+    {
+      "id": "projects/agent-memory-first",
+      "content": "---\ntitle: Agent Memory First\nkind: project\nvisibility: internal\nstatus: active\nsummary: Roadmap for durable memory, retrieval policy, and session handoff quality.\ntags: [roadmap, memory, retrieval]\n---\n\n# Agent Memory First\n\nThe project ties together [[services/lore]], [[services/hermes]], and [[services/muse]].\n\nIt follows [[decisions/retrieval-policy]] and treats nightly validation in [[runbooks/retrieval-triage]] as the guardrail for recall quality.\n"
+    },
+    {
+      "id": "decisions/retrieval-policy",
+      "content": "---\ntitle: Retrieval Policy\nkind: decision\nvisibility: internal\nstatus: accepted\nsummary: Retrieval should use term fallback, graph expansion, and prefer the latest live claim after updates.\ntags: [retrieval, graph, contradiction]\n---\n\n# Retrieval Policy\n\nRetrieval should add term fallback when exact phrases miss, expand through the context graph for linked pages, and prefer the latest live claim after contradiction updates.\n\nThis decision supports [[projects/agent-memory-first]] and the nightly checks in [[runbooks/retrieval-triage]].\n"
+    },
+    {
+      "id": "runbooks/retrieval-triage",
+      "content": "---\ntitle: Retrieval Triage\nkind: runbook\nvisibility: internal\nstatus: active\nsummary: Nightly checklist for paraphrase misses, contradiction updates, and recall regressions.\ntags: [runbook, paraphrase, triage]\n---\n\n# Retrieval Triage\n\nUse this nightly checklist for paraphrase misses, contradiction updates, and recall regressions.\n\nIt points to [[decisions/retrieval-policy]], checks the handoff stack in [[services/lore]], and records follow-up work in [[services/flow]].\n"
+    },
+    {
+      "id": "services/archive-worker",
+      "content": "---\ntitle: Archive Worker\nkind: service\nvisibility: internal\nstatus: active\nsummary: Background worker that compacts nightly raw notes and stale session artifacts.\ntags: [archive, cleanup, notes]\n---\n\n# Archive Worker\n\nArchive Worker compacts nightly raw notes and stale session artifacts.\n\nIt is intentionally separate from [[services/lore]] and does not own durable recall quality.\n"
+    },
+    {
+      "id": "decisions/deploy-policy",
+      "content": "---\ntitle: Deploy Policy\nkind: decision\nvisibility: internal\nstatus: accepted\nsummary: Atlas migrations require smoke checks, rollback hooks, and verification notes.\ntags: [deploy, rollback, smoke]\n---\n\n# Deploy Policy\n\nAtlas migrations require smoke checks, rollback hooks, and verification notes.\n\nThe current hosting target is [[services/atlas-api]], and inference dependencies flow through [[services/muse]].\n"
+    }
+  ],
+  "captures": [
+    {
+      "id": "inbox/2026-02-03/lore-long-lived-notes",
+      "session_id": "session-2026-02-03",
+      "title": "Lore long-lived notes",
+      "observed_at": "2026-02-03T09:00:00+00:00",
+      "actor": "agent:hermes",
+      "lane": "project",
+      "related_pages": ["services/lore", "services/flow"],
+      "body": "The handoff called [[services/lore]] the place for long-lived notes and durable project memory. [[services/flow]] stayed focused on work-state only.",
+      "claims": [
+        {
+          "id": "claim-lore-durable-notes",
+          "subject": "services/lore",
+          "predicate": "stores",
+          "object": "durable project memory and long-lived agent notes",
+          "confidence": "high",
+          "source_page_ids": ["services/lore"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-02-03/flow-autonomous-queue",
+      "session_id": "session-2026-02-03",
+      "title": "Flow autonomous queue",
+      "observed_at": "2026-02-03T09:20:00+00:00",
+      "actor": "agent:reviewer",
+      "lane": "project",
+      "related_pages": ["services/flow"],
+      "body": "The team described [[services/flow]] as the autonomous work queue with visible review lanes and a durable audit trail.",
+      "claims": [
+        {
+          "id": "claim-flow-review-queue",
+          "subject": "services/flow",
+          "predicate": "tracks",
+          "object": "an autonomous work queue with review lanes",
+          "confidence": "high",
+          "source_page_ids": ["services/flow"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-02-03/roadmap-policy-mention",
+      "session_id": "session-2026-02-03",
+      "title": "Roadmap policy mention",
+      "observed_at": "2026-02-03T09:40:00+00:00",
+      "actor": "agent:planner",
+      "lane": "project",
+      "related_pages": ["projects/agent-memory-first", "decisions/retrieval-policy"],
+      "body": "The [[projects/agent-memory-first]] roadmap said the retrieval stack should follow [[decisions/retrieval-policy]] before any recall rewrites land.",
+      "claims": [
+        {
+          "id": "claim-project-retrieval-policy",
+          "subject": "projects/agent-memory-first",
+          "predicate": "follows",
+          "object": "the retrieval policy before recall rewrites land",
+          "confidence": "medium",
+          "source_page_ids": ["projects/agent-memory-first", "decisions/retrieval-policy"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-02-03/muse-local-runtime",
+      "session_id": "session-2026-02-03",
+      "title": "Muse local runtime",
+      "observed_at": "2026-02-03T10:00:00+00:00",
+      "actor": "agent:ops",
+      "lane": "ops",
+      "related_pages": ["services/muse"],
+      "body": "At the time, [[services/muse]] still used a local llama.cpp runtime for inference.",
+      "claims": [
+        {
+          "id": "claim-muse-llama-old",
+          "subject": "services/muse",
+          "predicate": "uses",
+          "object": "a local llama.cpp runtime for inference",
+          "confidence": "high",
+          "source_page_ids": ["services/muse"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-02-03/archive-nightly-bundles",
+      "session_id": "session-2026-02-03",
+      "title": "Archive nightly bundles",
+      "observed_at": "2026-02-03T10:20:00+00:00",
+      "actor": "agent:ops",
+      "lane": "ops",
+      "related_pages": ["services/archive-worker"],
+      "body": "A side note said [[services/archive-worker]] compacts nightly raw notes into smaller bundles.",
+      "claims": [
+        {
+          "id": "claim-archive-raw-notes",
+          "subject": "services/archive-worker",
+          "predicate": "compacts",
+          "object": "nightly raw notes and stale session artifacts",
+          "confidence": "medium",
+          "source_page_ids": ["services/archive-worker"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-02-19/hermes-handoff-memory",
+      "session_id": "session-2026-02-19",
+      "title": "Hermes handoff memory",
+      "observed_at": "2026-02-19T08:30:00+00:00",
+      "actor": "agent:hermes",
+      "lane": "project",
+      "related_pages": ["services/hermes", "services/lore"],
+      "body": "[[services/hermes]] sends handoff recaps into [[services/lore]] so the notes survive past one session.",
+      "claims": [
+        {
+          "id": "claim-hermes-recaps-lore",
+          "subject": "services/hermes",
+          "predicate": "stores",
+          "object": "handoff recaps in Lore for durable memory",
+          "confidence": "high",
+          "source_page_ids": ["services/hermes", "services/lore"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-02-19/paraphrase-triage-checklist",
+      "session_id": "session-2026-02-19",
+      "title": "Paraphrase triage checklist",
+      "observed_at": "2026-02-19T08:50:00+00:00",
+      "actor": "agent:reviewer",
+      "lane": "project",
+      "related_pages": ["runbooks/retrieval-triage", "decisions/retrieval-policy"],
+      "body": "The nightly checklist for paraphrase misses now lives in [[runbooks/retrieval-triage]] and cites [[decisions/retrieval-policy]].",
+      "claims": [
+        {
+          "id": "claim-triage-paraphrase-nightly",
+          "subject": "runbooks/retrieval-triage",
+          "predicate": "audits",
+          "object": "paraphrase misses and contradiction updates every night",
+          "confidence": "high",
+          "source_page_ids": ["runbooks/retrieval-triage", "decisions/retrieval-policy"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-02-19/atlas-render-hosting",
+      "session_id": "session-2026-02-19",
+      "title": "Atlas render hosting",
+      "observed_at": "2026-02-19T09:10:00+00:00",
+      "actor": "agent:ops",
+      "lane": "ops",
+      "related_pages": ["services/atlas-api", "decisions/deploy-policy"],
+      "body": "Before the migration, [[services/atlas-api]] deployed on Render and followed [[decisions/deploy-policy]] for smoke checks.",
+      "claims": [
+        {
+          "id": "claim-atlas-render-old",
+          "subject": "services/atlas-api",
+          "predicate": "deploys_on",
+          "object": "Render",
+          "confidence": "high",
+          "source_page_ids": ["services/atlas-api", "decisions/deploy-policy"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-02-19/flow-start-claim",
+      "session_id": "session-2026-02-19",
+      "title": "Flow start claim",
+      "observed_at": "2026-02-19T09:30:00+00:00",
+      "actor": "agent:planner",
+      "lane": "project",
+      "related_pages": ["services/flow"],
+      "body": "[[services/flow]] auto-claims todo work when an agent starts a card and posts the opening note right away.",
+      "claims": [
+        {
+          "id": "claim-flow-auto-claim",
+          "subject": "services/flow",
+          "predicate": "auto_claims",
+          "object": "todo work when an agent starts a card",
+          "confidence": "high",
+          "source_page_ids": ["services/flow"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-02-19/deploy-rollback-distractor",
+      "session_id": "session-2026-02-19",
+      "title": "Deploy rollback distractor",
+      "observed_at": "2026-02-19T09:50:00+00:00",
+      "actor": "agent:ops",
+      "lane": "ops",
+      "related_pages": ["decisions/deploy-policy"],
+      "body": "A separate rollback note referenced [[decisions/deploy-policy]] but did not change the active hosting target."
+    },
+    {
+      "id": "inbox/2026-03-07/lore-consolidation-loop",
+      "session_id": "session-2026-03-07",
+      "title": "Lore consolidation loop",
+      "observed_at": "2026-03-07T11:00:00+00:00",
+      "actor": "agent:hermes",
+      "lane": "project",
+      "related_pages": ["services/lore", "projects/agent-memory-first"],
+      "body": "[[services/lore]] consolidates session captures into durable pages as part of [[projects/agent-memory-first]].",
+      "claims": [
+        {
+          "id": "claim-lore-consolidates-captures",
+          "subject": "services/lore",
+          "predicate": "consolidates",
+          "object": "session captures into durable pages",
+          "confidence": "high",
+          "source_page_ids": ["services/lore", "projects/agent-memory-first"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-03-07/retrieval-graph-policy",
+      "session_id": "session-2026-03-07",
+      "title": "Retrieval graph policy",
+      "observed_at": "2026-03-07T11:20:00+00:00",
+      "actor": "agent:reviewer",
+      "lane": "project",
+      "related_pages": ["decisions/retrieval-policy", "projects/agent-memory-first"],
+      "body": "The phrase-only miss report said [[decisions/retrieval-policy]] now adds term fallback and graph expansion for linked pages in [[projects/agent-memory-first]].",
+      "claims": [
+        {
+          "id": "claim-retrieval-policy-term-fallback",
+          "subject": "decisions/retrieval-policy",
+          "predicate": "adds",
+          "object": "term fallback and graph expansion when exact phrases miss",
+          "confidence": "high",
+          "source_page_ids": ["decisions/retrieval-policy", "projects/agent-memory-first"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-03-07/review-lane-audit",
+      "session_id": "session-2026-03-07",
+      "title": "Review lane audit",
+      "observed_at": "2026-03-07T11:40:00+00:00",
+      "actor": "agent:reviewer",
+      "lane": "project",
+      "related_pages": ["services/flow", "runbooks/retrieval-triage"],
+      "body": "The review-lane audit note said [[services/flow]] keeps visible audit trails and the nightly check lands in [[runbooks/retrieval-triage]].",
+      "claims": [
+        {
+          "id": "claim-review-audit-trail",
+          "subject": "services/flow",
+          "predicate": "keeps",
+          "object": "a visible review-lane audit trail",
+          "confidence": "high",
+          "source_page_ids": ["services/flow", "runbooks/retrieval-triage"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-03-07/muse-gateway-metrics",
+      "session_id": "session-2026-03-07",
+      "title": "Muse gateway metrics",
+      "observed_at": "2026-03-07T12:00:00+00:00",
+      "actor": "agent:ops",
+      "lane": "ops",
+      "related_pages": ["services/muse"],
+      "body": "A metrics note mentioned gateway latency around [[services/muse]] but did not yet change the runtime record."
+    },
+    {
+      "id": "inbox/2026-03-07/archive-session-prune",
+      "session_id": "session-2026-03-07",
+      "title": "Archive session prune",
+      "observed_at": "2026-03-07T12:20:00+00:00",
+      "actor": "agent:ops",
+      "lane": "ops",
+      "related_pages": ["services/archive-worker"],
+      "body": "The cleanup thread pruned stale bundles through [[services/archive-worker]] and stayed separate from recall quality."
+    },
+    {
+      "id": "inbox/2026-03-28/hermes-nightly-bridge",
+      "session_id": "session-2026-03-28",
+      "title": "Hermes nightly bridge",
+      "observed_at": "2026-03-28T07:30:00+00:00",
+      "actor": "agent:hermes",
+      "lane": "project",
+      "related_pages": ["services/hermes", "services/lore", "services/flow"],
+      "body": "[[services/hermes]] bridges session recaps into [[services/lore]] and opens follow-up work in [[services/flow]].",
+      "claims": [
+        {
+          "id": "claim-hermes-session-bridge",
+          "subject": "services/hermes",
+          "predicate": "bridges",
+          "object": "session recaps into Lore and Flow for follow-up work",
+          "confidence": "high",
+          "source_page_ids": ["services/hermes", "services/lore", "services/flow"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-03-28/flow-verification-note",
+      "session_id": "session-2026-03-28",
+      "title": "Flow verification note",
+      "observed_at": "2026-03-28T07:50:00+00:00",
+      "actor": "agent:reviewer",
+      "lane": "project",
+      "related_pages": ["services/flow"],
+      "body": "The review template for [[services/flow]] should carry the commit SHA and verification steps in the note.",
+      "claims": [
+        {
+          "id": "claim-flow-note-verification",
+          "subject": "services/flow",
+          "predicate": "expects",
+          "object": "review notes with the commit SHA and verification steps",
+          "confidence": "high",
+          "source_page_ids": ["services/flow"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-03-28/project-graph-expansion",
+      "session_id": "session-2026-03-28",
+      "title": "Project graph expansion",
+      "observed_at": "2026-03-28T08:10:00+00:00",
+      "actor": "agent:planner",
+      "lane": "project",
+      "related_pages": ["projects/agent-memory-first", "decisions/retrieval-policy"],
+      "body": "The graph expansion checklist for [[projects/agent-memory-first]] points back to [[decisions/retrieval-policy]] for recall explanations."
+    },
+    {
+      "id": "inbox/2026-03-28/atlas-smoke-distractor",
+      "session_id": "session-2026-03-28",
+      "title": "Atlas smoke distractor",
+      "observed_at": "2026-03-28T08:30:00+00:00",
+      "actor": "agent:ops",
+      "lane": "ops",
+      "related_pages": ["services/atlas-api", "decisions/deploy-policy"],
+      "body": "The smoke checklist mentioned [[services/atlas-api]] and [[decisions/deploy-policy]] without naming the new host yet."
+    },
+    {
+      "id": "inbox/2026-03-28/lore-page-stale-distractor",
+      "session_id": "session-2026-03-28",
+      "title": "Lore page stale distractor",
+      "observed_at": "2026-03-28T08:50:00+00:00",
+      "actor": "agent:reviewer",
+      "lane": "project",
+      "related_pages": ["services/lore"],
+      "body": "A stale-page lint note touched [[services/lore]] but did not change the memory or handoff behavior."
+    },
+    {
+      "id": "inbox/2026-04-17/muse-vllm-rollout",
+      "session_id": "session-2026-04-17",
+      "title": "Muse vLLM rollout",
+      "observed_at": "2026-04-17T06:30:00+00:00",
+      "actor": "agent:ops",
+      "lane": "ops",
+      "related_pages": ["services/muse", "projects/agent-memory-first"],
+      "body": "The rollout switched [[services/muse]] to a vLLM gateway for inference and logged the change under [[projects/agent-memory-first]].",
+      "claims": [
+        {
+          "id": "claim-muse-vllm-new",
+          "subject": "services/muse",
+          "predicate": "uses",
+          "object": "a vLLM gateway for inference",
+          "confidence": "high",
+          "source_page_ids": ["services/muse", "projects/agent-memory-first"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-04-17/atlas-fly-migration",
+      "session_id": "session-2026-04-17",
+      "title": "Atlas fly migration",
+      "observed_at": "2026-04-17T06:50:00+00:00",
+      "actor": "agent:ops",
+      "lane": "ops",
+      "related_pages": ["services/atlas-api", "decisions/deploy-policy"],
+      "body": "The migration moved [[services/atlas-api]] to Fly.io and kept the verification checklist in [[decisions/deploy-policy]].",
+      "claims": [
+        {
+          "id": "claim-atlas-fly-new",
+          "subject": "services/atlas-api",
+          "predicate": "deploys_on",
+          "object": "Fly.io",
+          "confidence": "high",
+          "source_page_ids": ["services/atlas-api", "decisions/deploy-policy"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-04-17/contradiction-policy-note",
+      "session_id": "session-2026-04-17",
+      "title": "Contradiction policy note",
+      "observed_at": "2026-04-17T07:10:00+00:00",
+      "actor": "agent:reviewer",
+      "lane": "project",
+      "related_pages": ["decisions/retrieval-policy", "runbooks/retrieval-triage"],
+      "body": "The contradiction update note said [[decisions/retrieval-policy]] should prefer the latest live claim and [[runbooks/retrieval-triage]] should verify it.",
+      "claims": [
+        {
+          "id": "claim-retrieval-prefers-latest",
+          "subject": "decisions/retrieval-policy",
+          "predicate": "prefers",
+          "object": "the latest live claim after a contradiction update",
+          "confidence": "high",
+          "source_page_ids": ["decisions/retrieval-policy", "runbooks/retrieval-triage"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-04-17/handoff-memory-followup",
+      "session_id": "session-2026-04-17",
+      "title": "Handoff memory follow-up",
+      "observed_at": "2026-04-17T07:30:00+00:00",
+      "actor": "agent:hermes",
+      "lane": "project",
+      "related_pages": ["services/hermes", "services/lore"],
+      "body": "A follow-up recap again linked [[services/hermes]] with [[services/lore]] for durable session memory."
+    },
+    {
+      "id": "inbox/2026-04-17/review-template-followup",
+      "session_id": "session-2026-04-17",
+      "title": "Review template follow-up",
+      "observed_at": "2026-04-17T07:50:00+00:00",
+      "actor": "agent:reviewer",
+      "lane": "project",
+      "related_pages": ["services/flow"],
+      "body": "The follow-up review template still referenced [[services/flow]] and the verification note format."
+    },
+    {
+      "id": "inbox/2026-05-09/recall-triage-followup",
+      "session_id": "session-2026-05-09",
+      "title": "Recall triage follow-up",
+      "observed_at": "2026-05-09T05:40:00+00:00",
+      "actor": "agent:reviewer",
+      "lane": "project",
+      "related_pages": ["runbooks/retrieval-triage", "decisions/retrieval-policy", "services/lore"],
+      "body": "The follow-up review walked [[runbooks/retrieval-triage]], checked [[decisions/retrieval-policy]], and used [[services/lore]] as the memory surface."
+    },
+    {
+      "id": "inbox/2026-05-09/hermes-board-bridge",
+      "session_id": "session-2026-05-09",
+      "title": "Hermes board bridge",
+      "observed_at": "2026-05-09T06:00:00+00:00",
+      "actor": "agent:hermes",
+      "lane": "project",
+      "related_pages": ["services/hermes", "services/lore", "services/flow"],
+      "body": "A recap note said [[services/hermes]] keeps the bridge between [[services/lore]] and [[services/flow]] visible to operators."
+    },
+    {
+      "id": "inbox/2026-05-09/atlas-fly-smoke",
+      "session_id": "session-2026-05-09",
+      "title": "Atlas fly smoke",
+      "observed_at": "2026-05-09T06:20:00+00:00",
+      "actor": "agent:ops",
+      "lane": "ops",
+      "related_pages": ["services/atlas-api", "decisions/deploy-policy"],
+      "body": "A smoke note confirmed [[services/atlas-api]] on Fly.io and referenced [[decisions/deploy-policy]] for rollback steps."
+    },
+    {
+      "id": "inbox/2026-05-09/muse-vllm-incident-note",
+      "session_id": "session-2026-05-09",
+      "title": "Muse vLLM incident note",
+      "observed_at": "2026-05-09T06:40:00+00:00",
+      "actor": "agent:ops",
+      "lane": "ops",
+      "related_pages": ["services/muse", "runbooks/retrieval-triage"],
+      "body": "An incident note referenced the [[services/muse]] vLLM gateway and the checks in [[runbooks/retrieval-triage]]."
+    },
+    {
+      "id": "inbox/2026-05-09/archive-cleanup-distractor",
+      "session_id": "session-2026-05-09",
+      "title": "Archive cleanup distractor",
+      "observed_at": "2026-05-09T07:00:00+00:00",
+      "actor": "agent:ops",
+      "lane": "ops",
+      "related_pages": ["services/archive-worker"],
+      "body": "A cleanup reminder again mentioned [[services/archive-worker]] and nightly note compaction."
+    }
+  ],
+  "supersessions": [
+    {
+      "old_claim_id": "claim-muse-llama-old",
+      "new_claim_id": "claim-muse-vllm-new",
+      "reason": "Muse switched from llama.cpp to the vLLM gateway."
+    },
+    {
+      "old_claim_id": "claim-atlas-render-old",
+      "new_claim_id": "claim-atlas-fly-new",
+      "reason": "Atlas API migrated from Render to Fly.io."
+    }
+  ],
+  "hybrid_queries": [
+    {
+      "id": "hybrid-lore-handoffs",
+      "case_type": "paraphrase",
+      "query": "long-lived notes for agent handoffs",
+      "expected_page_ids": ["services/lore", "services/hermes"],
+      "expectation": "The handoff wording should surface Lore and Hermes in the top 3 even though the query does not use the canonical page titles."
+    },
+    {
+      "id": "hybrid-flow-queue",
+      "case_type": "paraphrase",
+      "query": "autonomous work queue with review lanes",
+      "expected_page_ids": ["services/flow"],
+      "expectation": "Flow should rank in the top 3 for the board paraphrase rather than losing to unrelated note pages."
+    },
+    {
+      "id": "hybrid-triage-checklist",
+      "case_type": "multi-hop",
+      "query": "nightly checklist for paraphrase misses",
+      "expected_page_ids": ["runbooks/retrieval-triage", "decisions/retrieval-policy"],
+      "require_relevance_path_page": "runbooks/retrieval-triage",
+      "expectation": "The runbook should appear through graph expansion from capture notes and show a relevance path in the expanded response."
+    },
+    {
+      "id": "hybrid-fallback-policy",
+      "case_type": "multi-hop",
+      "query": "phrase-only fallback policy for retrieval",
+      "expected_page_ids": ["decisions/retrieval-policy", "projects/agent-memory-first"],
+      "require_relevance_path_page": "decisions/retrieval-policy",
+      "expectation": "The retrieval policy decision should be recoverable from the roadmap and debug captures with an explicit graph path."
+    },
+    {
+      "id": "hybrid-hermes-bridge",
+      "case_type": "multi-hop",
+      "query": "bridge session recaps into durable memory and board",
+      "expected_page_ids": ["services/hermes", "services/lore", "services/flow"],
+      "require_relevance_path_page": "services/flow",
+      "expectation": "Hermes, Lore, and Flow should all be represented in the top 3 for the cross-service handoff workflow."
+    },
+    {
+      "id": "hybrid-muse-runtime-now",
+      "case_type": "temporal-update",
+      "query": "what runtime powers Muse now",
+      "expected_page_ids": ["services/muse"],
+      "expectation": "The latest Muse page should stay in the top 3 after the runtime update instead of drifting behind stale runtime captures."
+    },
+    {
+      "id": "hybrid-atlas-hosting-now",
+      "case_type": "temporal-update",
+      "query": "where atlas api runs after migration",
+      "expected_page_ids": ["services/atlas-api", "decisions/deploy-policy"],
+      "expectation": "Atlas API and its deploy policy should stay visible after the Render -> Fly.io update."
+    },
+    {
+      "id": "hybrid-review-audit",
+      "case_type": "paraphrase",
+      "query": "review lane audit trail notes",
+      "expected_page_ids": ["services/flow", "runbooks/retrieval-triage"],
+      "expectation": "The review-lane audit wording should retrieve Flow plus the runbook that tracks the nightly validation work."
+    },
+    {
+      "id": "hybrid-archive-distractor",
+      "case_type": "distractor",
+      "query": "compacts nightly raw notes",
+      "expected_page_ids": ["services/archive-worker"],
+      "expectation": "The archive distractor control should still resolve to Archive Worker instead of Lore."
+    },
+    {
+      "id": "hybrid-memory-roadmap",
+      "case_type": "multi-hop",
+      "query": "durable memory roadmap for recall quality",
+      "expected_page_ids": ["projects/agent-memory-first", "services/lore", "decisions/retrieval-policy"],
+      "require_relevance_path_page": "decisions/retrieval-policy",
+      "expectation": "The project, Lore, and the retrieval policy should cluster together for the memory roadmap query."
+    },
+    {
+      "id": "hybrid-latest-live-claim",
+      "case_type": "contradiction-update",
+      "query": "latest live claim after contradiction update",
+      "expected_page_ids": ["decisions/retrieval-policy", "runbooks/retrieval-triage"],
+      "require_relevance_path_page": "decisions/retrieval-policy",
+      "expectation": "The contradiction-update guidance should surface the decision and runbook pages through expanded context."
+    }
+  ],
+  "recall_queries": [
+    {
+      "id": "recall-handoff-notes",
+      "case_type": "paraphrase",
+      "query": "where do handoffs keep long-term notes",
+      "expected_claim_ids": ["claim-lore-durable-notes", "claim-hermes-recaps-lore"],
+      "expectation": "Lore should recall the durable-notes claim, with the Hermes handoff claim also considered relevant."
+    },
+    {
+      "id": "recall-flow-auto-claim",
+      "case_type": "paraphrase",
+      "query": "which board auto claims todo work",
+      "expected_claim_ids": ["claim-flow-auto-claim", "claim-flow-review-queue"],
+      "expectation": "Flow should answer both the auto-claim behavior and the board identity."
+    },
+    {
+      "id": "recall-muse-now",
+      "case_type": "contradiction-update",
+      "query": "what runtime does Muse use now",
+      "expected_claim_ids": ["claim-muse-vllm-new"],
+      "forbidden_claim_ids": ["claim-muse-llama-old"],
+      "expectation": "The post-update vLLM claim should rank, and the superseded llama.cpp claim should stay out of the top 3."
+    },
+    {
+      "id": "recall-atlas-now",
+      "case_type": "contradiction-update",
+      "query": "where does Atlas API deploy now",
+      "expected_claim_ids": ["claim-atlas-fly-new"],
+      "forbidden_claim_ids": ["claim-atlas-render-old"],
+      "expectation": "The Fly.io claim should rank, and the superseded Render claim should stay out of the top 3."
+    },
+    {
+      "id": "recall-fallback-policy",
+      "case_type": "multi-hop",
+      "query": "what policy handles phrase only retrieval misses",
+      "expected_claim_ids": ["claim-retrieval-policy-term-fallback", "claim-project-retrieval-policy"],
+      "expectation": "The retrieval policy and the roadmap-policy linkage should both count as relevant support."
+    },
+    {
+      "id": "recall-nightly-triage",
+      "case_type": "paraphrase",
+      "query": "which runbook checks paraphrase misses every night",
+      "expected_claim_ids": ["claim-triage-paraphrase-nightly"],
+      "expectation": "The nightly triage runbook claim should rank near the top for the paraphrased checklist query."
+    },
+    {
+      "id": "recall-session-bridge",
+      "case_type": "multi-hop",
+      "query": "what bridges session recaps into memory and board work",
+      "expected_claim_ids": ["claim-hermes-session-bridge", "claim-hermes-recaps-lore"],
+      "expectation": "The Hermes bridge claims should survive the cross-service recall wording."
+    },
+    {
+      "id": "recall-review-notes",
+      "case_type": "paraphrase",
+      "query": "what keeps the review lane audit trail with sha verification",
+      "expected_claim_ids": ["claim-review-audit-trail", "claim-flow-note-verification"],
+      "expectation": "The Flow audit-trail claim and the SHA-verification note claim should both be relevant."
+    },
+    {
+      "id": "recall-archive-worker",
+      "case_type": "distractor",
+      "query": "who compacts nightly raw notes",
+      "expected_claim_ids": ["claim-archive-raw-notes"],
+      "expectation": "The archive distractor control should return Archive Worker rather than Lore memory claims."
+    },
+    {
+      "id": "recall-lore-consolidation",
+      "case_type": "paraphrase",
+      "query": "what does Lore do with session captures",
+      "expected_claim_ids": ["claim-lore-consolidates-captures", "claim-lore-durable-notes"],
+      "expectation": "Lore should recall both the durable-notes and capture-consolidation facts."
+    },
+    {
+      "id": "recall-latest-live-claim",
+      "case_type": "contradiction-update",
+      "query": "what should happen after a contradiction update",
+      "expected_claim_ids": ["claim-retrieval-prefers-latest"],
+      "expectation": "The recall policy should explicitly prefer the latest live claim after a contradiction update."
+    }
+  ]
+}

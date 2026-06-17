@@ -199,6 +199,10 @@ p95 recall latency over 500 claims is ~10 ms. The
 generous p95 ceiling so regressions are caught, and
 [`eval/test_recall_eval.py`](../eval/test_recall_eval.py) enforces recall@3 and MRR
 floors on a labelled corpus so ranking quality is held, not just functionality.
+[`eval/test_hybrid_recall_eval.py`](../eval/test_hybrid_recall_eval.py) adds a
+LOCOMO-shaped multi-session no-regression gate over `/api/rag/retrieve` plus
+`recall_claims`, with explicit paraphrase, graph-expansion,
+contradiction-update, and distractor expectations.
 
 ## Surface summary
 
