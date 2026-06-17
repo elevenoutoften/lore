@@ -209,6 +209,7 @@ def test_hybrid_retrieve_expanded_eval_gate(hybrid_eval_runtime: dict[str, Any])
     recall_hits = 0
     reciprocal_ranks: list[float] = []
     precision_sum = 0.0
+    relevance_path_failures: list[str] = []
 
     print("\nHybrid eval:")
     for entry in queries:
@@ -229,7 +230,7 @@ def test_hybrid_retrieve_expanded_eval_gate(hybrid_eval_runtime: dict[str, Any])
         rank = first_expected_page_rank(results, entry["expected_page_ids"])
         hits = count_expected_page_hits(results, entry["expected_page_ids"], k=3)
         reciprocal_ranks.append(1.0 / rank if rank else 0.0)
-        precision_sum += hits / 3.0
+        precision_sum += hits / min(3, len(entry["expected_page_ids"]))
         if rank is not None and rank <= 3:
             recall_hits += 1
 
@@ -237,8 +238,10 @@ def test_hybrid_retrieve_expanded_eval_gate(hybrid_eval_runtime: dict[str, Any])
         if required_page:
             row = find_page_result(results, required_page)
             result_ids = [result.get("page_id") for result in results]
-            assert row is not None, f"{entry['id']} missing required page {required_page}; got {result_ids}"
-            assert row.get("relevance_paths"), f"{entry['id']} expected relevance path for {required_page}"
+            if row is None:
+                relevance_path_failures.append(f"{entry['id']} missing required page {required_page}; got {result_ids}")
+            elif not row.get("relevance_paths"):
+                relevance_path_failures.append(f"{entry['id']} expected relevance path for {required_page}")
 
         status = "OK" if rank and rank <= 3 else "MISS"
         print(
@@ -255,6 +258,7 @@ def test_hybrid_retrieve_expanded_eval_gate(hybrid_eval_runtime: dict[str, Any])
     assert recall_at_3 >= floors["recall_at_3"], f"hybrid recall@3 too low: {recall_at_3:.0%}"
     assert mrr >= floors["mrr"], f"hybrid MRR too low: {mrr:.3f}"
     assert precision_at_3 >= floors["precision_at_3"], f"hybrid precision@3 too low: {precision_at_3:.3f}"
+    assert not relevance_path_failures, "\n".join(relevance_path_failures)
 
 
 def test_recall_claims_eval_gate(hybrid_eval_runtime: dict[str, Any]) -> None:
@@ -267,6 +271,7 @@ def test_recall_claims_eval_gate(hybrid_eval_runtime: dict[str, Any]) -> None:
     recall_hits = 0
     reciprocal_ranks: list[float] = []
     precision_sum = 0.0
+    forbidden_claim_failures: list[str] = []
 
     print("\nRecall eval:")
     for entry in queries:
@@ -279,12 +284,13 @@ def test_recall_claims_eval_gate(hybrid_eval_runtime: dict[str, Any]) -> None:
         top3_ids = [str(row.get("candidate_id") or "") for row in results[:3]]
 
         for forbidden_id in forbidden_candidate_ids:
-            assert forbidden_id not in top3_ids, (
-                f"{entry['id']} expected superseded claim {forbidden_id} to stay out of the top 3"
-            )
+            if forbidden_id in top3_ids:
+                forbidden_claim_failures.append(
+                    f"{entry['id']} expected superseded claim {forbidden_id} to stay out of the top 3"
+                )
 
         reciprocal_ranks.append(1.0 / rank if rank else 0.0)
-        precision_sum += hits / 3.0
+        precision_sum += hits / min(3, len(expected_candidate_ids))
         if rank is not None and rank <= 3:
             recall_hits += 1
 
@@ -303,3 +309,4 @@ def test_recall_claims_eval_gate(hybrid_eval_runtime: dict[str, Any]) -> None:
     assert recall_at_3 >= floors["recall_at_3"], f"recall recall@3 too low: {recall_at_3:.0%}"
     assert mrr >= floors["mrr"], f"recall MRR too low: {mrr:.3f}"
     assert precision_at_3 >= floors["precision_at_3"], f"recall precision@3 too low: {precision_at_3:.3f}"
+    assert not forbidden_claim_failures, "\n".join(forbidden_claim_failures)

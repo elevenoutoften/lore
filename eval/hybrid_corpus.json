@@ -55,6 +55,14 @@
     {
       "id": "services/rrf-sentinel",
       "content": "---\ntitle: RRF Sentinel\nkind: service\nvisibility: internal\nstatus: active\nsummary: Lexical anchor for hybrid fusion and loose multi-word retrieval.\ntags: [uniqueprefixanchor, lexical, fusion]\n---\n\n# RRF Sentinel\n\nThe memory subsystem keeps several unrelated operational words between the opening term and the gateway boundary.\n\nThe uniqueprefixanchor identifier exists only to guard FTS prefix recall when sparse vector token matching has no exact query token.\n"
+    },
+    {
+      "id": "notes/graph-expansion-anchor",
+      "content": "---\ntitle: Expansion Anchor\nkind: note\nvisibility: internal\nstatus: active\nsummary: Direct lexical seed for the graph-only retrieval sentinel.\ntags: [expansionseedomega]\n---\n\n# Expansion Anchor\n\nThe expansionseedomega probe points only to [[services/graph-only-target]].\n"
+    },
+    {
+      "id": "services/graph-only-target",
+      "content": "---\ntitle: Sealed Context Target\nkind: service\nvisibility: internal\nstatus: active\nsummary: Opaque destination used to prove linked context traversal.\ntags: [sealed, context]\n---\n\n# Sealed Context Target\n\nThis deliberately opaque destination contains no lexical form of its retrieval probe.\n"
     }
   ],
   "captures": [
@@ -624,6 +632,14 @@
       "expected_page_ids": ["decisions/retrieval-policy", "runbooks/retrieval-triage"],
       "require_relevance_path_page": "decisions/retrieval-policy",
       "expectation": "The contradiction-update guidance should surface the decision and runbook pages through expanded context."
+    },
+    {
+      "id": "hybrid-graph-only-sentinel",
+      "case_type": "graph-only",
+      "query": "expansionseedomega",
+      "expected_page_ids": ["services/graph-only-target"],
+      "require_relevance_path_page": "services/graph-only-target",
+      "expectation": "The opaque target has no query terms and must enter the top 3 solely through its link from the lexical anchor."
     },
     {
       "id": "hybrid-fts-prefix-anchor",
