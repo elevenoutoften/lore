@@ -220,7 +220,11 @@ def test_all_claim_read_and_ack_surfaces_enforce_actor_scope(content_dir, search
             "/api/memory/capture",
             json={
                 "text": f"{unique_term} belongs only to surface agent B.",
-                "metadata": {"title": "Tenant surface B", "confidence": "high"},
+                "metadata": {
+                    "title": "Tenant surface B",
+                    "confidence": "high",
+                    "epistemic_status": "assumption",
+                },
             },
             headers=_headers(key_b),
         )
@@ -245,6 +249,18 @@ def test_all_claim_read_and_ack_surfaces_enforce_actor_scope(content_dir, search
         a_rag = _mcp_call(client, _headers(key_a), "lore_rag_context", {"query": unique_term, "limit": 5})
         a_actors = _mcp_call(client, _headers(key_a), "lore_list_actors", {})
         a_graph = client.get("/api/context-graph", headers=_headers(key_a))
+        a_graph_analytics = client.get("/api/graph/analytics", headers=_headers(key_a))
+        admin_graph_analytics = client.get(
+            "/api/graph/analytics",
+            params={"actor": "surface-agent-b", "cross_actor": "true"},
+            headers=_headers(admin_key),
+        )
+        a_blocked = client.get("/api/consolidation/blocked", headers=_headers(key_a))
+        admin_blocked = client.get(
+            "/api/consolidation/blocked",
+            params={"actor": "surface-agent-b", "cross_actor": "true"},
+            headers=_headers(admin_key),
+        )
 
         a_ack = client.post(
             "/api/memory/recall/ack",
@@ -272,6 +288,14 @@ def test_all_claim_read_and_ack_surfaces_enforce_actor_scope(content_dir, search
     assert candidate_id not in str(a_rag["result"]["structuredContent"])
     assert all(row["actor"] != "surface-agent-b" for row in a_actors["result"]["structuredContent"]["actors"])
     assert candidate_id not in a_graph.text
+    assert a_graph_analytics.status_code == 200, a_graph_analytics.text
+    assert admin_graph_analytics.status_code == 200, admin_graph_analytics.text
+    assert candidate_id not in a_graph_analytics.text
+    assert candidate_id in admin_graph_analytics.text
+    assert a_blocked.status_code == 200, a_blocked.text
+    assert admin_blocked.status_code == 200, admin_blocked.text
+    assert all(row["claim_id"] != candidate_id for row in a_blocked.json()["blocked"])
+    assert any(row["claim_id"] == candidate_id for row in admin_blocked.json()["blocked"])
 
     assert a_ack.status_code == 200
     assert a_ack.json()["acknowledged_count"] == 0

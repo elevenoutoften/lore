@@ -3,15 +3,15 @@ from __future__ import annotations
 # ruff: noqa: B008
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from ..analytics import GraphAnalytics, GraphAnalyticsResult
-from ..context_graph import build_context_graph
+from ..context_graph import build_context_graph, scope_context_graph
 from ..deps import get_graph_cache, get_ledger_db, get_repo, get_templates
 from ..link_graph import LinkGraphCache, build_enriched_graph, build_source_edges, page_links
 from ..repository import InvalidPageId, LoreRepository
-from ..route_utils import template_context
+from ..route_utils import recall_actor_scope, template_context
 from ..schemas import EnrichedLinkGraphResponse, LinkEdge, LinkGraphResponse, PageLinks
 
 if TYPE_CHECKING:
@@ -51,10 +51,17 @@ def api_source_edges(repo: LoreRepository = Depends(get_repo)):
 
 @router.get("/api/graph/analytics", response_model=GraphAnalyticsResult)
 def api_graph_analytics(
+    request: Request,
+    actor: str | None = Query(default=None),
+    cross_actor: bool = Query(default=False),
     repo: LoreRepository = Depends(get_repo),
     ledger: LedgerDB = Depends(get_ledger_db),
 ) -> GraphAnalyticsResult:
-    graph = build_context_graph(repo, ledger)
+    try:
+        actor_scope = recall_actor_scope(request, requested_actor=actor, cross_actor=cross_actor)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    graph = scope_context_graph(build_context_graph(repo, ledger), actor_scope)
     return GraphAnalytics(graph).compute()
 
 

@@ -3,9 +3,10 @@ from __future__ import annotations
 # ruff: noqa: B008
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from ..deps import get_consolidation_worker, get_ledger_db, get_patch_planner
+from ..route_utils import recall_actor_scope
 from ..schemas import (
     ConsolidationPlanRequest,
     ConsolidationRunRequest,
@@ -124,10 +125,19 @@ def reject_patch_plan(
 
 
 @consolidation_router.get("/blocked")
-def get_blocked_claims(ledger: LedgerDB = Depends(get_ledger_db)):
+def get_blocked_claims(
+    request: Request,
+    actor: str | None = Query(default=None),
+    cross_actor: bool = Query(default=False),
+    ledger: LedgerDB = Depends(get_ledger_db),
+):
     blocked: list[dict] = []
     try:
-        candidates = ledger.get_candidates(candidate_type="claim", limit=500)
+        actor_scope = recall_actor_scope(request, requested_actor=actor, cross_actor=cross_actor)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    try:
+        candidates = ledger.get_candidates(candidate_type="claim", actor=actor_scope, limit=500)
     except Exception:
         return {"blocked": [], "total": 0}
 
