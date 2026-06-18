@@ -419,7 +419,7 @@ def _enrich_with_ledger_context(
 
     if include_traces:
         try:
-            traces = ledger.list_traces(limit=200)
+            traces = ledger.list_traces(limit=200, actor=claim_actor)
         except Exception:
             traces = []
         for trace in traces:

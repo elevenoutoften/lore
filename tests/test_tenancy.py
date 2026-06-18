@@ -422,3 +422,107 @@ def test_trace_and_precedent_reads_are_scoped_to_authenticated_actor(content_dir
     assert any(
         item["trace_id"] == trace_id for item in admin_mcp_list["result"]["structuredContent"]["traces"]
     )
+
+
+def test_rag_include_traces_does_not_leak_cross_actor_trace_ids(content_dir, search_db, tmp_path):
+    app = _app(content_dir, search_db, tmp_path)
+    _, key_a = app.state.api_key_store.create_key(name="rag-trace-agent-a", role="writer")
+    _, key_b = app.state.api_key_store.create_key(name="rag-trace-agent-b", role="writer")
+    unique_term = "TenantRagTraceNeedle"
+
+    with TestClient(app) as client:
+        captured = client.post(
+            "/api/memory/capture",
+            json={
+                "text": f"{unique_term} belongs only to RAG trace agent A.",
+                "metadata": {"title": "Tenant rag trace A", "confidence": "high"},
+            },
+            headers=_headers(key_a),
+        )
+        assert captured.status_code == 201, captured.text
+        page_id = captured.json()["capture_id"]
+
+        own_trace = client.post(
+            "/api/traces",
+            json={
+                "actor": "rag-trace-agent-a",
+                "reason_summary": "Agent A's own reasoning over its own page.",
+                "status": "completed",
+                "provenance": {"page_ids": [page_id], "actor": "rag-trace-agent-a"},
+            },
+            headers=_headers(key_a),
+        )
+        assert own_trace.status_code == 201, own_trace.text
+        own_trace_id = own_trace.json()["trace_id"]
+
+        secret_trace = client.post(
+            "/api/traces",
+            json={
+                "actor": "rag-trace-agent-b",
+                "reason_summary": "Secret cross-actor reasoning by agent B over agent A's page.",
+                "status": "completed",
+                "provenance": {"page_ids": [page_id], "actor": "rag-trace-agent-b"},
+            },
+            headers=_headers(key_b),
+        )
+        assert secret_trace.status_code == 201, secret_trace.text
+        secret_trace_id = secret_trace.json()["trace_id"]
+
+        a_rag = client.post(
+            "/api/rag/retrieve",
+            json={"query": unique_term, "limit": 5, "expand_hops": 1, "include_traces": True},
+            headers=_headers(key_a),
+        )
+
+    assert a_rag.status_code == 200, a_rag.text
+    a_rows = {row["page_id"]: row for row in a_rag.json()["results"]}
+    assert page_id in a_rows, "expected agent A's own page in its own retrieval results"
+    related = a_rows[page_id].get("related_traces", [])
+    # Positive control: A's own trace is correctly surfaced, proving the enrichment path runs.
+    assert own_trace_id in related
+    # Leak 1 regression: agent B's trace id must not surface in agent A's related_traces.
+    assert secret_trace_id not in related
+    assert secret_trace_id not in a_rag.text
+
+
+def test_precedent_graph_does_not_leak_cross_actor_trace_nodes(content_dir, search_db, tmp_path):
+    app = _app(content_dir, search_db, tmp_path)
+    _, key_a = app.state.api_key_store.create_key(name="prec-graph-agent-a", role="writer")
+    _, key_b = app.state.api_key_store.create_key(name="prec-graph-agent-b", role="writer")
+    task_ref = "flow_000874b"
+
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/traces",
+            json={
+                "actor": "prec-graph-agent-b",
+                "reason_summary": "Secret cross-actor reasoning by agent B for a shared task.",
+                "status": "completed",
+                "related_ids": {"task_id": task_ref},
+                "provenance": {"task_ids": [task_ref], "actor": "prec-graph-agent-b"},
+            },
+            headers=_headers(key_b),
+        )
+        assert created.status_code == 201, created.text
+        secret_trace_id = created.json()["trace_id"]
+
+        a_precedents = client.post(
+            "/api/precedents",
+            json={"task_ref": task_ref, "limit": 20},
+            headers=_headers(key_a),
+        )
+        b_precedents = client.post(
+            "/api/precedents",
+            json={"task_ref": task_ref, "limit": 20},
+            headers=_headers(key_b),
+        )
+
+    assert b_precedents.status_code == 200, b_precedents.text
+    # Positive control: the owner reaches its own trace via the same task-graph path.
+    assert any(match["id"] == f"trace:{secret_trace_id}" for match in b_precedents.json()["matches"])
+
+    assert a_precedents.status_code == 200, a_precedents.text
+    a_matches = a_precedents.json()["matches"]
+    # Leak 2 regression: agent B's trace node must not surface in agent A's precedent graph search.
+    assert all(match["id"] != f"trace:{secret_trace_id}" for match in a_matches)
+    assert secret_trace_id not in a_precedents.text

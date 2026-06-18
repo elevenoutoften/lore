@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .context_graph import build_context_graph, query_neighbors, query_paths
+from .context_graph import build_context_graph, query_neighbors, query_paths, scope_context_graph
 from .repository import LoreRepository, optional_string, string_list
 from .schemas import (
     ContextGraphNeighborQuery,
@@ -36,7 +36,7 @@ def search_precedents(
     if request.entity or request.task_ref:
         graph_target = _search_via_context_graph(repo, ledger, request, results, seen_ids)
     if graph_target:
-        _enrich_graph_paths(repo, ledger, graph_target, results)
+        _enrich_graph_paths(repo, ledger, graph_target, results, request.actor)
 
     results.sort(key=lambda result: (-result.relevance, result.type, result.id))
     total_count = len(results)
@@ -240,7 +240,7 @@ def _search_via_context_graph(
     seen_ids: set[str],
 ) -> str | None:
     try:
-        graph = build_context_graph(repo, ledger)
+        graph = scope_context_graph(build_context_graph(repo, ledger), request.actor)
     except Exception:
         return None
 
@@ -276,10 +276,14 @@ def _search_via_context_graph(
 
 
 def _enrich_graph_paths(
-    repo: LoreRepository, ledger: LedgerDB | None, target_node: str, results: list[PrecedentResult]
+    repo: LoreRepository,
+    ledger: LedgerDB | None,
+    target_node: str,
+    results: list[PrecedentResult],
+    result_actor: str | None = None,
 ) -> None:
     try:
-        graph = build_context_graph(repo, ledger)
+        graph = scope_context_graph(build_context_graph(repo, ledger), result_actor)
     except Exception:
         return
 
