@@ -221,7 +221,10 @@ def api_memory_recall(
         query=query,
         count=len(claims),
         latency_ms=round(latency_ms, 3),
-        weights=weights_for_query(query, semantic_available=ledger.semantic_recall_enabled),
+        weights=weights_for_query(
+            query,
+            semantic_available=bool(query and query.strip()) and ledger.semantic_recall_enabled,
+        ),
         claims=claims,
         pending_captures=pending_captures,
         hint=hint,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from typing import Any
 
 from .config import LoreConfig
 from .ledger import LedgerDB
@@ -13,7 +14,21 @@ from .llm_provider import _primary_config_from_lore_config, build_embedding_clie
 from .mcp import PROJECT_NAME, PROTOCOL_VERSION, TOOLS
 from .rag.vector_store import VectorStore
 from .repository import LoreRepository
+from .route_utils import rebuild_vector_index
 from .search_index import LoreSearchIndex
+
+
+def configure_dense_retrieval(
+    repo: LoreRepository,
+    vector_store: VectorStore,
+    ledger_db: LedgerDB,
+    backend: Any,
+) -> None:
+    """Configure standalone MCP dense retrieval and rebuild stale model vectors."""
+    rebuild_dense = vector_store.configure_embedding_backend(backend)
+    if rebuild_dense:
+        rebuild_vector_index(repo, vector_store)
+    ledger_db.configure_semantic_scorer(vector_store.semantic_similarities if vector_store.dense_enabled else None)
 
 
 def main() -> int:
@@ -25,10 +40,12 @@ def main() -> int:
     vector_store = VectorStore(str(config.vector_db))
     ledger_db = LedgerDB(config.ledger_db)
     ledger_db.initialize()
-    vector_store.configure_embedding_backend(
-        build_embedding_client_from_config(_primary_config_from_lore_config(config))
+    configure_dense_retrieval(
+        repo,
+        vector_store,
+        ledger_db,
+        build_embedding_client_from_config(_primary_config_from_lore_config(config)),
     )
-    ledger_db.configure_semantic_scorer(vector_store.semantic_similarities if vector_store.dense_enabled else None)
     graph_cache = LinkGraphCache()
 
     for line in sys.stdin:

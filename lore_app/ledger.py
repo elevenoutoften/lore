@@ -34,6 +34,7 @@ from .schemas import (
 )
 
 CONFIDENCE_ORDER = {"unknown": 0, "low": 1, "medium": 2, "high": 3}
+MAX_SEMANTIC_CLAIMS_PER_RECALL = 50
 SEED_POLICIES = [
     PolicyRule(
         policy_id="auto-apply:v1",
@@ -1143,8 +1144,9 @@ class LedgerDB:
 
         Claims are scored on strength (reinforce/decay), recency (freshness of the
         update anchor), salience (acknowledged-use frequency), and -- when a
-        query is supplied -- lexical relevance. The strongest, freshest, most
-        frequently acknowledged, most relevant claims rank first. Each returned row
+        query is supplied -- lexical relevance plus optional semantic similarity.
+        Semantic scoring is capped to the strongest 50 candidates so one recall
+        cannot synchronously re-embed the full 500-row pool. Each returned row
         carries ``recall_score``, a ``recall_signals`` breakdown, and ``age_days``.
 
         When ``record_access`` is true, the returned claims have their access
@@ -1162,12 +1164,15 @@ class LedgerDB:
         )
 
         claim_texts = [_claim_text(row) for row in pool]
-        semantic_scores: list[float] | None = None
+        semantic_scores: list[float | None] = [None] * len(pool)
         if query and self._semantic_scorer is not None:
             try:
-                semantic_scores = self._semantic_scorer(query, claim_texts)
+                semantic_limit = min(len(claim_texts), MAX_SEMANTIC_CLAIMS_PER_RECALL)
+                raw_scores = self._semantic_scorer(query, claim_texts[:semantic_limit])
+                if raw_scores is not None and len(raw_scores) == semantic_limit:
+                    semantic_scores[:semantic_limit] = raw_scores
             except Exception:
-                semantic_scores = None
+                pass
 
         scored: list[dict[str, Any]] = []
         for index, row in enumerate(pool):
@@ -1179,7 +1184,7 @@ class LedgerDB:
                 access_count=int(row.get("access_count") or 0),
                 query=query,
                 text=claim_texts[index],
-                semantic_similarity=semantic_scores[index] if semantic_scores is not None else None,
+                semantic_similarity=semantic_scores[index],
             )
             entry = dict(row)
             entry["recall_score"] = round(score.total, 6)

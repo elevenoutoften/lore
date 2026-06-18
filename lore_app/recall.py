@@ -10,6 +10,8 @@ Recall ranks ledger claims for an agent's query by combining explainable signals
   so frequently-needed facts surface first without a single hot claim dominating.
 - **relevance** — lexical overlap between the query and the claim text, used only
   when a query string is supplied.
+- **semantic similarity** — optional embedding cosine similarity for the bounded
+  leading candidate pool when dense retrieval is configured.
 
 The weights are deliberately simple and deterministic: recall must be explainable
 to the agents that depend on it, and the score breakdown is returned alongside
@@ -107,6 +109,7 @@ def text_relevance(query: str, text: str) -> float:
 
 
 def _effective_weights(query: str | None, *, semantic_available: bool = False) -> dict[str, float]:
+    semantic_available = semantic_available and bool(query and query.strip())
     weights = dict(DEFAULT_WEIGHTS)
     if not semantic_available:
         weights["relevance"] += weights.pop("semantic_similarity")

@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 import sqlite3
 import threading
 from collections import Counter
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Protocol
 
-import sqlite_vec
+try:
+    import sqlite_vec
+except ImportError:  # pragma: no cover - exercised in packaging environments
+    sqlite_vec = None
 
 from lore_app.db_utils import retry_on_locked
+
+logger = logging.getLogger(__name__)
 
 
 class EmbeddingBackend(Protocol):
@@ -30,11 +37,22 @@ class VectorStore:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        self._embedding_lock = threading.Lock()
         self._cache_lock = threading.Lock()
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
-        self._conn.enable_load_extension(True)
-        sqlite_vec.load(self._conn)
-        self._conn.enable_load_extension(False)
+        self._dense_available = False
+        if sqlite_vec is not None:
+            try:
+                self._conn.enable_load_extension(True)
+                sqlite_vec.load(self._conn)
+                self._dense_available = True
+            except Exception as exc:
+                logger.warning("sqlite-vec unavailable; continuing with sparse TF-IDF retrieval: %s", exc)
+            finally:
+                with suppress(AttributeError, sqlite3.Error):
+                    self._conn.enable_load_extension(False)
+        else:
+            logger.warning("sqlite-vec is not installed; continuing with sparse TF-IDF retrieval")
         self._conn.execute("PRAGMA busy_timeout = 5000")
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._conn.execute("PRAGMA foreign_keys = ON")
@@ -84,17 +102,27 @@ class VectorStore:
 
     @property
     def dense_enabled(self) -> bool:
-        return self._embedding_backend is not None
+        with self._embedding_lock:
+            return self._dense_available and self._embedding_backend is not None
+
+    @property
+    def dense_available(self) -> bool:
+        return self._dense_available
 
     def configure_embedding_backend(self, backend: EmbeddingBackend | None) -> bool:
         """Swap the optional backend; return whether the dense index needs rebuilding."""
-        old = self._embedding_backend
-        self._embedding_backend = backend
-        if old is not None and old is not backend:
-            old.close()
-        with self._lock:
-            row = self._conn.execute("SELECT model FROM dense_index_metadata WHERE singleton = 1").fetchone()
-        return backend is not None and (row is None or row[0] != backend.model)
+        with self._embedding_lock:
+            if backend is not None and not self._dense_available:
+                logger.warning("Dense embedding backend ignored because sqlite-vec is unavailable")
+                backend.close()
+                backend = None
+            old = self._embedding_backend
+            self._embedding_backend = backend
+            if old is not None and old is not backend:
+                old.close()
+            with self._lock:
+                row = self._conn.execute("SELECT model FROM dense_index_metadata WHERE singleton = 1").fetchone()
+            return backend is not None and (row is None or row[0] != backend.model)
 
     @retry_on_locked()
     def upsert_chunk(self, chunk_id: str, page_id: str, chunk_index: int, content: str) -> None:
@@ -121,11 +149,17 @@ class VectorStore:
     @retry_on_locked()
     def upsert_page_chunks(self, page_id: str, chunks: list[dict[str, Any]]) -> None:
         """Bulk upsert all chunks for a page in a single transaction."""
-        dense_vectors = (
-            self._embedding_backend.embed([str(chunk["content"]) for chunk in chunks])
-            if chunks and self._embedding_backend
-            else None
-        )
+        dense_vectors: list[list[float]] | None = None
+        dense_backend: EmbeddingBackend | None = None
+        if chunks:
+            with self._embedding_lock:
+                dense_backend = self._embedding_backend
+                if dense_backend is not None:
+                    try:
+                        dense_vectors = dense_backend.embed([str(chunk["content"]) for chunk in chunks])
+                    except Exception as exc:
+                        logger.warning("Dense page indexing failed; sparse TF-IDF index was retained: %s", exc)
+                        dense_vectors = None
         with self._lock:
             old_rows = self._conn.execute(
                 "SELECT token, COUNT(DISTINCT chunk_id) "
@@ -185,8 +219,15 @@ class VectorStore:
 
             self._conn.commit()
             self._clear_idf_cache()
-            if dense_vectors is not None:
-                self._upsert_dense_page(page_id, chunks, dense_vectors)
+        if dense_vectors is not None and dense_backend is not None:
+            with self._embedding_lock:
+                if self._embedding_backend is dense_backend:
+                    with self._lock:
+                        try:
+                            self._upsert_dense_page(page_id, chunks, dense_vectors, dense_backend.model)
+                        except Exception as exc:
+                            self._conn.rollback()
+                            logger.warning("Dense vector persistence failed; sparse TF-IDF index was retained: %s", exc)
 
     def remove_page(self, page_id: str) -> int:
         with self._lock:
@@ -219,7 +260,7 @@ class VectorStore:
 
     def search(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """Search dense embeddings when configured, otherwise use TF-IDF."""
-        if self._embedding_backend is not None:
+        if self.dense_enabled:
             try:
                 dense = self._search_dense(query, limit)
                 if dense:
@@ -335,43 +376,53 @@ class VectorStore:
         return {token: cache.get(token, 1.0) for token in tokens}
 
     def semantic_similarities(self, query: str, texts: list[str]) -> list[float] | None:
-        """Return cosine similarities for arbitrary texts, or None in sparse mode."""
-        if self._embedding_backend is None or not texts:
+        """Return embedding cosine similarities for arbitrary texts, or None in sparse mode."""
+        if not texts:
             return None
-        vectors = self._embedding_backend.embed([query, *texts])
+        with self._embedding_lock:
+            backend = self._embedding_backend
+            if backend is None:
+                return None
+            vectors = backend.embed([query, *texts])
         query_vector = vectors[0]
         return [self._dense_cosine(query_vector, vector) for vector in vectors[1:]]
 
-    def _ensure_dense_index(self, dimensions: int) -> None:
-        assert self._embedding_backend is not None
+    def _ensure_dense_index(self, dimensions: int, model: str) -> None:
         metadata = self._conn.execute(
             "SELECT model, dimensions FROM dense_index_metadata WHERE singleton = 1"
         ).fetchone()
-        if metadata != (self._embedding_backend.model, dimensions):
+        if metadata != (model, dimensions):
             self._drop_dense_index()
             self._conn.execute(
                 f"CREATE VIRTUAL TABLE dense_vectors USING vec0(embedding float[{dimensions}] distance_metric=cosine)"
             )
             self._conn.execute(
                 "INSERT INTO dense_index_metadata(singleton, model, dimensions) VALUES (1, ?, ?)",
-                (self._embedding_backend.model, dimensions),
+                (model, dimensions),
             )
 
     def _drop_dense_index(self) -> None:
-        self._conn.execute("DROP TABLE IF EXISTS dense_vectors")
+        if self._dense_available:
+            self._conn.execute("DROP TABLE IF EXISTS dense_vectors")
         self._conn.execute("DELETE FROM dense_vector_rows")
         self._conn.execute("DELETE FROM dense_index_metadata")
 
     def _delete_dense_page(self, page_id: str) -> None:
         rows = self._conn.execute("SELECT rowid FROM dense_vector_rows WHERE page_id = ?", (page_id,)).fetchall()
-        if self._dense_table_exists():
+        if self._dense_available and self._dense_table_exists():
             self._conn.executemany("DELETE FROM dense_vectors WHERE rowid = ?", rows)
         self._conn.execute("DELETE FROM dense_vector_rows WHERE page_id = ?", (page_id,))
 
-    def _upsert_dense_page(self, page_id: str, chunks: list[dict[str, Any]], vectors: list[list[float]]) -> None:
+    def _upsert_dense_page(
+        self,
+        page_id: str,
+        chunks: list[dict[str, Any]],
+        vectors: list[list[float]],
+        model: str,
+    ) -> None:
         if len(vectors) != len(chunks) or (vectors and not vectors[0]):
             raise ValueError("Embedding backend returned malformed vectors")
-        self._ensure_dense_index(len(vectors[0]))
+        self._ensure_dense_index(len(vectors[0]), model)
         self._delete_dense_page(page_id)
         for chunk, vector in zip(chunks, vectors, strict=True):
             cursor = self._conn.execute(
@@ -380,27 +431,32 @@ class VectorStore:
             )
             self._conn.execute(
                 "INSERT INTO dense_vectors(rowid, embedding) VALUES (?, ?)",
-                (cursor.lastrowid, sqlite_vec.serialize_float32(vector)),
+                (cursor.lastrowid, self._serialize_vector(vector)),
             )
         self._conn.commit()
 
     def _search_dense(self, query: str, limit: int) -> list[dict[str, Any]]:
-        if not query.strip() or not self._dense_table_exists():
+        if not query.strip():
             return []
-        assert self._embedding_backend is not None
-        vector = self._embedding_backend.embed([query])[0]
-        with self._lock:
-            rows = self._conn.execute(
-                """
-                SELECT c.chunk_id, c.page_id, c.chunk_index, c.content, c.token_count, v.distance
-                FROM dense_vectors v
-                JOIN dense_vector_rows d ON d.rowid = v.rowid
-                JOIN chunks c ON c.chunk_id = d.chunk_id
-                WHERE v.embedding MATCH ? AND k = ?
-                ORDER BY v.distance
-                """,
-                (sqlite_vec.serialize_float32(vector), limit),
-            ).fetchall()
+        with self._embedding_lock:
+            backend = self._embedding_backend
+            if backend is None:
+                return []
+            vector = backend.embed([query])[0]
+            with self._lock:
+                if not self._dense_table_exists():
+                    return []
+                rows = self._conn.execute(
+                    """
+                    SELECT c.chunk_id, c.page_id, c.chunk_index, c.content, c.token_count, v.distance
+                    FROM dense_vectors v
+                    JOIN dense_vector_rows d ON d.rowid = v.rowid
+                    JOIN chunks c ON c.chunk_id = d.chunk_id
+                    WHERE v.embedding MATCH ? AND k = ?
+                    ORDER BY v.distance
+                    """,
+                    (self._serialize_vector(vector), limit),
+                ).fetchall()
         return [
             {
                 "chunk_id": row[0],
@@ -416,6 +472,12 @@ class VectorStore:
 
     def _dense_table_exists(self) -> bool:
         return self._conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'dense_vectors'").fetchone() is not None
+
+    @staticmethod
+    def _serialize_vector(vector: list[float]) -> bytes:
+        if sqlite_vec is None:  # pragma: no cover - guarded by dense_available
+            raise RuntimeError("sqlite-vec is unavailable")
+        return sqlite_vec.serialize_float32(vector)
 
     @staticmethod
     def _dense_cosine(a: list[float], b: list[float]) -> float:
@@ -475,8 +537,10 @@ class VectorStore:
         return re.findall(r"[a-z0-9]{2,}", text.lower())
 
     def close(self) -> None:
-        if self._embedding_backend is not None:
-            self._embedding_backend.close()
+        with self._embedding_lock:
+            if self._embedding_backend is not None:
+                self._embedding_backend.close()
+                self._embedding_backend = None
         if self._conn is not None:
             self._conn.close()
             self._conn = None

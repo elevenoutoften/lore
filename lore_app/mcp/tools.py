@@ -1271,7 +1271,10 @@ def _handle_lore_recall(ctx: McpContext) -> dict[str, Any]:
     payload = {
         "query": query,
         "count": len(claims),
-        "weights": weights_for_query(query, semantic_available=ledger.semantic_recall_enabled),
+        "weights": weights_for_query(
+            query,
+            semantic_available=bool(query and query.strip()) and ledger.semantic_recall_enabled,
+        ),
         "claims": claims,
         "pending_captures": pending_captures,
         "hint": hint,

@@ -68,6 +68,7 @@ def test_put_then_get_llm_settings_masks_secrets(client):
     payload = {
         "provider": "ollama",
         "model": "glm-5.1",
+        "embedding_model": "embeddinggemma",
         "base_url": "https://example.invalid/v1",
         "api_key": "sk-secret-b1f3",
         "escalation_model": "minimax-m3",
@@ -82,6 +83,8 @@ def test_put_then_get_llm_settings_masks_secrets(client):
     assert updated.status_code == 200, updated.text
     updated_payload = updated.json()
     assert updated_payload["model"] == "glm-5.1"
+    assert updated_payload["embedding_model"] == "embeddinggemma"
+    assert updated_payload["embeddings_enabled"] is True
     assert updated_payload["api_key_configured"] is True
     assert updated_payload["api_key_hint"] == "****b1f3"
     assert "sk-secret-b1f3" not in updated.text
@@ -113,6 +116,7 @@ def test_hot_reload_swaps_llm_client(client):
 def test_merged_llm_config_uses_env_fallback(tmp_path, monkeypatch):
     monkeypatch.setenv("LORE_LLM_PROVIDER", "ollama")
     monkeypatch.setenv("LORE_LLM_MODEL", "glm-5.1")
+    monkeypatch.setenv("LORE_LLM_EMBEDDING_MODEL", "embeddinggemma")
     monkeypatch.setenv("LORE_LLM_BASE_URL", "https://env.example/v1")
     monkeypatch.setenv("LORE_LLM_API_KEY", "sk-env")
     config = LoreConfig()
@@ -123,6 +127,7 @@ def test_merged_llm_config_uses_env_fallback(tmp_path, monkeypatch):
 
     assert merged.name == "ollama"
     assert merged.model == "glm-5.1"
+    assert merged.embedding_model == "embeddinggemma"
     assert merged.base_url == "https://env.example/v1"
     assert merged.api_key == "sk-env"
     store.close()

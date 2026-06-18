@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from fastapi.testclient import TestClient
+
 import lore_app.rag.hybrid_retrieval as hybrid_module
+import lore_app.rag.vector_store as vector_store_module
+from lore_app.config import LoreConfig
 from lore_app.context_graph import build_context_graph
+from lore_app.main import create_app
 from lore_app.rag.chunker import chunk_page
 from lore_app.rag.eval_retrieval import evaluate_retrieval
 from lore_app.rag.hybrid_retrieval import hybrid_retrieve, hybrid_retrieve_expanded
@@ -70,6 +75,17 @@ class SynonymEmbeddings:
         pass
 
 
+class FailingEmbeddings:
+    model = "failing-embeddings"
+
+    def embed(self, texts):
+        del texts
+        raise RuntimeError("embedding endpoint unavailable")
+
+    def close(self):
+        pass
+
+
 def test_vector_store_dense_paraphrase_search_persists_in_sqlite_vec(tmp_path):
     path = tmp_path / "vectors.db"
     store = VectorStore(path)
@@ -98,6 +114,45 @@ def test_vector_store_without_embedding_backend_keeps_sparse_fallback(tmp_path):
     )
 
     assert store.search("auth fails") == []
+
+
+def test_create_app_without_sqlite_vec_still_serves_sparse_retrieval(tmp_path, monkeypatch):
+    class BrokenSqliteVec:
+        @staticmethod
+        def load(_connection):
+            raise RuntimeError("extension loading disabled")
+
+    monkeypatch.setattr(vector_store_module, "sqlite_vec", BrokenSqliteVec())
+    config = LoreConfig()
+    config.content_dir = tmp_path / "pages"
+    config.search_db = tmp_path / "search.db"
+    config.vector_db = tmp_path / "vectors.db"
+    config.ledger_db = tmp_path / "ledger.db"
+    config.api_keys_db = tmp_path / "api-keys.db"
+    config.settings_db = tmp_path / "settings.db"
+    app = create_app(config, mount_workspaces=False)
+
+    with TestClient(app) as client:
+        store = client.app.state.vector_store
+        assert store.dense_available is False
+        store.upsert_page_chunks(
+            "sparse-page",
+            [{"chunk_id": "sparse#0", "page_id": "sparse-page", "chunk_index": 0, "content": "local tfidf recall"}],
+        )
+        assert client.get("/healthz").status_code == 200
+        assert store.search("tfidf")[0]["page_id"] == "sparse-page"
+
+
+def test_embedding_outage_keeps_sparse_page_index(tmp_path):
+    store = VectorStore(tmp_path / "vectors.db")
+    store.configure_embedding_backend(FailingEmbeddings())
+
+    store.upsert_page_chunks(
+        "outage-page",
+        [{"chunk_id": "outage#0", "page_id": "outage-page", "chunk_index": 0, "content": "durable sparse index"}],
+    )
+
+    assert store.search("durable sparse")[0]["page_id"] == "outage-page"
 
 
 def test_hybrid_rrf_preserves_fts_only_hit_against_larger_vector_scores():

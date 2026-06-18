@@ -47,6 +47,7 @@ def test_weights_drop_relevance_without_query_and_keep_with_query():
 
     without_query = weights_for_query(None)
     assert "relevance" not in without_query
+    assert "semantic_similarity" not in weights_for_query(None, semantic_available=True)
     assert abs(sum(without_query.values()) - 1.0) < 1e-6
 
 
@@ -118,6 +119,29 @@ def test_recall_claims_ranks_query_relevance_first(tmp_path):
     assert results[0]["content_json"]["subject"] == "services/lore"
     assert results[0]["recall_score"] >= results[1]["recall_score"]
     assert results[0]["recall_signals"]["relevance"] == 1.0
+
+
+def test_recall_caps_synchronous_semantic_scoring_pool(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    _seed(
+        ledger,
+        [
+            ExtractedClaim(subject=f"subject-{index}", predicate="states", object="memory", confidence="high")
+            for index in range(80)
+        ],
+    )
+    batch_sizes: list[int] = []
+
+    def semantic_scorer(query: str, texts: list[str]) -> list[float]:
+        del query
+        batch_sizes.append(len(texts))
+        return [0.5] * len(texts)
+
+    ledger.configure_semantic_scorer(semantic_scorer)
+    ledger.recall_claims(query="memory", pool_limit=80)
+
+    assert batch_sizes == [50]
 
 
 def test_recall_records_access_and_populates_salience(tmp_path):
