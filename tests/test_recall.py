@@ -243,6 +243,43 @@ def test_recall_prefers_newer_contradiction_and_flags_loser(tmp_path):
     assert results[1]["contradicted_by"] == results[0]["candidate_id"]
 
 
+def test_recall_explicit_validity_outranks_unknown_contradiction_time(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    _seed(
+        ledger,
+        [
+            ExtractedClaim(
+                subject="services/lore",
+                predicate="uses database",
+                object="mysql",
+                confidence="high",
+            )
+        ],
+        batch="unknown-validity",
+    )
+    _seed(
+        ledger,
+        [
+            ExtractedClaim(
+                subject="services/lore",
+                predicate="uses database",
+                object="postgres",
+                confidence="high",
+                valid_from="2026-06-15",
+            )
+        ],
+        batch="known-validity",
+    )
+
+    results = ledger.recall_claims(now=datetime(2026, 6, 18, tzinfo=UTC), limit=5)
+
+    assert results[0]["content_json"]["object"] == "postgres"
+    assert results[0].get("contradicted_by") is None
+    assert results[1]["content_json"]["object"] == "mysql"
+    assert results[1]["contradicted_by"] == results[0]["candidate_id"]
+
+
 def test_recall_normalizes_mixed_validity_forms_and_excludes_expired_by_default(tmp_path):
     ledger = LedgerDB(tmp_path / "ledger.db")
     ledger.initialize()

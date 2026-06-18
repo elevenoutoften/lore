@@ -1880,7 +1880,7 @@ def _canonical_utc(value: str | None) -> str | None:
 
 
 def _claim_temporal_key(row: dict[str, Any]) -> datetime:
-    for field in ("valid_from", "observed_at", "updated_at", "created_at"):
+    for field in ("valid_from", "observed_at"):
         canonical = _canonical_utc(str(row.get(field) or ""))
         if canonical:
             try:
