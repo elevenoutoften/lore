@@ -40,6 +40,20 @@ def decision_by_id(decisions, policy_id: str):
     return next(decision for decision in decisions if decision.policy_id == policy_id)
 
 
+def make_claim_row(**overrides):
+    claim = {
+        "actor": "nyx",
+        "confidence": "medium",
+        "valid_from": "2026-01-01T00:00:00+00:00",
+        "observed_at": None,
+        "epistemic_status": "retrieved",
+        "trace_id": "trace-001",
+        "content_json": {},
+    }
+    claim.update(overrides)
+    return claim
+
+
 def make_policy(**overrides) -> PolicyRule:
     defaults = {
         "policy_id": "valid-name:v1",
@@ -446,3 +460,83 @@ def test_inferred_with_trace_accepted(ledger):
         trace_id="trace-001",
     )
     assert not any(d.policy_id.startswith("epistemic:") and not d.passed for d in decisions)
+
+
+def test_claim_supersession_rejects_cross_actor_replacement(ledger):
+    decision = PolicyEngine(ledger).evaluate_claim_supersession(
+        make_claim_row(),
+        make_claim_row(
+            actor="other",
+            confidence="high",
+            valid_from="2026-06-01T00:00:00+00:00",
+        ),
+    )
+
+    assert decision.passed is False
+    assert "different actors" in decision.reason
+
+
+def test_claim_supersession_rejects_missing_new_time(ledger):
+    decision = PolicyEngine(ledger).evaluate_claim_supersession(
+        make_claim_row(),
+        make_claim_row(
+            confidence="high",
+            valid_from=None,
+            observed_at=None,
+        ),
+    )
+
+    assert decision.passed is False
+    assert "not strictly newer" in decision.reason
+
+
+def test_claim_supersession_rejects_older_replacement(ledger):
+    decision = PolicyEngine(ledger).evaluate_claim_supersession(
+        make_claim_row(valid_from="2026-06-01T00:00:00+00:00"),
+        make_claim_row(
+            confidence="high",
+            valid_from="2026-01-01T00:00:00+00:00",
+        ),
+    )
+
+    assert decision.passed is False
+    assert "not strictly newer" in decision.reason
+
+
+def test_claim_supersession_rejects_lower_confidence_replacement(ledger):
+    decision = PolicyEngine(ledger).evaluate_claim_supersession(
+        make_claim_row(confidence="high"),
+        make_claim_row(
+            confidence="medium",
+            valid_from="2026-06-01T00:00:00+00:00",
+        ),
+    )
+
+    assert decision.passed is False
+    assert "not higher" in decision.reason
+
+
+def test_claim_supersession_rejects_equal_confidence_replacement(ledger):
+    decision = PolicyEngine(ledger).evaluate_claim_supersession(
+        make_claim_row(confidence="high"),
+        make_claim_row(
+            confidence="high",
+            valid_from="2026-06-01T00:00:00+00:00",
+        ),
+    )
+
+    assert decision.passed is False
+    assert "not higher" in decision.reason
+
+
+def test_claim_supersession_accepts_same_actor_newer_higher_confidence_replacement(ledger):
+    decision = PolicyEngine(ledger).evaluate_claim_supersession(
+        make_claim_row(confidence="medium"),
+        make_claim_row(
+            confidence="high",
+            valid_from="2026-06-01T00:00:00+00:00",
+        ),
+    )
+
+    assert decision.passed is True
+    assert decision.reason == "auto-supersede allowed"

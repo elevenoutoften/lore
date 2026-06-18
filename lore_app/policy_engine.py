@@ -110,8 +110,8 @@ class PolicyEngine:
             reasons.append("claims belong to different actors")
         if new_time is None or old_time is None or new_time <= old_time:
             reasons.append("replacement is not strictly newer")
-        if new_confidence < old_confidence:
-            reasons.append("replacement confidence is lower")
+        if new_confidence <= old_confidence:
+            reasons.append("replacement confidence is not higher")
         if epistemic_status == "assumption":
             reasons.append("assumptions require review")
         if epistemic_status == "inferred" and not trace_id:

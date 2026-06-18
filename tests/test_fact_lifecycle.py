@@ -76,7 +76,7 @@ def test_newer_contradiction_auto_supersedes_with_policy_trace_and_audit(tmp_pat
         subject="services/lore",
         predicate="uses database",
         object="MySQL",
-        confidence="high",
+        confidence="medium",
         actor="nyx",
         valid_from="2026-01-01",
         source_page_ids=["inbox/old"],
@@ -84,6 +84,7 @@ def test_newer_contradiction_auto_supersedes_with_policy_trace_and_audit(tmp_pat
     new_claim = old_claim.model_copy(
         update={
             "object": "Postgres",
+            "confidence": "high",
             "valid_from": "2026-06-15",
             "source_page_ids": ["inbox/new"],
         }
