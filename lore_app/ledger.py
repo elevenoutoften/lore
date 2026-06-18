@@ -105,7 +105,7 @@ def _normalize(text: str) -> str:
 class LedgerDB:
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path)
-        self._connection: sqlite3.Connection | None = None
+        self._tl = threading.local()
         self._conn_lock = threading.Lock()
         self._lock = threading.RLock()
         self._generation: int = 0
@@ -127,16 +127,25 @@ class LedgerDB:
         self._generation += 1
 
     @property
+    def _connection(self) -> sqlite3.Connection | None:
+        """Compatibility shim for callers that probe connection initialization."""
+        return getattr(self._tl, "conn", None)
+
+    @property
     def connection(self) -> sqlite3.Connection:
-        with self._conn_lock:
-            if self._connection is None:
-                self.db_path.parent.mkdir(parents=True, exist_ok=True)
-                self._connection = sqlite3.connect(self.db_path, check_same_thread=False)
-                self._connection.row_factory = sqlite3.Row
-                self._connection.execute("PRAGMA busy_timeout = 5000")
-                self._connection.execute("PRAGMA journal_mode = WAL")
-                self._connection.execute("PRAGMA foreign_keys = ON")
-        return self._connection
+        conn = getattr(self._tl, "conn", None)
+        if conn is None:
+            with self._conn_lock:
+                conn = getattr(self._tl, "conn", None)
+                if conn is None:
+                    self.db_path.parent.mkdir(parents=True, exist_ok=True)
+                    conn = sqlite3.connect(self.db_path, check_same_thread=True)
+                    conn.row_factory = sqlite3.Row
+                    conn.execute("PRAGMA busy_timeout = 5000")
+                    conn.execute("PRAGMA journal_mode = WAL")
+                    conn.execute("PRAGMA foreign_keys = ON")
+                    self._tl.conn = conn
+        return conn
 
     # Columns added by migrations beyond the original schema.
     _MIGRATION_COLUMNS: ClassVar[dict[str, list[tuple[str, str]]]] = {
@@ -384,6 +393,17 @@ class LedgerDB:
             )
             self.connection.commit()
             self._run_migrations()
+            self.connection.executescript(
+                """
+            CREATE INDEX IF NOT EXISTS idx_candidates_type_status_strength
+                ON extraction_candidates(candidate_type, status, strength);
+            CREATE INDEX IF NOT EXISTS idx_candidates_dedupe_type_status
+                ON extraction_candidates(dedupe_hash, candidate_type, status);
+            CREATE INDEX IF NOT EXISTS idx_candidates_type_status_subject
+                ON extraction_candidates(candidate_type, status, normalized_subject);
+            """
+            )
+            self.connection.commit()
             self._seed_policies()
 
     def _run_migrations(self) -> None:
@@ -854,25 +874,26 @@ class LedgerDB:
 
     def find_matching_claim(self, claim: ExtractedClaim) -> dict[str, Any] | None:
         """Return the live candidate row for an extracted claim's normalized triple."""
-        row = self.connection.execute(
-            """
-            SELECT * FROM extraction_candidates
-            WHERE candidate_type = 'claim'
-              AND status IN ('candidate', 'active')
-              AND normalized_subject = ?
-              AND normalized_predicate = ?
-              AND normalized_object = ?
-              AND actor IS ?
-            ORDER BY updated_at DESC, candidate_id
-            LIMIT 1
-            """,
-            (
-                _normalize(claim.subject),
-                _normalize(claim.predicate),
-                _normalize(claim.object),
-                claim.actor,
-            ),
-        ).fetchone()
+        with self._lock:
+            row = self.connection.execute(
+                """
+                SELECT * FROM extraction_candidates
+                WHERE candidate_type = 'claim'
+                  AND status IN ('candidate', 'active')
+                  AND normalized_subject = ?
+                  AND normalized_predicate = ?
+                  AND normalized_object = ?
+                  AND actor IS ?
+                ORDER BY updated_at DESC, candidate_id
+                LIMIT 1
+                """,
+                (
+                    _normalize(claim.subject),
+                    _normalize(claim.predicate),
+                    _normalize(claim.object),
+                    claim.actor,
+                ),
+            ).fetchone()
         return _decode_row(row) if row is not None else None
 
     def find_contradicting_claims(self, new_claim: ExtractedClaim) -> list[dict[str, Any]]:
@@ -887,20 +908,21 @@ class LedgerDB:
         new_valid_from = _canonical_utc(new_claim.valid_from or new_claim.observed_at or utc_now())
         new_valid_until = _canonical_utc(new_claim.valid_until)
 
-        rows = self.connection.execute(
-            """
-            SELECT * FROM extraction_candidates
-            WHERE candidate_type = 'claim'
-              AND status IN ('candidate', 'active')
-              AND normalized_subject = ?
-              AND normalized_predicate = ?
-              AND normalized_object != ?
-              AND (valid_until IS NULL OR datetime(valid_until) > datetime(?))
-              AND (? IS NULL OR valid_from IS NULL OR datetime(valid_from) < datetime(?))
-            ORDER BY strength DESC
-            """,
-            (norm_subj, norm_pred, norm_obj, new_valid_from, new_valid_until, new_valid_until),
-        ).fetchall()
+        with self._lock:
+            rows = self.connection.execute(
+                """
+                SELECT * FROM extraction_candidates
+                WHERE candidate_type = 'claim'
+                  AND status IN ('candidate', 'active')
+                  AND normalized_subject = ?
+                  AND normalized_predicate = ?
+                  AND normalized_object != ?
+                  AND (valid_until IS NULL OR datetime(valid_until) > datetime(?))
+                  AND (? IS NULL OR valid_from IS NULL OR datetime(valid_from) < datetime(?))
+                ORDER BY strength DESC
+                """,
+                (norm_subj, norm_pred, norm_obj, new_valid_from, new_valid_until, new_valid_until),
+            ).fetchall()
         decoded = [_decode_row(row) for row in rows]
         if new_claim.actor:
             decoded = [row for row in decoded if row.get("actor") == new_claim.actor]
@@ -1111,17 +1133,18 @@ class LedgerDB:
             params.append(canonical_valid_at)
 
         where = " AND ".join(clauses)
-        params.append(max(1, min(limit, 1000)))
+        params.append(max(1, min(limit, 2000)))
 
-        rows = self.connection.execute(
-            f"""
-            SELECT * FROM extraction_candidates
-            WHERE {where}
-            ORDER BY strength DESC, updated_at DESC
-            LIMIT ?
-            """,
-            params,
-        ).fetchall()
+        with self._lock:
+            rows = self.connection.execute(
+                f"""
+                SELECT * FROM extraction_candidates
+                WHERE {where}
+                ORDER BY strength DESC, updated_at DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
         return [_decode_row(row) for row in rows]
 
     # ─── Recall (recency/salience-weighted) ────────────────────────────────
@@ -1154,13 +1177,16 @@ class LedgerDB:
         acknowledgement. It does not affect recency or the decay anchor.
         """
         now_dt = now or datetime.now(UTC)
+        effective_pool = pool_limit
+        if query is not None:
+            effective_pool = min(pool_limit * 3, 2000)
         pool = self.get_active_claims(
             subject=subject,
             lane=lane,
             actor=actor,
             min_strength=min_strength,
             valid_at=valid_at or now_dt.isoformat(),
-            limit=pool_limit,
+            limit=effective_pool,
         )
 
         claim_texts = [_claim_text(row) for row in pool]
@@ -1263,10 +1289,11 @@ class LedgerDB:
     # ─── Existing methods ──────────────────────────────────────────────────
 
     def is_capture_extracted(self, capture_id: str) -> bool:
-        row = self.connection.execute(
-            "SELECT 1 FROM extraction_log WHERE capture_id = ? AND success = 1 LIMIT 1",
-            (capture_id,),
-        ).fetchone()
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT 1 FROM extraction_log WHERE capture_id = ? AND success = 1 LIMIT 1",
+                (capture_id,),
+            ).fetchone()
         return row is not None
 
     @retry_on_locked()
@@ -1904,9 +1931,10 @@ class LedgerDB:
         return int(row["count"] if row is not None else 0)
 
     def close(self) -> None:
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        conn = getattr(self._tl, "conn", None)
+        if conn is not None:
+            conn.close()
+            self._tl.conn = None
 
     def _iter_candidates(self, result: ExtractionResult):
         for entity in result.entities:
