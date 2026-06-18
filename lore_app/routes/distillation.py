@@ -3,7 +3,7 @@ from __future__ import annotations
 # ruff: noqa: B008
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from ..deps import get_repo
 from ..distillation import distill_daily, get_daily_captures, get_pending_days, promote_daily_note
@@ -15,13 +15,14 @@ router = APIRouter()
 
 @router.post("/api/distill/daily", response_model=DailyDistillResponse)
 def api_distill_daily(
+    request: Request,
     payload: DailyDistillRequest | None = None,
     repo: LoreRepository = Depends(get_repo),
 ):
     if payload is None:
         payload = DailyDistillRequest()
     try:
-        return distill_daily(repo, payload)
+        return distill_daily(repo, payload, llm_client=getattr(request.app.state, "llm_client", None))
     except InvalidPageId as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

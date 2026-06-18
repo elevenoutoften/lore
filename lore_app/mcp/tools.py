@@ -1847,7 +1847,12 @@ def _handle_lore_distill_daily(ctx: McpContext) -> dict[str, Any]:
     date_arg = optional_string(arguments.get("date"))
     actor_arg = optional_string(arguments.get("actor"))
     try:
-        result = distill_daily(ctx.repo, DailyDistillRequest(date=date_arg, actor=actor_arg))
+        llm_client = getattr(getattr(getattr(ctx.request, "app", None), "state", None), "llm_client", None)
+        result = distill_daily(
+            ctx.repo,
+            DailyDistillRequest(date=date_arg, actor=actor_arg),
+            llm_client=llm_client,
+        )
     except InvalidPageId as exc:
         raise JsonRpcError(-32602, str(exc)) from exc
     if ctx.search_index is not None and result.page_id:
@@ -1971,12 +1976,14 @@ def _handle_lore_propose_procedure_candidate(ctx: McpContext) -> dict[str, Any]:
     trigger = optional_string(arguments.get("trigger"))
     lane = optional_string(arguments.get("lane"))
     try:
+        llm_client = getattr(getattr(getattr(ctx.request, "app", None), "state", None), "llm_client", None)
         result = propose_procedure_candidate(
             ctx.repo,
             capture_ids,
             title=title,
             trigger=trigger,
             lane=lane,
+            llm_client=llm_client,
         )
     except InvalidPageId as exc:
         raise JsonRpcError(-32602, str(exc)) from exc

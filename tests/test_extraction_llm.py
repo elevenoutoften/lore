@@ -565,7 +565,7 @@ def test_llm_error_fallback_preserves_provenance(tmp_path, fake_llm_client):
     assert len(result.claims) == 1
     claim = result.claims[0]
     assert claim.subject == "services/lore"
-    assert claim.predicate == "states"
+    assert claim.predicate == "depends_on"
     assert claim.object == "Lore depends on [[services/auth]]."
     assert claim.observed_at == "2026-05-26T00:00:00Z"
     assert claim.valid_from == "2026-05-01"

@@ -1,10 +1,41 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+
+from lore_app.distillation import distill_session_to_daily
+from lore_app.repository import LoreRepository
 
 
 def _today() -> str:
     return datetime.now(UTC).date().isoformat()
+
+
+def test_distillation_uses_llm_episodic_summary_instead_of_verbatim_capture(tmp_path):
+    class SummaryClient:
+        def extract_json(self, system_prompt, user_prompt, **kwargs):
+            del system_prompt, user_prompt, kwargs
+            return {"facts": ["The release failed health checks and was rolled back safely."]}
+
+    repo = LoreRepository(tmp_path / "pages")
+    for suffix, observation in (
+        ("deploy", "A long deployment transcript ended when the health check failed."),
+        ("rollback", "Operators restored the prior release and confirmed recovery."),
+    ):
+        repo.upsert_page(
+            f"inbox/2026-06-18/{suffix}",
+            f"---\ntitle: {suffix.title()}\nkind: capture\nvisibility: internal\nstatus: draft\n---\n\n{observation}\n",
+        )
+
+    result = distill_session_to_daily(
+        repo,
+        repo.list_pages(kind="capture"),
+        date(2026, 6, 18),
+        llm_client=SummaryClient(),
+    )
+
+    assert "The release failed health checks and was rolled back safely." in result["content"]
+    assert "A long deployment transcript" not in result["content"]
+    assert "## Episodic Facts" in result["content"]
 
 
 def test_promote_daily_note_preserves_frontmatter(client):

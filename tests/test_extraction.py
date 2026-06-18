@@ -108,6 +108,39 @@ def candidate_for_capture(ledger: LedgerDB, capture_id: str) -> dict:
     )
 
 
+def test_deterministic_extraction_splits_bullets_into_typed_claims(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    capture_id = "inbox/2026-06-18/multi-fact"
+    repo.upsert_page(
+        capture_id,
+        """---
+title: Multi Fact Capture
+kind: capture
+visibility: internal
+status: draft
+suggested_target_page: services/lore
+---
+
+# Retrieval
+
+- Lore uses SQLite for sparse recall.
+- Lore requires an API key for dense embeddings.
+- Lore supports deterministic cold starts.
+""",
+    )
+
+    result = extract_from_captures(
+        repo,
+        capture_ids=[capture_id],
+        dry_run=True,
+        ledger_db=make_ledger(tmp_path),
+    )
+
+    assert len(result.claims) == 3
+    assert [claim.predicate for claim in result.claims] == ["uses", "requires", "supports"]
+    assert {claim.section for claim in result.claims} == {"Retrieval"}
+
+
 def test_get_unprocessed_captures_returns_only_draft_unprocessed(tmp_path):
     repo = LoreRepository(tmp_path / "pages")
     capture_id = add_capture(repo)

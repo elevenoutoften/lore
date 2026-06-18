@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from lore_app.procedure_candidate import find_repeated_captures, propose_procedure_candidate
+from lore_app.repository import LoreRepository
+
 PROCEDURE_MD = """---
 title: Deploy Service
 kind: procedure
@@ -271,6 +274,57 @@ def test_candidate_creation_via_api(client):
     assert fm["validated_at"] is None
     assert fm["source_capture_ids"] == capture_ids
     assert "sources" not in fm
+    assert fm["steps"]
+    assert "To be filled in" not in body["page"]["content"]
+
+
+def test_candidate_llm_drafts_real_steps(tmp_path):
+    class StepsClient:
+        def extract_json(self, system_prompt, user_prompt, **kwargs):
+            del system_prompt, user_prompt, kwargs
+            return {"steps": ["Run the deployment checks", "Rollback when health checks fail"]}
+
+    repo = LoreRepository(tmp_path / "pages")
+    capture_ids = []
+    for suffix in ("one", "two"):
+        page_id = f"inbox/2026-06-18/deploy-{suffix}"
+        capture_ids.append(page_id)
+        repo.upsert_page(
+            page_id,
+            f"---\ntitle: Deploy {suffix}\nkind: capture\nvisibility: internal\nstatus: draft\n---\n\nDeployment rollback evidence {suffix}.\n",
+        )
+
+    result = propose_procedure_candidate(repo, capture_ids, llm_client=StepsClient())
+
+    assert result.page.frontmatter["steps"] == [
+        "Run the deployment checks",
+        "Rollback when health checks fail",
+    ]
+    assert "_To be filled in_" not in result.page.content
+
+
+def test_repeated_capture_scan_is_bounded_and_cached(tmp_path, monkeypatch):
+    repo = LoreRepository(tmp_path / "pages")
+    for index in range(8):
+        repo.upsert_page(
+            f"inbox/2026-06-18/repeat-{index}",
+            f"---\ntitle: Rollback {index}\nkind: capture\nvisibility: internal\nstatus: draft\n---\n\nRepeated deployment rollback health check procedure.\n",
+        )
+    original_read = repo.read_page
+    reads: list[str] = []
+
+    def counting_read(page_id):
+        reads.append(page_id)
+        return original_read(page_id)
+
+    monkeypatch.setattr(repo, "read_page", counting_read)
+    first = find_repeated_captures(repo, scan_limit=3)
+    first_read_count = len(reads)
+    second = find_repeated_captures(repo, scan_limit=3)
+
+    assert first and second
+    assert first_read_count == 3
+    assert len(reads) == first_read_count
 
 
 def test_candidate_export_preserves_source_capture_ids(client):

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import re
+import threading
 from datetime import UTC, datetime
+from typing import Any
 
 from .capture import slugify, unique_page_id
 from .frontmatter import frontmatter_scalar
@@ -43,6 +46,16 @@ STOP_WORDS = frozenset(
     }
 )
 JACCARD_THRESHOLD = 0.4
+MAX_REPEAT_SCAN = 100
+MAX_AUTO_PROPOSALS = 3
+PROCEDURE_STEPS_PROMPT = """Draft a reusable procedure from repeated operational captures.
+Return JSON with one `steps` array containing concise, imperative, ordered actions.
+Use only evidence in the captures. Never return placeholders or commentary."""
+
+logger = logging.getLogger(__name__)
+_repeat_cache_lock = threading.Lock()
+_repeat_cache: dict[str, tuple[tuple[tuple[str, str, int], ...], list[RepeatedCaptureGroup]]] = {}
+_auto_proposal_lock = threading.Lock()
 
 
 def extract_keywords(text: str) -> set[str]:
@@ -80,11 +93,24 @@ class _UnionFind:
             self.rank[ra] += 1
 
 
-def find_repeated_captures(repo: LoreRepository) -> list[RepeatedCaptureGroup]:
-    """Scan captures and group those with similar content via keyword overlap."""
+def find_repeated_captures(
+    repo: LoreRepository,
+    *,
+    scan_limit: int = MAX_REPEAT_SCAN,
+) -> list[RepeatedCaptureGroup]:
+    """Group a bounded recent capture window, caching unchanged snapshots."""
+    bounded_limit = max(2, min(int(scan_limit), MAX_REPEAT_SCAN))
     captures = [page for page in repo.list_pages(kind="capture") if page.id.startswith(("inbox/", "notes/"))]
+    captures.sort(key=lambda page: (page.updated_at, page.id), reverse=True)
+    captures = captures[:bounded_limit]
     if len(captures) < 2:
         return []
+    signature = tuple((page.id, page.updated_at, page.size) for page in captures)
+    cache_key = str(repo.root)
+    with _repeat_cache_lock:
+        cached = _repeat_cache.get(cache_key)
+        if cached is not None and cached[0] == signature:
+            return [group.model_copy(deep=True) for group in cached[1]]
 
     # Pre-compute keyword sets from title + observation body.
     keyword_sets: list[set[str]] = []
@@ -145,6 +171,8 @@ def find_repeated_captures(repo: LoreRepository) -> list[RepeatedCaptureGroup]:
         )
 
     groups.sort(key=lambda g: (-g.count, g.group_key))
+    with _repeat_cache_lock:
+        _repeat_cache[cache_key] = (signature, [group.model_copy(deep=True) for group in groups])
     return groups
 
 
@@ -155,6 +183,7 @@ def propose_procedure_candidate(
     title: str | None = None,
     trigger: str | None = None,
     lane: str | None = None,
+    llm_client: Any | None = None,
 ) -> ProcedureCandidateResponse:
     """Create a procedure candidate page from repeated capture IDs."""
     if len(capture_ids) < 2:
@@ -178,6 +207,7 @@ def propose_procedure_candidate(
     # Derive title and trigger if not provided.
     resolved_title = optional_string(title) or _derive_title(source_captures)
     resolved_trigger = optional_string(trigger) or f"When {resolved_title.split()[0].lower()} occurs repeatedly"
+    steps = _draft_procedure_steps(source_captures, resolved_title, resolved_trigger, llm_client)
 
     page_id = unique_page_id(repo, f"procedures/candidates/{slugify(resolved_title)}")
     content = _build_candidate_markdown(
@@ -185,6 +215,7 @@ def propose_procedure_candidate(
         trigger=resolved_trigger,
         source_capture_ids=[c.id for c in source_captures],
         lane=optional_string(lane),
+        steps=steps,
     )
     page = repo.upsert_page(page_id, content)
 
@@ -215,6 +246,7 @@ def _build_candidate_markdown(
     trigger: str,
     source_capture_ids: list[str],
     lane: str | None,
+    steps: list[str],
 ) -> str:
     now = datetime.now(UTC).isoformat()
     frontmatter_lines = [
@@ -224,15 +256,21 @@ def _build_candidate_markdown(
         "visibility: internal",
         "status: draft",
         f"trigger: {frontmatter_scalar(trigger)}",
-        "steps: []",
-        'schema_version: "1.0"',
-        'author: ""',
-        "validated: false",
-        "validated_at: null",
-        "proposed_from: repeated-pattern",
-        f"proposed_at: {now}",
-        "source_capture_ids:",
+        "steps:",
     ]
+    for step in steps:
+        frontmatter_lines.append(f"  - {frontmatter_scalar(step)}")
+    frontmatter_lines.extend(
+        [
+            'schema_version: "1.0"',
+            'author: ""',
+            "validated: false",
+            "validated_at: null",
+            "proposed_from: repeated-pattern",
+            f"proposed_at: {now}",
+            "source_capture_ids:",
+        ]
+    )
     for cid in source_capture_ids:
         frontmatter_lines.append(f"  - {cid}")
     if lane:
@@ -250,13 +288,124 @@ def _build_candidate_markdown(
         "",
         "## Steps",
         "",
-        "_To be filled in after review._",
-        "",
-        "## Source Captures",
-        "",
     ]
+    body_lines.extend(f"{index}. {step}" for index, step in enumerate(steps, 1))
+    body_lines.extend(["", "## Source Captures", ""])
     for cid in source_capture_ids:
         body_lines.append(f"- [[{cid}]]")
 
     body_lines.append("")
     return "\n".join(frontmatter_lines + body_lines)
+
+
+def _draft_procedure_steps(
+    captures: list[PageSummary],
+    title: str,
+    trigger: str,
+    llm_client: Any | None,
+) -> list[str]:
+    fallback = _deterministic_steps(captures)
+    if llm_client is None:
+        return fallback
+    capture_text = []
+    for capture in captures:
+        body = getattr(capture, "body", "")
+        capture_text.append(f"Capture: {capture.id}\nTitle: {capture.title}\n{body.strip()[:2500]}")
+    try:
+        result = llm_client.extract_json(
+            system_prompt=PROCEDURE_STEPS_PROMPT,
+            user_prompt=(f"Procedure title: {title}\nTrigger: {trigger}\n\n" + "\n\n---\n\n".join(capture_text))[
+                :14000
+            ],
+            temperature=0.1,
+        )
+        raw_steps = result.get("steps") if isinstance(result, dict) else None
+        if isinstance(raw_steps, list):
+            steps = [str(step).strip() for step in raw_steps if isinstance(step, str) and step.strip()]
+            if steps:
+                return steps[:10]
+    except Exception as exc:  # graceful no-provider and outage fallback
+        logger.warning("Procedure step drafting failed; using deterministic steps: %s", exc)
+    return fallback
+
+
+def _deterministic_steps(captures: list[PageSummary]) -> list[str]:
+    steps: list[str] = []
+    for capture in captures:
+        body = getattr(capture, "body", "")
+        candidates = [
+            match.group(1).strip()
+            for line in body.splitlines()
+            if (match := re.match(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)(.+)$", line))
+        ]
+        if not candidates:
+            candidates = [
+                line.strip() for line in body.splitlines() if line.strip() and not line.lstrip().startswith(("#", ">"))
+            ][:1]
+        for candidate in candidates:
+            step = candidate.rstrip(".")
+            if not re.match(r"^(?:check|create|deploy|ensure|inspect|record|review|run|update|verify)\b", step, re.I):
+                step = f"Review and apply: {step}"
+            if step not in steps:
+                steps.append(step[:300])
+            if len(steps) >= 8:
+                break
+    if not steps:
+        steps.append("Review the repeated capture evidence and perform the documented action")
+    if len(steps) == 1:
+        steps.append("Verify the outcome and record any deviations")
+    return steps
+
+
+def auto_propose_procedure_candidates(app: Any) -> list[str]:
+    """Create bounded, de-duplicated candidates at a background pipeline tail."""
+    if not _auto_proposal_lock.acquire(blocking=False):
+        return []
+    try:
+        state = app.state
+        repo: LoreRepository = state.repository
+        existing_sources: list[set[str]] = []
+        for summary in repo.list_pages(kind="procedure-candidate"):
+            detail = repo.read_page(summary.id)
+            if detail is not None:
+                existing_sources.append(set(detail.frontmatter.get("source_capture_ids") or []))
+
+        created: list[str] = []
+        for group in find_repeated_captures(repo):
+            source_ids = [capture.id for capture in group.captures]
+            source_set = set(source_ids)
+            if any(len(source_set & prior) >= 2 for prior in existing_sources):
+                continue
+            try:
+                result = propose_procedure_candidate(
+                    repo,
+                    source_ids,
+                    title=group.suggested_title,
+                    trigger=group.suggested_trigger,
+                    llm_client=getattr(state, "llm_client", None),
+                )
+            except Exception:
+                logger.exception("Automatic procedure candidate proposal failed for %s", group.group_key)
+                continue
+            search_index = getattr(state, "search_index", None)
+            if search_index is not None:
+                search_index.upsert_page_from_detail(result.page)
+            vector_store = getattr(state, "vector_store", None)
+            if vector_store is not None:
+                from .route_utils import index_vectors_for_page
+
+                index_vectors_for_page(vector_store, result.page)
+            for cache_name in ("graph_cache", "context_graph_cache"):
+                cache = getattr(state, cache_name, None)
+                if cache is not None:
+                    cache.invalidate()
+            metrics = getattr(state, "metrics", None)
+            if metrics is not None:
+                metrics.increment_index_size()
+            created.append(result.page.id)
+            existing_sources.append(source_set)
+            if len(created) >= MAX_AUTO_PROPOSALS:
+                break
+        return created
+    finally:
+        _auto_proposal_lock.release()

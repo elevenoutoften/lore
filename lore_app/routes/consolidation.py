@@ -3,9 +3,10 @@ from __future__ import annotations
 # ruff: noqa: B008
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 
 from ..deps import get_consolidation_worker, get_ledger_db, get_patch_planner
+from ..procedure_candidate import auto_propose_procedure_candidates
 from ..route_utils import recall_actor_scope
 from ..schemas import (
     ConsolidationPlanRequest,
@@ -36,14 +37,19 @@ def _plan_http_error(exc: ValueError) -> HTTPException:
 @consolidation_router.post("/run", response_model=ConsolidationRunResult)
 def run_consolidation(
     payload: ConsolidationRunRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
     worker: ConsolidationWorker = Depends(get_consolidation_worker),
 ) -> ConsolidationRunResult:
-    return worker.run(
+    result = worker.run(
         dry_run=payload.dry_run,
         batch_size=payload.batch_size,
         max_auto_apply=payload.max_auto_apply,
         force_reextract=payload.force_reextract,
     )
+    if not payload.dry_run:
+        background_tasks.add_task(auto_propose_procedure_candidates, request.app)
+    return result
 
 
 @consolidation_router.post("/rollback/{plan_id}", response_model=RollbackResult)

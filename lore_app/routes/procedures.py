@@ -70,6 +70,7 @@ def api_propose_procedure_candidate(
             title=payload.title,
             trigger=payload.trigger,
             lane=payload.lane,
+            llm_client=getattr(request.app.state, "llm_client", None),
         )
     except InvalidPageId as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

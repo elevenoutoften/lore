@@ -20,6 +20,25 @@ from lore_app.repository import LoreRepository
 from lore_app.schemas import ExtractedClaim, ExtractionResult
 
 
+def test_consolidation_route_schedules_procedure_discovery_in_background(client, monkeypatch):
+    import lore_app.routes.consolidation as consolidation_routes
+
+    calls = []
+    monkeypatch.setattr(
+        consolidation_routes,
+        "auto_propose_procedure_candidates",
+        lambda app: calls.append(app),
+    )
+
+    response = client.post(
+        "/api/consolidation/run",
+        json={"dry_run": False, "batch_size": 1, "max_auto_apply": 0},
+    )
+
+    assert response.status_code == 200, response.text
+    assert calls == [client.app]
+
+
 @dataclass
 class WorkerContext:
     config: LoreConfig
@@ -600,7 +619,7 @@ def test_force_reextract_does_not_duplicate_already_applied_fact(tmp_path, monke
         "inbox/2026-05-10/idempotent",
         summary="Lore force re-extract stays content-idempotent.",
     )
-    fact = "services/lore states Lore force re-extract stays content-idempotent."
+    fact = "services/lore describes Lore force re-extract stays content-idempotent."
 
     first = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=5)
     second = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=5, force_reextract=True)

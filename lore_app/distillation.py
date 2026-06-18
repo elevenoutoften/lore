@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, date, datetime
+from typing import Any
 
+from .capture import CAPTURE_INTAKE_SUMMARY
 from .frontmatter import frontmatter_scalar
 from .repository import InvalidPageId, LoreRepository, optional_string
 from .schemas import (
@@ -13,6 +16,12 @@ from .schemas import (
     PendingDay,
     PendingDaysResponse,
 )
+
+logger = logging.getLogger(__name__)
+
+EPISODIC_SUMMARY_PROMPT = """Summarize session captures into durable episodic facts.
+Return JSON with a single `facts` array of concise, non-duplicative statements.
+Preserve concrete outcomes, decisions, failures, and follow-ups. Do not copy whole captures verbatim."""
 
 
 def _date_from_frontmatter(page: PageDetail) -> date | None:
@@ -77,6 +86,7 @@ def distill_session_to_daily(
     actor: str | None = None,
     status: str = "active",
     reviewed_at: str | None = None,
+    llm_client: Any | None = None,
 ) -> dict:
     capture_details: list[PageDetail] = []
     for summary in captures:
@@ -94,6 +104,7 @@ def distill_session_to_daily(
         }
 
     daily_page_id = f"dailies/{target_date.isoformat()}"
+    episodic_facts = _summarize_episodic_facts(capture_details, llm_client)
     lines: list[str] = [
         "---",
         f"title: {frontmatter_scalar(f'Daily Note {target_date.isoformat()}')}",
@@ -123,25 +134,14 @@ def distill_session_to_daily(
             "",
             f"> Distilled from {len(capture_details)} session capture(s).",
             "",
+            "## Episodic Facts",
+            "",
         ]
     )
-
-    for detail in capture_details:
-        title = detail.title
-        confidence = optional_string(detail.frontmatter.get("confidence"))
-        lane = optional_string(detail.frontmatter.get("lane"))
-        lines.append(f"## {title}")
-        lines.append("")
-        if confidence or lane:
-            meta_parts: list[str] = []
-            if confidence:
-                meta_parts.append(f"confidence: {confidence}")
-            if lane:
-                meta_parts.append(f"lane: {lane}")
-            lines.append(f"> {' | '.join(meta_parts)}")
-            lines.append("")
-        lines.append(detail.body.strip())
-        lines.append("")
+    lines.extend(f"- {fact}" for fact in episodic_facts)
+    lines.extend(["", "## Source Captures", ""])
+    lines.extend(f"- [[{detail.id}|{detail.title}]]" for detail in capture_details)
+    lines.append("")
 
     content = "\n".join(lines).rstrip() + "\n"
 
@@ -168,6 +168,8 @@ def distill_session_to_daily(
 def distill_daily(
     repo: LoreRepository,
     payload: DailyDistillRequest,
+    *,
+    llm_client: Any | None = None,
 ) -> DailyDistillResponse:
     if payload.date:
         try:
@@ -194,6 +196,7 @@ def distill_daily(
         actor=optional_string(payload.actor),
         status=status,
         reviewed_at=reviewed_at,
+        llm_client=llm_client,
     )
 
     if result["capture_count"] == 0:
@@ -207,6 +210,54 @@ def distill_daily(
         captures=result["captures"],
         content=page.content,
     )
+
+
+def _summarize_episodic_facts(captures: list[PageDetail], llm_client: Any | None) -> list[str]:
+    fallback = _deterministic_episodic_facts(captures)
+    if llm_client is None:
+        return fallback
+    prompt_parts: list[str] = []
+    for capture in captures:
+        prompt_parts.append(
+            f"Capture: {capture.id}\nTitle: {capture.title}\nObservation:\n{capture.body.strip()[:3000]}"
+        )
+    try:
+        result = llm_client.extract_json(
+            system_prompt=EPISODIC_SUMMARY_PROMPT,
+            user_prompt="\n\n---\n\n".join(prompt_parts)[:16000],
+            temperature=0.1,
+        )
+        facts = result.get("facts") if isinstance(result, dict) else None
+        if isinstance(facts, list):
+            cleaned = [str(fact).strip() for fact in facts if isinstance(fact, str) and fact.strip()]
+            if cleaned:
+                return cleaned[:12]
+    except Exception as exc:  # graceful no-provider and outage fallback
+        logger.warning("Episodic LLM summarization failed; using deterministic summaries: %s", exc)
+    return fallback
+
+
+def _deterministic_episodic_facts(captures: list[PageDetail]) -> list[str]:
+    facts: list[str] = []
+    for capture in captures:
+        summary = optional_string(capture.frontmatter.get("summary"))
+        if summary and summary.casefold().strip() == CAPTURE_INTAKE_SUMMARY.casefold():
+            summary = None
+        fact = summary or _capture_excerpt(capture.body) or capture.title
+        if fact not in facts:
+            facts.append(fact[:500])
+    return facts
+
+
+def _capture_excerpt(body: str) -> str | None:
+    for line in body.splitlines():
+        cleaned = line.strip()
+        if not cleaned or cleaned.startswith(("#", ">")):
+            continue
+        cleaned = cleaned.lstrip("-*+ ")
+        if cleaned:
+            return cleaned[:500]
+    return None
 
 
 def promote_daily_note(repo: LoreRepository, target_date: date) -> str:

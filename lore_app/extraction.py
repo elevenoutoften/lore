@@ -26,6 +26,15 @@ from .schemas import (
 WIKILINK_PATTERN = re.compile(r"\[\[([^\]]+)\]\]")
 PAGE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 CONTRADICTION_PATTERN = re.compile(r"(?im)^\s*(?:contradicts|supersedes|replaces|invalidates)\s*:\s*(.+)$")
+DETERMINISTIC_METADATA_SECTIONS = {
+    "evidence",
+    "related pages",
+    "source paths",
+    "source task",
+    "source urls",
+    "sources",
+    "suggested target",
+}
 
 
 def get_unprocessed_captures(
@@ -348,12 +357,17 @@ def _extract_capture(
         )
 
     subject = _claim_subject(suggested_target, capture.title)
-    claim_object = summary or capture.title
+    claim_units = _deterministic_claim_units(capture.body)
+    if front_summary and len(claim_units) < 2:
+        claim_units = [(front_summary, None)]
+    if not claim_units:
+        claim_units = [(summary or capture.title, None)]
+    claim_object = claim_units[0][0]
     claims = [
         ExtractedClaim(
             subject=subject,
-            predicate="states",
-            object=claim_object,
+            predicate=_infer_predicate(object_text),
+            object=object_text,
             confidence=confidence,
             actor=actor,
             lane=lane,
@@ -364,11 +378,12 @@ def _extract_capture(
             decision_id=decision_id,
             trace_id=trace_id,
             policies_applied=policies_applied,
-            evidence=evidence,
-            section=None,
+            evidence=object_text if len(claim_units) > 1 else evidence,
+            section=section,
             source_page_ids=source_pages,
             epistemic_status=epistemic_status,
         )
+        for object_text, section in claim_units
     ]
 
     edges: list[ExtractedEdge] = []
@@ -513,6 +528,67 @@ def _first_meaningful_line(body: str) -> str | None:
             continue
         return cleaned[:500]
     return None
+
+
+def _deterministic_claim_units(body: str) -> list[tuple[str, str | None]]:
+    """Return one compact fact per bullet or populated Markdown section."""
+    units: list[tuple[str, str | None]] = []
+    section: str | None = None
+    section_ignored = False
+    section_lines: list[str] = []
+    section_has_bullets = False
+
+    def flush_section() -> None:
+        nonlocal section_lines, section_has_bullets
+        if section_lines and not section_has_bullets:
+            text = " ".join(section_lines).strip()
+            if text:
+                units.append((text[:500], section))
+        section_lines = []
+        section_has_bullets = False
+
+    for raw_line in body.splitlines():
+        cleaned = raw_line.strip()
+        heading = re.match(r"^#{1,6}\s+(.+?)\s*#*$", cleaned)
+        if heading:
+            flush_section()
+            section = heading.group(1).strip()[:120]
+            section_ignored = section.casefold() in DETERMINISTIC_METADATA_SECTIONS
+            continue
+        if not cleaned or section_ignored or _is_intake_warning(cleaned):
+            continue
+        bullet = re.match(r"^(?:[-*+]\s+|\d+[.)]\s+)(.+)$", cleaned)
+        if bullet:
+            section_has_bullets = True
+            text = bullet.group(1).strip()
+            if text:
+                units.append((text[:500], section))
+            continue
+        if not cleaned.startswith(">"):
+            section_lines.append(cleaned)
+    flush_section()
+    return units
+
+
+def _infer_predicate(text: str) -> str:
+    """Infer a coarse, stable predicate for deterministic claims."""
+    folded = text.casefold()
+    patterns = (
+        (r"\b(?:depends on|dependency)\b", "depends_on"),
+        (r"\b(?:requires?|must|needs?)\b", "requires"),
+        (r"\b(?:uses?|using)\b", "uses"),
+        (r"\b(?:supports?|enables?)\b", "supports"),
+        (r"\b(?:prevents?|blocks?)\b", "prevents"),
+        (r"\b(?:stores?|persists?|records?)\b", "stores"),
+        (r"\b(?:routes?|forwards?)\b", "routes"),
+        (r"\b(?:runs?|executes?|starts?)\b", "runs"),
+        (r"\b(?:contains?|includes?|has|have)\b", "has"),
+        (r"\b(?:is|are|was|were)\b", "is"),
+    )
+    for pattern, predicate in patterns:
+        if re.search(pattern, folded):
+            return predicate
+    return "describes"
 
 
 def _is_intake_warning(line: str) -> bool:

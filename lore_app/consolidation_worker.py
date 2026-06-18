@@ -13,6 +13,7 @@ from .extraction import extract_from_captures
 from .ledger import LedgerDB, utc_now
 from .patch_planner import PatchPlanner
 from .policy_engine import PolicyEngine
+from .procedure_candidate import auto_propose_procedure_candidates
 from .repository import LoreRepository, infer_kind, optional_string
 from .schemas import (
     ConsolidationRunResult,
@@ -65,6 +66,10 @@ def run_auto_consolidation(app: Any) -> None:
                 logger.exception("Auto-consolidation run failed")
             if not getattr(state, "auto_consolidate_rerun", False):
                 break
+        try:
+            auto_propose_procedure_candidates(app)
+        except Exception:  # pragma: no cover - background best-effort
+            logger.exception("Automatic procedure discovery failed")
     finally:
         lock.release()
 

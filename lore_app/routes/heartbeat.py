@@ -23,6 +23,7 @@ from ..heartbeat import (
     heartbeat_capture_category_keys,
     heartbeat_review,
 )
+from ..procedure_candidate import auto_propose_procedure_candidates
 from ..route_utils import index_vectors_for_page, record_audit, template_context
 from ..schemas import HeartbeatCaptureResponse, HeartbeatResponse
 
@@ -78,6 +79,8 @@ def api_heartbeat_captures(
             summary=f"Captured {capture.title}",
             diff_size=len(capture.content.encode("utf-8")),
         )
+    if captures:
+        background_tasks.add_task(auto_propose_procedure_candidates, request.app)
     categories_covered = [
         category
         for capture in captures
