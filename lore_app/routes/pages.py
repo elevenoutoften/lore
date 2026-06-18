@@ -290,7 +290,7 @@ def api_update_metadata(
     except InvalidPageId as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     search_idx.upsert_page_from_detail(updated_page)
-    background_tasks.add_task(index_vectors_for_page, vector_store, updated_page)
+    index_vectors_for_page(vector_store, updated_page)
     graph_cache.invalidate()
     context_graph_cache.invalidate()
     before_size = len(page.content.encode("utf-8"))
@@ -335,7 +335,7 @@ def api_upsert_page(
     if before is None:
         metrics.increment_index_size()
     search_idx.upsert_page_from_detail(page)
-    background_tasks.add_task(index_vectors_for_page, vector_store, page)
+    index_vectors_for_page(vector_store, page)
     graph_cache.invalidate()
     context_graph_cache.invalidate()
     before_size = len(before.content.encode("utf-8")) if before is not None else 0
@@ -398,7 +398,7 @@ This page was auto-created as a stub. Replace with actual content.
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     metrics.increment_index_size()
     search_idx.upsert_page_from_detail(page)
-    background_tasks.add_task(index_vectors_for_page, vector_store, page)
+    index_vectors_for_page(vector_store, page)
     graph_cache.invalidate()
     context_graph_cache.invalidate()
     record_audit(

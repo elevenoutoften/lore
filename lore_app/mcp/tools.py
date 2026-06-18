@@ -33,11 +33,10 @@ from ..post_capture import run_post_capture_side_effects
 from ..precedent_search import search_precedents
 from ..procedure_candidate import find_repeated_captures, propose_procedure_candidate
 from ..provenance import get_capture_provenance, get_page_provenance
-from ..rag.chunker import chunk_page
 from ..rag.hybrid_retrieval import hybrid_retrieve_expanded
 from ..recall import count_pending_captures, recall_hint, weights_for_query
 from ..repository import InvalidPageId, LoreRepository
-from ..route_utils import recall_actor_scope, stamp_capture_actor
+from ..route_utils import index_vectors_for_page, recall_actor_scope, stamp_capture_actor
 from ..schemas import (
     CaptureRequest,
     ContextExplainQuery,
@@ -2305,8 +2304,7 @@ def invalidate_graph_cache(graph_cache: Any | None) -> None:
 def index_vector_page(vector_store: Any | None, page: Any) -> None:
     if vector_store is None:
         return
-    chunks = list(chunk_page(page.id, page.content, page.body))
-    vector_store.upsert_page_chunks(page.id, chunks)
+    index_vectors_for_page(vector_store, page)
 
 
 def enrich_rag_results(repo: LoreRepository, payload: dict[str, Any]) -> dict[str, Any]:

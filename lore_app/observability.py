@@ -36,6 +36,11 @@ class Metrics:
     captures: int = 0
     mcp_requests: int = 0
     index_size: int = 0
+    vector_chunks: int = 0
+    vector_indexed_pages: int = 0
+    vector_page_drift: int = 0
+    vector_scope_drift: int = 0
+    vector_pending_reindex: int = 0
 
 
 class MetricsCollector:
@@ -72,6 +77,23 @@ class MetricsCollector:
         with self._lock:
             metrics = self._metrics["global"]
             metrics.index_size = max(0, metrics.index_size - amount)
+
+    def set_vector_index_metrics(
+        self,
+        *,
+        chunk_count: int,
+        indexed_pages: int,
+        page_drift: int,
+        pending_reindex: int,
+        scope_drift: int = 0,
+    ) -> None:
+        with self._lock:
+            metrics = self._metrics["global"]
+            metrics.vector_chunks = chunk_count
+            metrics.vector_indexed_pages = indexed_pages
+            metrics.vector_page_drift = page_drift
+            metrics.vector_scope_drift = scope_drift
+            metrics.vector_pending_reindex = pending_reindex
 
     def get_metrics(self) -> dict:
         with self._lock:

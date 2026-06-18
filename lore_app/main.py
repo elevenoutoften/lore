@@ -31,8 +31,10 @@ from .route_utils import (
     actor_from_request,
     client_rate_limit_key,
     is_rate_limited_write,
-    rebuild_vector_index,
+    reconcile_vector_index,
     retrieve_context,
+    update_vector_index_metrics,
+    vector_index_stats,
     workspace_lore_config,
 )
 from .routes import (
@@ -88,8 +90,35 @@ def rebuild_llm_client(app: FastAPI) -> None:
             app.state.vector_store.semantic_similarities if app.state.vector_store.dense_enabled else None
         )
         if rebuild_dense:
-            rebuild_vector_index(app.state.repository, app.state.vector_store)
+            stats = reconcile_vector_index(app.state.repository, app.state.vector_store, force=True)
+            update_vector_index_metrics(getattr(app.state, "metrics", None), stats)
         old_client.close()
+
+
+def _start_vector_reconciler(
+    *,
+    repo: LoreRepository,
+    vector_store: VectorStore,
+    metrics: MetricsCollector,
+    interval_seconds: int,
+    stop_event: threading.Event,
+) -> threading.Thread | None:
+    if interval_seconds <= 0:
+        return None
+
+    def reconcile_loop() -> None:
+        while not stop_event.wait(interval_seconds):
+            try:
+                stats = reconcile_vector_index(repo, vector_store)
+                update_vector_index_metrics(metrics, stats)
+                if stats.get("reconciled"):
+                    logging.getLogger("lore").info("Periodic vector index reconciliation completed: %s", stats)
+            except Exception:  # pragma: no cover - defensive background reconciliation
+                logging.getLogger("lore").exception("Periodic vector index reconciliation failed.")
+
+    thread = threading.Thread(target=reconcile_loop, name="lore-vector-reconciler", daemon=True)
+    thread.start()
+    return thread
 
 
 def create_app(
@@ -164,13 +193,25 @@ def create_app(
             except Exception:  # pragma: no cover - best-effort startup index
                 logging.getLogger("lore").exception("Startup full-text index build failed; run /api/search/reindex.")
             try:
-                if vector_store.chunk_count() == 0 or dense_rebuild_required:
+                stats = vector_index_stats(repo, vector_store)
+                update_vector_index_metrics(metrics, stats)
+                if (
+                    vector_store.chunk_count() == 0
+                    or dense_rebuild_required
+                    or stats["page_drift"] != 0
+                    or stats["scope_drift"] > 0
+                    or stats["pending_reindex"] > 0
+                ):
                     # The vector build can be expensive, so it is capped; very large
                     # vaults must opt in with /api/search/reindex. Warn loudly rather
                     # than skip silently, or lore_rag_context returns 0 with no clue why.
                     if page_count <= 5000:
-                        indexed = rebuild_vector_index(repo, vector_store)
-                        logging.getLogger("lore").info("Built vector index for %d page(s) on startup.", indexed)
+                        stats = reconcile_vector_index(repo, vector_store, force=dense_rebuild_required)
+                        update_vector_index_metrics(metrics, stats)
+                        logging.getLogger("lore").info(
+                            "Reconciled vector index on startup: %s",
+                            stats,
+                        )
                     else:
                         logging.getLogger("lore").warning(
                             "Vault has %d pages (over the %d-page startup ceiling); the vector index "
@@ -181,7 +222,20 @@ def create_app(
                         )
             except Exception:  # pragma: no cover - best-effort startup index
                 logging.getLogger("lore").exception("Startup vector index build failed; run /api/search/reindex.")
+        else:
+            update_vector_index_metrics(metrics, vector_index_stats(repo, vector_store))
+        stop_reconcile = threading.Event()
+        reconcile_thread = _start_vector_reconciler(
+            repo=repo,
+            vector_store=vector_store,
+            metrics=metrics,
+            interval_seconds=lore_config.vector_reconcile_interval_seconds,
+            stop_event=stop_reconcile,
+        )
         yield
+        stop_reconcile.set()
+        if reconcile_thread is not None:
+            reconcile_thread.join(timeout=2)
         search_idx.close()
         vector_store.close()
         ledger_db.close()

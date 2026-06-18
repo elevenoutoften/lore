@@ -10,12 +10,13 @@ from ..deps import (
     get_context_graph_cache,
     get_graph_cache,
     get_ledger_db,
+    get_metrics,
     get_repo,
     get_search_index,
     get_templates,
     get_vector_store,
 )
-from ..route_utils import rebuild_vector_index, template_context
+from ..route_utils import rebuild_vector_index, template_context, update_vector_index_metrics, vector_index_stats
 from ..schemas import SearchResponse
 
 if TYPE_CHECKING:
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
 
     from ..context_graph import ContextGraphCache
     from ..ledger import LedgerDB
+    from ..observability import MetricsCollector
     from ..link_graph import LinkGraphCache
     from ..rag.vector_store import VectorStore
     from ..repository import LoreRepository
@@ -77,9 +79,11 @@ def api_reindex(
     vector_store: VectorStore = Depends(get_vector_store),
     graph_cache: LinkGraphCache = Depends(get_graph_cache),
     context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
+    metrics: MetricsCollector = Depends(get_metrics),
 ):
     count = search_idx.rebuild(repo)
     vector_count = rebuild_vector_index(repo, vector_store)
+    update_vector_index_metrics(metrics, vector_index_stats(repo, vector_store))
     graph_cache.invalidate()
     context_graph_cache.invalidate()
     return {"indexed": count, "vector_indexed": vector_count}

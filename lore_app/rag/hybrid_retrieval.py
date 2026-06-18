@@ -49,15 +49,16 @@ def hybrid_retrieve(
             "citations": [result.get("snippet", "")],
         }
 
-    vec_results = vector_store.search(query, limit=limit * 2) if hasattr(vector_store, "search") else []
+    vector_kwargs: dict[str, Any] = {"limit": limit * 2}
+    if lane:
+        vector_kwargs["lane"] = lane
+    if actor:
+        vector_kwargs["actor"] = actor
+    vec_results = vector_store.search(query, **vector_kwargs) if hasattr(vector_store, "search") else []
     vector_seen: set[str] = set()
     for result in vec_results:
         page_id = result.get("page_id", "")
         if not page_id or page_id in vector_seen:
-            continue
-        if lane and result.get("lane") and result.get("lane") != lane:
-            continue
-        if actor and result.get("actor") and result.get("actor") != actor:
             continue
         vector_seen.add(page_id)
         rank = len(vector_seen)

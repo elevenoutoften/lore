@@ -159,6 +159,45 @@ def test_rest_recall_is_scoped_to_authenticated_actor(content_dir, search_db, tm
     assert any(claim["actor"] == "agent-b" for claim in admin_cross.json()["claims"])
 
 
+def test_rag_vector_hits_are_scoped_to_authenticated_actor(content_dir, search_db, tmp_path):
+    app = _app(content_dir, search_db, tmp_path, auto_consolidate=False)
+    _, key_a = app.state.api_key_store.create_key(name="rag-agent-a", role="writer")
+    _, key_b = app.state.api_key_store.create_key(name="rag-agent-b", role="writer")
+    unique_term = "TenantVectorNeedleRag"
+
+    with TestClient(app) as client:
+        captured = client.post(
+            "/api/memory/capture",
+            json={
+                "text": f"{unique_term} belongs only to RAG agent B.",
+                "lane": "ops",
+                "metadata": {"title": "Tenant vector B", "confidence": "high"},
+            },
+            headers=_headers(key_b),
+        )
+        assert captured.status_code == 201, captured.text
+        page_id = captured.json()["capture_id"]
+
+        b_rag = client.post(
+            "/api/rag/retrieve",
+            json={"query": unique_term, "limit": 5, "expand_hops": 0, "lane": "ops"},
+            headers=_headers(key_b),
+        )
+        a_rag = client.post(
+            "/api/rag/retrieve",
+            json={"query": unique_term, "limit": 5, "expand_hops": 0, "lane": "ops"},
+            headers=_headers(key_a),
+        )
+
+    assert b_rag.status_code == 200, b_rag.text
+    assert any(row["page_id"] == page_id for row in b_rag.json()["results"])
+    assert any("vector" in row.get("sources", []) for row in b_rag.json()["results"])
+
+    assert a_rag.status_code == 200, a_rag.text
+    assert all(row["page_id"] != page_id for row in a_rag.json()["results"])
+    assert a_rag.json()["results"] == []
+
+
 def test_mcp_recall_is_scoped_to_authenticated_actor(content_dir, search_db, tmp_path):
     app = _app(content_dir, search_db, tmp_path, auto_consolidate=True)
     _, key_a = app.state.api_key_store.create_key(name="mcp-agent-a", role="writer")

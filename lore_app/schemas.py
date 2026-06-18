@@ -679,6 +679,7 @@ class RagRetrieveRequest(BaseModel):
     include_claims: bool = Field(default=True, description="Include supporting/contradicting claims in results.")
     include_traces: bool = Field(default=False, description="Include reasoning trace references in results.")
     include_decisions: bool = Field(default=True, description="Include decision page references in results.")
+    lane: str | None = Field(default=None, description="Retrieval lane filter.")
     actor: str | None = Field(default=None, description="Admin-only claim actor filter when cross_actor is true.")
     cross_actor: bool = Field(default=False, description="Admin-only: retrieve claim context across actor scopes.")
 
@@ -695,6 +696,7 @@ class RagExpandRequest(BaseModel):
     include_claims: bool = Field(default=True, description="Include supporting/contradicting claims in results.")
     include_traces: bool = Field(default=False, description="Include reasoning trace references in results.")
     include_decisions: bool = Field(default=True, description="Include decision page references in results.")
+    lane: str | None = Field(default=None, description="Retrieval lane filter.")
     actor: str | None = Field(default=None, description="Admin-only claim actor filter when cross_actor is true.")
     cross_actor: bool = Field(default=False, description="Admin-only: retrieve claim context across actor scopes.")
 

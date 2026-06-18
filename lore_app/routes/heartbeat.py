@@ -68,7 +68,7 @@ def api_heartbeat_captures(
     for capture in captures:
         metrics.increment_index_size()
         search_idx.upsert_page_from_detail(capture)
-        background_tasks.add_task(index_vectors_for_page, vector_store, capture)
+        index_vectors_for_page(vector_store, capture)
         graph_cache.invalidate()
         context_graph_cache.invalidate()
         record_audit(

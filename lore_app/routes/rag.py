@@ -52,6 +52,8 @@ def api_rag_retrieve(
         include_claims=payload.include_claims,
         include_traces=payload.include_traces,
         include_decisions=payload.include_decisions,
+        lane=payload.lane,
+        actor=claim_actor,
         claim_actor=claim_actor,
     )
     return enrich_expanded_results(repo, result, ledger, actor=claim_actor)
@@ -86,6 +88,8 @@ def api_rag_retrieve_expanded(
         include_claims=payload.include_claims,
         include_traces=payload.include_traces,
         include_decisions=payload.include_decisions,
+        lane=payload.lane,
+        actor=claim_actor,
         claim_actor=claim_actor,
     )
     return enrich_expanded_results(repo, result, ledger, actor=claim_actor)

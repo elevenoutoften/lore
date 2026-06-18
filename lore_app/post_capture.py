@@ -30,10 +30,7 @@ def run_post_capture_side_effects(
     if search_idx is not None:
         search_idx.upsert_page_from_detail(page)
     if vector_store is not None:
-        if background_tasks is not None:
-            background_tasks.add_task(index_vectors_for_page, vector_store, page)
-        else:
-            index_vectors_for_page(vector_store, page)
+        index_vectors_for_page(vector_store, page)
 
     state = getattr(app, "state", None)
     resolved_graph_cache = graph_cache or getattr(state, "graph_cache", None)

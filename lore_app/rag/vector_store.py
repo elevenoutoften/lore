@@ -69,7 +69,9 @@ class VectorStore:
                     page_id TEXT NOT NULL,
                     chunk_index INTEGER NOT NULL,
                     content TEXT NOT NULL,
-                    token_count INTEGER NOT NULL DEFAULT 0
+                    token_count INTEGER NOT NULL DEFAULT 0,
+                    actor TEXT,
+                    lane TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_chunks_page ON chunks(page_id);
 
@@ -96,9 +98,25 @@ class VectorStore:
                     chunk_id TEXT NOT NULL UNIQUE,
                     page_id TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS pending_reindex (
+                    page_id TEXT PRIMARY KEY,
+                    reason TEXT NOT NULL DEFAULT '',
+                    failed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 """
             )
             self._conn.commit()
+            self._migrate_columns()
+
+    def _migrate_columns(self) -> None:
+        existing = {row[1] for row in self._conn.execute("PRAGMA table_info(chunks)").fetchall()}
+        if "actor" not in existing:
+            self._conn.execute("ALTER TABLE chunks ADD COLUMN actor TEXT")
+        if "lane" not in existing:
+            self._conn.execute("ALTER TABLE chunks ADD COLUMN lane TEXT")
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_actor ON chunks(actor)")
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_lane ON chunks(lane)")
+        self._conn.commit()
 
     @property
     def dense_enabled(self) -> bool:
@@ -125,7 +143,16 @@ class VectorStore:
             return backend is not None and (row is None or row[0] != backend.model)
 
     @retry_on_locked()
-    def upsert_chunk(self, chunk_id: str, page_id: str, chunk_index: int, content: str) -> None:
+    def upsert_chunk(
+        self,
+        chunk_id: str,
+        page_id: str,
+        chunk_index: int,
+        content: str,
+        *,
+        actor: str | None = None,
+        lane: str | None = None,
+    ) -> None:
         """Upsert a single chunk. Prefer upsert_page_chunks() for batch operations."""
         # Deprecated: callers should prefer upsert_page_chunks() to avoid per-chunk commits.
         tokens = self._tokenize(content)
@@ -136,8 +163,9 @@ class VectorStore:
             self._conn.execute("DELETE FROM chunk_tokens WHERE chunk_id = ?", (chunk_id,))
             self._conn.execute("DELETE FROM chunks WHERE chunk_id = ?", (chunk_id,))
             self._conn.execute(
-                "INSERT INTO chunks (chunk_id, page_id, chunk_index, content, token_count) VALUES (?, ?, ?, ?, ?)",
-                (chunk_id, page_id, chunk_index, content, len(tokens)),
+                """INSERT INTO chunks (chunk_id, page_id, chunk_index, content, token_count, actor, lane)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (chunk_id, page_id, chunk_index, content, len(tokens), actor, lane),
             )
             self._conn.executemany(
                 "INSERT INTO chunk_tokens (chunk_id, token, tf) VALUES (?, ?, ?)",
@@ -147,8 +175,19 @@ class VectorStore:
             self._clear_idf_cache()
 
     @retry_on_locked()
-    def upsert_page_chunks(self, page_id: str, chunks: list[dict[str, Any]]) -> None:
+    def upsert_page_chunks(
+        self,
+        page_id: str,
+        chunks: list[dict[str, Any]],
+        *,
+        actor: str | None = None,
+        lane: str | None = None,
+    ) -> None:
         """Bulk upsert all chunks for a page in a single transaction."""
+        if chunks:
+            first = chunks[0]
+            actor = actor if actor is not None else _optional_string(first.get("actor"))
+            lane = lane if lane is not None else _optional_string(first.get("lane"))
         dense_vectors: list[list[float]] | None = None
         dense_backend: EmbeddingBackend | None = None
         if chunks:
@@ -183,6 +222,7 @@ class VectorStore:
                     old_chunk_ids,
                 )
             self._conn.execute("DELETE FROM chunks WHERE page_id = ?", (page_id,))
+            self._delete_dense_page(page_id)
 
             all_token_rows: list[tuple[str, str, float]] = []
             for chunk in chunks:
@@ -190,13 +230,16 @@ class VectorStore:
                 tf_counts = Counter(tokens)
                 total = len(tokens) or 1
                 self._conn.execute(
-                    "INSERT INTO chunks (chunk_id, page_id, chunk_index, content, token_count) VALUES (?, ?, ?, ?, ?)",
+                    """INSERT INTO chunks (chunk_id, page_id, chunk_index, content, token_count, actor, lane)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (
                         chunk["chunk_id"],
                         chunk["page_id"],
                         chunk["chunk_index"],
                         chunk["content"],
                         len(tokens),
+                        actor,
+                        lane,
                     ),
                 )
                 all_token_rows.extend((chunk["chunk_id"], token, count / total) for token, count in tf_counts.items())
@@ -219,6 +262,7 @@ class VectorStore:
 
             self._conn.commit()
             self._clear_idf_cache()
+        self.clear_pending_reindex(page_id)
         if dense_vectors is not None and dense_backend is not None:
             with self._embedding_lock:
                 if self._embedding_backend is dense_backend:
@@ -253,24 +297,39 @@ class VectorStore:
                 )
             cursor = self._conn.execute("DELETE FROM chunks WHERE page_id = ?", (page_id,))
             self._delete_dense_page(page_id)
+            self._conn.execute("DELETE FROM pending_reindex WHERE page_id = ?", (page_id,))
             self._apply_doc_freq_decrements(old_rows)
             self._conn.commit()
             self._clear_idf_cache()
             return cursor.rowcount
 
-    def search(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        limit: int = 10,
+        *,
+        lane: str | None = None,
+        actor: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Search dense embeddings when configured, otherwise use TF-IDF."""
         if self.dense_enabled:
             try:
-                dense = self._search_dense(query, limit)
+                dense = self._search_dense(query, limit, lane=lane, actor=actor)
                 if dense:
                     return dense
             except Exception:
                 # A remote embedding outage must not take local recall down with it.
                 pass
-        return self._search_sparse(query, limit)
+        return self._search_sparse(query, limit, lane=lane, actor=actor)
 
-    def _search_sparse(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+    def _search_sparse(
+        self,
+        query: str,
+        limit: int = 10,
+        *,
+        lane: str | None = None,
+        actor: str | None = None,
+    ) -> list[dict[str, Any]]:
         query_tokens = self._tokenize(query)
         if not query_tokens:
             return []
@@ -280,6 +339,15 @@ class VectorStore:
         query_vec = {token: count / len(query_tokens) for token, count in query_tf.items()}
 
         placeholders = ",".join("?" for _ in query_tokens)
+        scope_filters: list[str] = []
+        params: list[Any] = list(query_tokens)
+        if lane:
+            scope_filters.append("c.lane = ?")
+            params.append(lane)
+        if actor:
+            scope_filters.append("c.actor = ?")
+            params.append(actor)
+        scope_where = "WHERE " + " AND ".join(scope_filters) if scope_filters else ""
         with self._lock:
             rows = self._conn.execute(
                 f"""
@@ -289,12 +357,13 @@ class VectorStore:
                     WHERE token IN ({placeholders})
                 )
                 SELECT ct.chunk_id, ct.token, ct.tf,
-                       c.page_id, c.chunk_index, c.content, c.token_count
+                       c.page_id, c.chunk_index, c.content, c.token_count, c.actor, c.lane
                 FROM chunk_tokens ct
                 JOIN matching_chunks mc ON mc.chunk_id = ct.chunk_id
                 JOIN chunks c ON ct.chunk_id = c.chunk_id
+                {scope_where}
                 """,
-                query_tokens,
+                params,
             ).fetchall()
         if not rows:
             return []
@@ -309,6 +378,8 @@ class VectorStore:
                     "chunk_index": row[4],
                     "content": row[5],
                     "token_count": row[6],
+                    "actor": row[7],
+                    "lane": row[8],
                 }
             chunk_data[chunk_id]["tokens"][row[1]] = row[2]
 
@@ -324,6 +395,8 @@ class VectorStore:
                         "chunk_index": data["chunk_index"],
                         "content": data["content"],
                         "token_count": data["token_count"],
+                        "actor": data["actor"],
+                        "lane": data["lane"],
                         "score": score,
                     }
                 )
@@ -348,6 +421,7 @@ class VectorStore:
             self._conn.execute("DELETE FROM chunk_tokens")
             self._conn.execute("DELETE FROM chunks")
             self._conn.execute("DELETE FROM doc_freq")
+            self._conn.execute("DELETE FROM pending_reindex")
             self._drop_dense_index()
             self._conn.commit()
             self._clear_idf_cache()
@@ -356,6 +430,50 @@ class VectorStore:
         """Number of indexed chunks. 0 means the vector index has not been built."""
         with self._lock:
             return int(self._conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0])
+
+    def indexed_page_count(self) -> int:
+        """Number of distinct pages represented in the vector index."""
+        with self._lock:
+            return int(self._conn.execute("SELECT COUNT(DISTINCT page_id) FROM chunks").fetchone()[0])
+
+    def pending_reindex_count(self) -> int:
+        with self._lock:
+            return int(self._conn.execute("SELECT COUNT(*) FROM pending_reindex").fetchone()[0])
+
+    def scoped_chunk_count(self) -> int:
+        with self._lock:
+            return int(
+                self._conn.execute(
+                    "SELECT COUNT(*) FROM chunks WHERE actor IS NOT NULL OR lane IS NOT NULL"
+                ).fetchone()[0]
+            )
+
+    def page_scopes(self) -> dict[str, tuple[str | None, str | None]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT page_id, MAX(actor), MAX(lane) FROM chunks GROUP BY page_id"
+            ).fetchall()
+        return {str(page_id): (actor, lane) for page_id, actor, lane in rows}
+
+    def record_pending_reindex(self, page_id: str, reason: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO pending_reindex(page_id, reason, failed_at)
+                   VALUES (?, ?, CURRENT_TIMESTAMP)
+                   ON CONFLICT(page_id) DO UPDATE SET
+                       reason = excluded.reason,
+                       failed_at = CURRENT_TIMESTAMP""",
+                (page_id, reason[:1000]),
+            )
+            self._conn.commit()
+
+    def clear_pending_reindex(self, page_id: str | None = None) -> None:
+        with self._lock:
+            if page_id is None:
+                self._conn.execute("DELETE FROM pending_reindex")
+            else:
+                self._conn.execute("DELETE FROM pending_reindex WHERE page_id = ?", (page_id,))
+            self._conn.commit()
 
     def _get_idf(self, tokens: list[str]) -> dict[str, float]:
         with self._cache_lock:
@@ -435,7 +553,14 @@ class VectorStore:
             )
         self._conn.commit()
 
-    def _search_dense(self, query: str, limit: int) -> list[dict[str, Any]]:
+    def _search_dense(
+        self,
+        query: str,
+        limit: int,
+        *,
+        lane: str | None = None,
+        actor: str | None = None,
+    ) -> list[dict[str, Any]]:
         if not query.strip():
             return []
         with self._embedding_lock:
@@ -446,16 +571,27 @@ class VectorStore:
             with self._lock:
                 if not self._dense_table_exists():
                     return []
+                scope_filters: list[str] = []
+                params: list[Any] = [self._serialize_vector(vector), limit * 20 if lane or actor else limit]
+                if lane:
+                    scope_filters.append("c.lane = ?")
+                    params.append(lane)
+                if actor:
+                    scope_filters.append("c.actor = ?")
+                    params.append(actor)
+                scope_where = "AND " + " AND ".join(scope_filters) if scope_filters else ""
                 rows = self._conn.execute(
-                    """
-                    SELECT c.chunk_id, c.page_id, c.chunk_index, c.content, c.token_count, v.distance
+                    f"""
+                    SELECT c.chunk_id, c.page_id, c.chunk_index, c.content, c.token_count,
+                           c.actor, c.lane, v.distance
                     FROM dense_vectors v
                     JOIN dense_vector_rows d ON d.rowid = v.rowid
                     JOIN chunks c ON c.chunk_id = d.chunk_id
-                    WHERE v.embedding MATCH ? AND k = ?
+                    WHERE v.embedding MATCH ? AND k = ? {scope_where}
                     ORDER BY v.distance
+                    LIMIT ?
                     """,
-                    (self._serialize_vector(vector), limit),
+                    [*params, limit],
                 ).fetchall()
         return [
             {
@@ -464,8 +600,10 @@ class VectorStore:
                 "chunk_index": row[2],
                 "content": row[3],
                 "token_count": row[4],
-                "score": max(0.0, 1.0 - float(row[5])),
-                "semantic_similarity": max(0.0, 1.0 - float(row[5])),
+                "actor": row[5],
+                "lane": row[6],
+                "score": max(0.0, 1.0 - float(row[7])),
+                "semantic_similarity": max(0.0, 1.0 - float(row[7])),
             }
             for row in rows
         ]
@@ -544,3 +682,10 @@ class VectorStore:
         if self._conn is not None:
             self._conn.close()
             self._conn = None
+
+
+def _optional_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None

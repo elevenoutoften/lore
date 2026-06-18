@@ -79,7 +79,7 @@ def api_propose_procedure_candidate(
 
     metrics.increment_index_size()
     search_idx.upsert_page_from_detail(result.page)
-    background_tasks.add_task(index_vectors_for_page, vector_store, result.page)
+    index_vectors_for_page(vector_store, result.page)
     graph_cache.invalidate()
     context_graph_cache.invalidate()
     return result

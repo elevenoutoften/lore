@@ -192,7 +192,7 @@ def api_capture_status(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     search_idx.upsert_page_from_detail(page)
-    background_tasks.add_task(index_vectors_for_page, vector_store, page)
+    index_vectors_for_page(vector_store, page)
     graph_cache.invalidate()
     context_graph_cache.invalidate()
     return page
@@ -237,11 +237,11 @@ def api_capture_promote(
     if target_existed is False:
         metrics.increment_index_size()
     search_idx.upsert_page_from_detail(page)
-    background_tasks.add_task(index_vectors_for_page, vector_store, page)
+    index_vectors_for_page(vector_store, page)
     capture_page = repo.read_page(page_id)
     if capture_page is not None:
         search_idx.upsert_page_from_detail(capture_page)
-        background_tasks.add_task(index_vectors_for_page, vector_store, capture_page)
+        index_vectors_for_page(vector_store, capture_page)
     graph_cache.invalidate()
     context_graph_cache.invalidate()
     diff_size = len(page.content.encode("utf-8"))

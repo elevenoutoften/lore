@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 import lore_app.rag.hybrid_retrieval as hybrid_module
@@ -11,6 +12,8 @@ from lore_app.rag.chunker import chunk_page
 from lore_app.rag.eval_retrieval import evaluate_retrieval
 from lore_app.rag.hybrid_retrieval import hybrid_retrieve, hybrid_retrieve_expanded
 from lore_app.rag.vector_store import VectorStore
+from lore_app.repository import LoreRepository
+from lore_app.route_utils import reconcile_vector_index, vector_index_stats
 from lore_app.schemas import (
     ContextEdgeType,
     ContextGraph,
@@ -56,6 +59,81 @@ def test_vector_store_searches_sparse_tfidf(tmp_path):
     assert results[0]["score"] > 0
 
 
+def test_vector_store_filters_sparse_hits_by_lane_and_actor(tmp_path):
+    store = VectorStore(tmp_path / "vectors.db")
+    store.upsert_page_chunks(
+        "tenant/a",
+        [
+            {
+                "chunk_id": "tenant/a#0",
+                "page_id": "tenant/a",
+                "chunk_index": 0,
+                "content": "shared tenant needle",
+                "actor": "agent-a",
+                "lane": "project",
+            }
+        ],
+    )
+    store.upsert_page_chunks(
+        "tenant/b",
+        [
+            {
+                "chunk_id": "tenant/b#0",
+                "page_id": "tenant/b",
+                "chunk_index": 0,
+                "content": "shared tenant needle",
+                "actor": "agent-b",
+                "lane": "ops",
+            }
+        ],
+    )
+
+    assert [row["page_id"] for row in store.search("tenant needle", actor="agent-a")] == ["tenant/a"]
+    assert [row["page_id"] for row in store.search("tenant needle", lane="ops")] == ["tenant/b"]
+    assert store.search("tenant needle", actor="agent-a", lane="ops") == []
+
+
+def test_vector_index_reconciliation_rebuilds_drift_scope_and_clears_pending(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    repo.ensure_root()
+    repo.upsert_page(
+        "tenant/reconcile",
+        """---
+title: Reconcile
+actor: agent-a
+lane: ops
+---
+
+# Reconcile
+
+reconcile vector drift needle
+""",
+    )
+    store = VectorStore(tmp_path / "vectors.db")
+    store.record_pending_reindex("tenant/reconcile", "test failure")
+
+    before = vector_index_stats(repo, store)
+    assert before["page_drift"] == 1
+    assert before["pending_reindex"] == 1
+
+    stats = reconcile_vector_index(repo, store)
+
+    assert stats["reconciled"] is True
+    assert stats["page_drift"] == 0
+    assert stats["pending_reindex"] == 0
+    assert store.search("drift needle", actor="agent-a", lane="ops")[0]["page_id"] == "tenant/reconcile"
+
+    store.upsert_chunk("tenant/reconcile#0", "tenant/reconcile", 0, "reconcile vector drift needle")
+    scoped_drift = vector_index_stats(repo, store)
+    assert scoped_drift["page_drift"] == 0
+    assert scoped_drift["scope_drift"] == 1
+
+    stats = reconcile_vector_index(repo, store)
+
+    assert stats["scope_drift"] == 0
+    assert store.search("drift needle", actor="agent-a", lane="ops")[0]["page_id"] == "tenant/reconcile"
+
+
 class SynonymEmbeddings:
     model = "test-paraphrase-v1"
 
@@ -89,6 +167,8 @@ class FailingEmbeddings:
 def test_vector_store_dense_paraphrase_search_persists_in_sqlite_vec(tmp_path):
     path = tmp_path / "vectors.db"
     store = VectorStore(path)
+    if not store.dense_available:
+        pytest.skip("sqlite-vec is not available in this environment")
     store.configure_embedding_backend(SynonymEmbeddings())
     store.upsert_page_chunks(
         "auth-runbook",
@@ -171,6 +251,26 @@ def test_hybrid_rrf_preserves_fts_only_hit_against_larger_vector_scores():
         "pages/vector-distractor",
     ]
     assert result["results"][0]["sources"] == ["fts"]
+
+
+def test_hybrid_passes_lane_actor_scope_to_vector_store():
+    class FakeSearch:
+        def search(self, query, **kwargs):
+            return []
+
+    class FakeVector:
+        def __init__(self):
+            self.kwargs = None
+
+        def search(self, query, **kwargs):
+            self.kwargs = kwargs
+            return [{"page_id": "pages/scoped", "score": 0.99, "content": query, "actor": "agent-a", "lane": "ops"}]
+
+    vector = FakeVector()
+    result = hybrid_retrieve("needle", FakeSearch(), vector, limit=2, lane="ops", actor="agent-a")
+
+    assert vector.kwargs == {"limit": 4, "lane": "ops", "actor": "agent-a"}
+    assert [row["page_id"] for row in result["results"]] == ["pages/scoped"]
 
 
 def test_upsert_page_chunks_batch_insertion(tmp_path):

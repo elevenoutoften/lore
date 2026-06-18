@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import subprocess
 import time
 from pathlib import Path
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
 
 GIT_REF_CACHE_TTL_SECONDS = 300
 _GIT_REF_CACHE: tuple[str, float] | None = None
+logger = logging.getLogger("lore")
 
 
 def template_context(app_request: Request, **values: Any) -> dict[str, Any]:
@@ -231,7 +233,18 @@ def current_git_ref() -> str | None:
 
 def index_vectors_for_page(vector_store: VectorStore, page: PageDetail) -> None:
     chunks = list(chunk_page(page.id, page.content, page.body))
-    vector_store.upsert_page_chunks(page.id, chunks)
+    actor = _optional_frontmatter_string(page.frontmatter.get("actor"))
+    lane = _optional_frontmatter_string(page.frontmatter.get("lane"))
+    for chunk in chunks:
+        chunk["actor"] = actor
+        chunk["lane"] = lane
+    try:
+        vector_store.upsert_page_chunks(page.id, chunks, actor=actor, lane=lane)
+    except Exception as exc:
+        logger.exception("Vector indexing failed for %s; queued for reconciliation.", page.id)
+        if hasattr(vector_store, "record_pending_reindex"):
+            vector_store.record_pending_reindex(page.id, str(exc))
+        raise
 
 
 def rebuild_vector_index(repo: LoreRepository, vector_store: VectorStore) -> int:
@@ -241,10 +254,76 @@ def rebuild_vector_index(repo: LoreRepository, vector_store: VectorStore) -> int
         page = repo.read_page(summary.id)
         if page is None:
             continue
-        chunks = list(chunk_page(page.id, page.content, page.body))
-        vector_store.upsert_page_chunks(page.id, chunks)
+        index_vectors_for_page(vector_store, page)
         count += 1
+    if hasattr(vector_store, "clear_pending_reindex"):
+        vector_store.clear_pending_reindex()
     return count
+
+
+def vector_index_stats(repo: LoreRepository, vector_store: VectorStore) -> dict[str, int]:
+    pages = repo.list_pages()
+    page_count = len(pages)
+    indexed_pages = vector_store.indexed_page_count() if hasattr(vector_store, "indexed_page_count") else 0
+    chunk_count = vector_store.chunk_count() if hasattr(vector_store, "chunk_count") else 0
+    pending = vector_store.pending_reindex_count() if hasattr(vector_store, "pending_reindex_count") else 0
+    scoped_chunks = vector_store.scoped_chunk_count() if hasattr(vector_store, "scoped_chunk_count") else 0
+    scope_drift = 0
+    if hasattr(vector_store, "page_scopes"):
+        indexed_scopes = vector_store.page_scopes()
+        for summary in pages:
+            page = repo.read_page(summary.id)
+            if page is None:
+                continue
+            expected_actor = _optional_frontmatter_string(page.frontmatter.get("actor"))
+            expected_lane = _optional_frontmatter_string(page.frontmatter.get("lane"))
+            if expected_actor is None and expected_lane is None:
+                continue
+            if indexed_scopes.get(summary.id) != (expected_actor, expected_lane):
+                scope_drift += 1
+    return {
+        "page_count": page_count,
+        "indexed_pages": indexed_pages,
+        "chunk_count": chunk_count,
+        "page_drift": page_count - indexed_pages,
+        "pending_reindex": pending,
+        "scoped_chunks": scoped_chunks,
+        "scope_drift": scope_drift,
+    }
+
+
+def reconcile_vector_index(
+    repo: LoreRepository,
+    vector_store: VectorStore,
+    *,
+    force: bool = False,
+) -> dict[str, int | bool]:
+    before = vector_index_stats(repo, vector_store)
+    should_rebuild = force or before["page_drift"] != 0 or before["pending_reindex"] > 0 or before["scope_drift"] > 0
+    indexed = 0
+    if should_rebuild:
+        indexed = rebuild_vector_index(repo, vector_store)
+    after = vector_index_stats(repo, vector_store)
+    return {**after, "reconciled": should_rebuild, "rebuilt_pages": indexed}
+
+
+def update_vector_index_metrics(metrics: Any, stats: dict[str, int | bool]) -> None:
+    if metrics is None or not hasattr(metrics, "set_vector_index_metrics"):
+        return
+    metrics.set_vector_index_metrics(
+        chunk_count=int(stats.get("chunk_count", 0)),
+        indexed_pages=int(stats.get("indexed_pages", 0)),
+        page_drift=int(stats.get("page_drift", 0)),
+        pending_reindex=int(stats.get("pending_reindex", 0)),
+        scope_drift=int(stats.get("scope_drift", 0)),
+    )
+
+
+def _optional_frontmatter_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
 
 
 def retrieve_context(

@@ -114,6 +114,7 @@ class LoreConfig:
             "off",
         )
         self.claim_forget_after_floor_days: int = int(os.environ.get("LORE_CLAIM_FORGET_AFTER_FLOOR_DAYS", "30"))
+        self.vector_reconcile_interval_seconds: int = int(os.environ.get("LORE_VECTOR_RECONCILE_INTERVAL_SECONDS", "300"))
         self.audit_retention_days: int = int(os.environ.get("LORE_AUDIT_RETENTION_DAYS", "365"))
         self.allow_insecure_bind: bool = os.environ.get("LORE_ALLOW_INSECURE_BIND", "").lower() in ("true", "1", "yes")
         self.trusted_headers: bool = os.environ.get("LORE_TRUSTED_HEADERS", "").lower() in ("true", "1", "yes")
@@ -171,6 +172,7 @@ class LoreConfig:
             "write_rate_limit": self.write_rate_limit,
             "write_rate_window_seconds": self.write_rate_window_seconds,
             "claim_forget_after_floor_days": self.claim_forget_after_floor_days,
+            "vector_reconcile_interval_seconds": self.vector_reconcile_interval_seconds,
             "audit_retention_days": self.audit_retention_days,
             "trusted_headers": self.trusted_headers,
             "trusted_proxy_auth": self.trusted_proxy_auth,
