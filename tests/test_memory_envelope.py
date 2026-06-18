@@ -130,3 +130,26 @@ def test_memory_provider_capture_sends_structured_envelope(monkeypatch):
     assert captured_payload["payload"]["tool_calls"] == [{"tool": "search", "query": "test"}]
     assert captured_payload["payload"]["constraints"] == ["stay compatible"]
     assert captured_payload["payload"]["policies_applied"] == ["L-MEM-02"]
+
+
+def test_memory_provider_default_base_url_is_8078(monkeypatch):
+    """MemoryProvider with no base_url or env must default to :8078."""
+    monkeypatch.delenv("LORE_BASE_URL", raising=False)
+    provider = MemoryProvider()
+    assert provider.base_url == "http://localhost:8078"
+
+
+def test_memory_provider_page_promote_reads_top_level_id(monkeypatch):
+    """page_promote must return the promote endpoint's top-level 'id', not 'None'."""
+    provider = MemoryProvider(base_url="https://lore.example.test")
+
+    def fake_post(path, payload):
+        # The promote endpoint returns a flat PageDetail with top-level 'id',
+        # not 'page_id' or nested 'page.id'.
+        return {"id": "decisions/test-decision", "title": "Test Decision"}
+
+    monkeypatch.setattr(provider, "_post_with_retry", fake_post)
+
+    result_id = provider.page_promote("inbox/2026-06-18/test-capture")
+    assert result_id == "decisions/test-decision"
+    assert result_id != "None"

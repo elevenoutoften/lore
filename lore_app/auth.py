@@ -112,7 +112,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if method != "POST":
             return False
         path = request.url.path
-        return path.startswith("/api/") or path.startswith("/mcp")
+        return path.startswith("/api/")
 
     async def _trusted_proxy_response(self, request: Request, call_next: Any) -> Response | None:
         if not self.trusted_proxy_auth:

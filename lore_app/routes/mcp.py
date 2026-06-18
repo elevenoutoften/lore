@@ -65,6 +65,14 @@ async def mcp(
 
     request_id = payload.get("id") if isinstance(payload, dict) else None
     write_call_count = mcp_write_call_count(payload)
+
+    role = getattr(request.state, "lore_role", None)
+    if role == "reader" and write_call_count > 0:
+        return JSONResponse(
+            {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32600, "message": "Forbidden: reader role cannot call write tools"}},
+            status_code=403,
+        )
+
     if write_call_count:
         key = client_rate_limit_key(request)
         for _ in range(write_call_count):

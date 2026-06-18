@@ -50,7 +50,7 @@ class MemoryProvider:
         api_key: str | None = None,
         timeout: int = 30,
     ) -> None:
-        self.base_url = (base_url or os.environ.get("LORE_BASE_URL", "http://localhost:8000")).rstrip("/")
+        self.base_url = (base_url or os.environ.get("LORE_BASE_URL", "http://localhost:8078")).rstrip("/")
         self.api_key = (api_key or os.environ.get("LORE_API_KEY", "")).strip()
         self.timeout = timeout
 
@@ -201,7 +201,7 @@ class MemoryProvider:
             f"/api/captures/{urllib.parse.quote(capture_id, safe='/')}/promote",
             payload,
         )
-        return str(result.get("page_id") or result.get("page", {}).get("id"))
+        return str(result.get("id") or result.get("page_id") or result.get("page", {}).get("id"))
 
     # ------------------------------------------------------------------
     # Internals

@@ -397,3 +397,72 @@ def test_reader_lore_api_key_cannot_write(content_dir, search_db, tmp_path):
     assert read.status_code == 200
     assert write.status_code == 403
     assert mcp_write_surface.status_code == 403
+
+
+def test_reader_mcp_can_read_but_not_write(content_dir, search_db, tmp_path):
+    """A reader-role token can initialize, list tools, and call read tools over MCP,
+    but is 403'd on write tools."""
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    store = LoreApiKeyStore(config.api_keys_db)
+    store.initialize()
+    _admin_key_obj, admin_key = store.create_key(name="admin-key", role="admin")
+    app = create_app(config)
+
+    with TestClient(app) as client:
+        admin_headers = {"Authorization": f"Bearer {admin_key}"}
+        created = client.post(
+            "/api/api-keys",
+            json={"name": "reader", "role": "reader"},
+            headers=admin_headers,
+        ).json()
+        headers = {"Authorization": f"Bearer {created['api_key']}"}
+
+        # Reader can initialize
+        init = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {},
+            },
+            headers=headers,
+        )
+        # Reader can list tools
+        tool_list = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/list",
+                "params": {},
+            },
+            headers=headers,
+        )
+        # Reader can call a read tool (lore_search)
+        search = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "lore_search", "arguments": {"query": "test"}},
+            },
+            headers=headers,
+        )
+        # Reader is blocked from a write tool (lore_capture)
+        write = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {"name": "lore_capture", "arguments": {"text": "test"}},
+            },
+            headers=headers,
+        )
+
+    assert init.status_code == 200
+    assert tool_list.status_code == 200
+    assert search.status_code == 200
+    assert write.status_code == 403
