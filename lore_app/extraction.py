@@ -187,22 +187,22 @@ def extract_from_captures(
 
 
 def compute_extraction_hash(subject: str, predicate: str, object: str, source_page_ids: list[str]) -> str:
-    """Deterministic SHA-256 hash for claim deduplication."""
+    """Deterministic SHA-256 hash for semantic candidate deduplication.
+
+    Source pages are deliberately excluded: corroborating the same normalized
+    fact from another capture must reinforce one claim instead of creating a
+    duplicate row. ``source_page_ids`` remains in the signature for callers
+    that already supply it; the ledger merges those sources on reinforcement.
+    """
+
+    del source_page_ids
 
     normalized = {
         "subject": " ".join(subject.casefold().split()),
         "predicate": " ".join(predicate.casefold().split()),
         "object": " ".join(object.casefold().split()),
-        "source_page_ids": sorted({page_id.strip() for page_id in source_page_ids if page_id.strip()}),
     }
-    payload = "\n".join(
-        [
-            normalized["subject"],
-            normalized["predicate"],
-            normalized["object"],
-            "\0".join(normalized["source_page_ids"]),
-        ]
-    )
+    payload = "\n".join([normalized["subject"], normalized["predicate"], normalized["object"]])
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

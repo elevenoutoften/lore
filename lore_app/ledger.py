@@ -19,6 +19,7 @@ from .schemas import (
     ClaimReinforcementResult,
     ClaimSupersedeResult,
     ConsolidationRunResult,
+    ContextRef,
     DecayResult,
     ExtractedClaim,
     ExtractedEdge,
@@ -28,6 +29,7 @@ from .schemas import (
     ExtractionStatusResponse,
     PatchPlan,
     PolicyRule,
+    ToolRef,
     TraceEntry,
 )
 
@@ -688,6 +690,23 @@ class LedgerDB:
                 self.connection.commit()
                 self._bump_generation()
 
+                self.store_trace(
+                    TraceEntry(
+                        trace_id="",
+                        actor=str(metadata.get("actor") or "ledger"),
+                        reason_summary=f"Corroborated claim {existing_id} from an additional source.",
+                        context_refs=[ContextRef(type="candidate", id=existing_id)],
+                        tool_refs=[ToolRef(tool="ledger", action="reinforce")],
+                        policy_refs=["claim-lifecycle:corroborate-v1:pass"],
+                        status="completed",
+                        outcome=f"strength={prev_strength:.4f}->{new_strength:.4f}",
+                        related_ids={
+                            "candidate_id": existing_id,
+                            "capture_id": source_capture_ids[0] if source_capture_ids else "",
+                        },
+                    )
+                )
+
                 return ClaimReinforcementResult(
                     candidate_id=existing_id,
                     action="reinforced",
@@ -809,10 +828,11 @@ class LedgerDB:
             self.connection.execute(
                 """
                 UPDATE extraction_candidates
-                SET status = 'superseded', superseded_by = ?, invalidation_reason = ?, updated_at = ?
+                SET status = 'superseded', superseded_by = ?, invalidation_reason = ?,
+                    valid_until = ?, updated_at = ?
                 WHERE candidate_id = ?
                 """,
-                (new_candidate_id, reason, now, old_candidate_id),
+                (new_candidate_id, reason, now, now, old_candidate_id),
             )
             self.connection.execute(
                 """
@@ -830,6 +850,29 @@ class LedgerDB:
             reason=reason,
             old_status=old_status,
         )
+
+    def find_matching_claim(self, claim: ExtractedClaim) -> dict[str, Any] | None:
+        """Return the live candidate row for an extracted claim's normalized triple."""
+        row = self.connection.execute(
+            """
+            SELECT * FROM extraction_candidates
+            WHERE candidate_type = 'claim'
+              AND status IN ('candidate', 'active')
+              AND normalized_subject = ?
+              AND normalized_predicate = ?
+              AND normalized_object = ?
+              AND actor IS ?
+            ORDER BY updated_at DESC, candidate_id
+            LIMIT 1
+            """,
+            (
+                _normalize(claim.subject),
+                _normalize(claim.predicate),
+                _normalize(claim.object),
+                claim.actor,
+            ),
+        ).fetchone()
+        return _decode_row(row) if row is not None else None
 
     def find_contradicting_claims(self, new_claim: ExtractedClaim) -> list[dict[str, Any]]:
         """Find existing claims that contradict a new claim.
@@ -875,6 +918,52 @@ class LedgerDB:
     def archive_candidate(self, candidate_id: str, *, actor: str | None = None) -> None:
         """Transition active → archived."""
         self._transition_status(candidate_id, "archived", actor=actor)
+
+    @retry_on_locked()
+    def archive_floored_claims(
+        self,
+        floor_days: int,
+        *,
+        now: datetime | None = None,
+        actor: str | None = None,
+    ) -> list[str]:
+        """Archive claims that have remained at the decay floor for the configured window."""
+        if floor_days <= 0:
+            return []
+        now_dt = now or datetime.now(UTC)
+        cutoff = (now_dt - timedelta(days=floor_days)).isoformat()
+        actor_clause = " AND actor = ?" if actor else ""
+        params: tuple[Any, ...] = (cutoff, actor) if actor else (cutoff,)
+        with self._lock:
+            rows = self.connection.execute(
+                f"""
+                SELECT candidate_id FROM extraction_candidates
+                WHERE candidate_type = 'claim'
+                  AND status IN ('candidate', 'active')
+                  AND strength <= 0.01
+                  AND last_decayed_at IS NOT NULL
+                  AND datetime(last_decayed_at) <= datetime(?)
+                  {actor_clause}
+                ORDER BY candidate_id
+                """,
+                params,
+            ).fetchall()
+            candidate_ids = [str(row["candidate_id"]) for row in rows]
+            if not candidate_ids:
+                return []
+            reason = f"Archived after {floor_days} days at the claim decay floor."
+            for candidate_id in candidate_ids:
+                self.connection.execute(
+                    """
+                    UPDATE extraction_candidates
+                    SET status = 'archived', invalidation_reason = ?, updated_at = ?
+                    WHERE candidate_id = ?
+                    """,
+                    (reason, now_dt.isoformat(), candidate_id),
+                )
+            self.connection.commit()
+            self._bump_generation()
+            return candidate_ids
 
     @retry_on_locked()
     def _transition_status(
@@ -933,7 +1022,7 @@ class LedgerDB:
             params: tuple[Any, ...] = (actor,) if actor else ()
             rows = self.connection.execute(
                 f"""
-                SELECT candidate_id, strength,
+                SELECT candidate_id, strength, last_decayed_at,
                        COALESCE(last_decayed_at, created_at) AS decay_anchor
                 FROM extraction_candidates
                 WHERE status IN ('candidate', 'active')
@@ -959,6 +1048,9 @@ class LedgerDB:
 
                 old_strength = float(row["strength"])
                 new_strength = max(0.01, old_strength * (0.995**days))
+                last_decayed_at = (
+                    str(row["last_decayed_at"]) if old_strength <= 0.01 and row["last_decayed_at"] else now.isoformat()
+                )
 
                 self.connection.execute(
                     """
@@ -966,7 +1058,7 @@ class LedgerDB:
                     SET strength = ?, last_decayed_at = ?
                     WHERE candidate_id = ?
                     """,
-                    (new_strength, now.isoformat(), str(row["candidate_id"])),
+                    (new_strength, last_decayed_at, str(row["candidate_id"])),
                 )
                 decayed_count += 1
                 min_strength = min(min_strength, new_strength)

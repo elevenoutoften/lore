@@ -23,6 +23,7 @@ Lore reads configuration from environment variables through
 | `LORE_BRAND_URL` | `/` | Header brand link. |
 | `LORE_FAVICON_URL` | `/static/lore.css` | Favicon URL used by templates. |
 | `LORE_WORKSPACES` | empty | JSON object defining mounted workspace storage. |
+| `LORE_CLAIM_FORGET_AFTER_FLOOR_DAYS` | `30` | Archive claims that remain at the `0.01` decay floor for this many days during consolidation; set `0` to disable automatic forgetting. |
 
 Inspect active configuration:
 

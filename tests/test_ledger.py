@@ -68,6 +68,40 @@ def test_apply_decay_uses_dedicated_anchor_without_refreshing_updated_at(tmp_pat
     assert after["last_accessed_at"] is None
 
 
+def test_apply_decay_preserves_floor_onset_for_forget_window(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-floor-anchor",
+            processed_at="2026-01-01T00:00:00+00:00",
+            source_capture_ids=["inbox/2026-01-01/floor-anchor"],
+            claims=[
+                ExtractedClaim(
+                    subject="services/lore",
+                    predicate="states",
+                    object="A floor-aged fact",
+                    confidence="low",
+                )
+            ],
+            entities=[],
+            edges=[],
+            invalidations=[],
+        )
+    )
+    candidate_id = ledger.get_active_claims()[0]["candidate_id"]
+    floor_onset = "2026-01-15T00:00:00+00:00"
+    ledger.connection.execute(
+        "UPDATE extraction_candidates SET strength = 0.01, last_decayed_at = ? WHERE candidate_id = ?",
+        (floor_onset, candidate_id),
+    )
+    ledger.connection.commit()
+
+    ledger.apply_decay(days_since_access=10)
+
+    assert ledger.get_active_claims()[0]["last_decayed_at"] == floor_onset
+
+
 def test_deadletter_store_list_and_resolve(tmp_path):
     ledger = LedgerDB(tmp_path / "ledger.db")
     ledger.initialize()

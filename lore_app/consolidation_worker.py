@@ -12,6 +12,7 @@ from .audit import AuditEntry, AuditLog, new_audit_entry
 from .extraction import extract_from_captures
 from .ledger import LedgerDB, utc_now
 from .patch_planner import PatchPlanner
+from .policy_engine import PolicyEngine
 from .repository import LoreRepository, infer_kind, optional_string
 from .schemas import (
     ConsolidationRunResult,
@@ -85,6 +86,7 @@ class ConsolidationWorker:
         self.planner = planner
         self.config = config
         self.audit_log = audit_log
+        self.policy_engine = planner.policy_engine or PolicyEngine(ledger)
         # Resolves the current LLM client at run time. The web app hot-swaps
         # app.state.llm_client on settings changes, so the worker must fetch the
         # live client per run rather than capture a stale reference.
@@ -132,6 +134,17 @@ class ConsolidationWorker:
             batch_id = extraction_result.batch_id
         except Exception as exc:  # pragma: no cover - defensive boundary
             errors.append(f"extraction failed: {exc}")
+
+        if not dry_run:
+            if extraction_result is not None:
+                try:
+                    self._auto_supersede_contradictions(extraction_result)
+                except Exception as exc:  # pragma: no cover - defensive boundary
+                    errors.append(f"claim supersession sweep failed: {exc}")
+            try:
+                self._archive_floored_claims()
+            except Exception as exc:  # pragma: no cover - defensive boundary
+                errors.append(f"claim forget sweep failed: {exc}")
 
         plans: list[PatchPlan] = []
         try:
@@ -235,6 +248,95 @@ class ConsolidationWorker:
                 )
             )
         return result
+
+    def _auto_supersede_contradictions(self, extraction_result: ExtractionResult) -> int:
+        superseded = 0
+        for claim in extraction_result.claims:
+            new_row = self.ledger.find_matching_claim(claim)
+            if new_row is None:
+                continue
+            new_id = str(new_row["candidate_id"])
+            for old_row in self.ledger.find_contradicting_claims(claim):
+                old_id = str(old_row["candidate_id"])
+                if old_id == new_id:
+                    continue
+                decision = self.policy_engine.evaluate_claim_supersession(old_row, new_row)
+                policy_ref = f"{decision.policy_id}:{'pass' if decision.passed else 'fail'}"
+                if decision.passed:
+                    reason = f"Auto-superseded by strictly newer claim under {decision.policy_id}."
+                    self.ledger.supersede_candidate(old_id, new_id, reason, actor=claim.actor)
+                    superseded += 1
+                    outcome = f"superseded {old_id} with {new_id}"
+                    self._record_candidate_lifecycle_audit(
+                        "claim.supersede",
+                        old_id,
+                        {
+                            "old_candidate_id": old_id,
+                            "new_candidate_id": new_id,
+                            "policy": decision.model_dump(mode="json"),
+                        },
+                    )
+                else:
+                    outcome = f"review retained {old_id}: {decision.reason}"
+                self.ledger.store_trace(
+                    TraceEntry(
+                        trace_id="",
+                        actor="consolidation-worker",
+                        reason_summary=f"Evaluated automatic claim supersession: {decision.reason}",
+                        context_refs=[
+                            ContextRef(type="candidate", id=old_id),
+                            ContextRef(type="candidate", id=new_id),
+                        ],
+                        tool_refs=[ToolRef(tool="consolidation-worker", action="auto-supersede")],
+                        policy_refs=[policy_ref],
+                        status="completed",
+                        outcome=outcome,
+                        related_ids={"candidate_id": old_id, "replacement_candidate_id": new_id},
+                    )
+                )
+        return superseded
+
+    def _archive_floored_claims(self) -> int:
+        floor_days = max(0, int(getattr(self.config, "claim_forget_after_floor_days", 30)))
+        archived_ids = self.ledger.archive_floored_claims(floor_days)
+        for candidate_id in archived_ids:
+            self.ledger.store_trace(
+                TraceEntry(
+                    trace_id="",
+                    actor="consolidation-worker",
+                    reason_summary=f"Archived claim after {floor_days} days at the decay floor.",
+                    context_refs=[ContextRef(type="candidate", id=candidate_id)],
+                    tool_refs=[ToolRef(tool="consolidation-worker", action="forget")],
+                    policy_refs=["claim-lifecycle:forget-v1:pass"],
+                    status="completed",
+                    outcome=f"archived {candidate_id}",
+                    related_ids={"candidate_id": candidate_id},
+                )
+            )
+            self._record_candidate_lifecycle_audit(
+                "claim.archive",
+                candidate_id,
+                {"candidate_id": candidate_id, "floor_days": floor_days},
+            )
+        return len(archived_ids)
+
+    def _record_candidate_lifecycle_audit(
+        self,
+        operation: str,
+        candidate_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        if self.audit_log is None:
+            return
+        self.audit_log.record(
+            new_audit_entry(
+                actor="consolidation_worker",
+                operation=operation,
+                page_id=f"candidate:{candidate_id}",
+                summary=json.dumps(payload, sort_keys=True),
+                diff_size=0,
+            )
+        )
 
     def _plan_dry_run(self, extraction_result: ExtractionResult) -> list[PatchPlan]:
         """Generate patch plans from dry-run extraction without touching the real ledger."""

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 from .schemas import PatchOperation, PolicyDecision, PolicyRule
 
@@ -89,6 +90,41 @@ class PolicyEngine:
 
         return decisions
 
+    def evaluate_claim_supersession(
+        self,
+        old_claim: dict[str, Any],
+        new_claim: dict[str, Any],
+    ) -> PolicyDecision:
+        """Conservatively gate automatic retirement of a contradictory claim."""
+        old_time = _claim_validity_time(old_claim, unknown_as_oldest=True)
+        new_time = _claim_validity_time(new_claim, unknown_as_oldest=False)
+        old_confidence = _confidence_rank(old_claim.get("confidence"))
+        new_confidence = _confidence_rank(new_claim.get("confidence"))
+        same_actor = old_claim.get("actor") == new_claim.get("actor")
+        epistemic_status = str(new_claim.get("epistemic_status") or "")
+        content = new_claim.get("content_json") if isinstance(new_claim.get("content_json"), dict) else {}
+        trace_id = new_claim.get("trace_id") or content.get("trace_id")
+
+        reasons: list[str] = []
+        if not same_actor:
+            reasons.append("claims belong to different actors")
+        if new_time is None or old_time is None or new_time <= old_time:
+            reasons.append("replacement is not strictly newer")
+        if new_confidence < old_confidence:
+            reasons.append("replacement confidence is lower")
+        if epistemic_status == "assumption":
+            reasons.append("assumptions require review")
+        if epistemic_status == "inferred" and not trace_id:
+            reasons.append("untraced inferred claims require review")
+
+        passed = not reasons
+        return PolicyDecision(
+            policy_id="claim-lifecycle:supersede-v1",
+            gate="claim-lifecycle",
+            passed=passed,
+            reason="auto-supersede allowed" if passed else "; ".join(reasons),
+        )
+
     def _applies(self, policy: PolicyRule, page_kind: str, operation: PatchOperation) -> bool:
         if policy.gate == "protected-surface":
             return True
@@ -121,3 +157,22 @@ class PolicyEngine:
         # review-required: _applies already matched the page/operation, so fail
         # the gate to route the matched plan to review (its effect_fail).
         return policy.gate != "review-required"
+
+
+def _confidence_rank(value: Any) -> int:
+    return {"unknown": 0, "low": 1, "medium": 2, "high": 3}.get(str(value or "unknown"), 0)
+
+
+def _claim_validity_time(row: dict[str, Any], *, unknown_as_oldest: bool) -> datetime | None:
+    for field in ("valid_from", "observed_at"):
+        raw = row.get(field)
+        if not raw:
+            continue
+        try:
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    return datetime.min.replace(tzinfo=UTC) if unknown_as_oldest else None
