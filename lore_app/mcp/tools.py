@@ -787,6 +787,10 @@ TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "trace_id": {"type": "string", "description": "The trace ID to retrieve."},
+                "cross_actor": {
+                    "type": "boolean",
+                    "description": "Admin-only: explicitly allow access outside the authenticated actor scope.",
+                },
             },
             "required": ["trace_id"],
         },
@@ -799,6 +803,10 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "entity_type": {"type": "string", "enum": ["capture", "trace", "page"]},
                 "entity_id": {"type": "string"},
+                "cross_actor": {
+                    "type": "boolean",
+                    "description": "Admin-only: explicitly allow access outside the authenticated actor scope.",
+                },
             },
             "required": ["entity_type", "entity_id"],
         },
@@ -812,6 +820,10 @@ TOOLS: list[dict[str, Any]] = [
                 "actor": {"type": "string", "description": "Filter by actor name."},
                 "status": {"type": "string", "description": "Filter by status (active, completed, abandoned)."},
                 "task_id": {"type": "string", "description": "Filter by linked task ID."},
+                "cross_actor": {
+                    "type": "boolean",
+                    "description": "Admin-only: explicitly allow recall outside the authenticated actor scope.",
+                },
                 "limit": {"type": "integer", "description": "Max results. Default: 20."},
             },
         },
@@ -849,6 +861,10 @@ TOOLS: list[dict[str, Any]] = [
                 "policy": {"type": "string", "description": "Policy ID filter."},
                 "keyword": {"type": "string", "description": "Keyword filter."},
                 "task_ref": {"type": "string", "description": "Task ID reference."},
+                "cross_actor": {
+                    "type": "boolean",
+                    "description": "Admin-only: explicitly allow recall outside the authenticated actor scope.",
+                },
                 "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100},
             },
         },
@@ -1735,6 +1751,15 @@ def _handle_lore_get_trace(ctx: McpContext) -> dict[str, Any]:
     trace = ledger.get_trace(trace_id)
     if trace is None:
         return tool_result({"trace_id": trace_id}, f"Trace not found: {trace_id}", is_error=True)
+    if ctx.request is not None:
+        try:
+            recall_actor_scope(
+                ctx.request,
+                requested_actor=trace.actor,
+                cross_actor=bool(arguments.get("cross_actor", False)),
+            )
+        except PermissionError as exc:
+            raise JsonRpcError(-32602, str(exc)) from exc
     return tool_result(trace.model_dump(mode="json"), f"Retrieved reasoning trace: {trace.trace_id}")
 
 
@@ -1757,6 +1782,15 @@ def _handle_lore_get_provenance(ctx: McpContext) -> dict[str, Any]:
             return tool_result(
                 {"entity_type": entity_type, "entity_id": entity_id}, f"Trace not found: {entity_id}", is_error=True
             )
+        if ctx.request is not None:
+            try:
+                recall_actor_scope(
+                    ctx.request,
+                    requested_actor=trace.actor,
+                    cross_actor=bool(arguments.get("cross_actor", False)),
+                )
+            except PermissionError as exc:
+                raise JsonRpcError(-32602, str(exc)) from exc
         provenance = trace.provenance
     else:
         provenance = get_page_provenance(ctx.repo, entity_id)
@@ -1773,7 +1807,7 @@ def _handle_lore_list_traces(ctx: McpContext) -> dict[str, Any]:
     ledger = require_service(ctx.ledger_db, "ledger database")
     limit = max(1, min(int(arguments.get("limit") or 20), 500))
     filters = {
-        "actor": optional_string(arguments.get("actor")),
+        "actor": _mcp_actor_scope(ctx, arguments),
         "status": optional_string(arguments.get("status")),
         "task_id": optional_string(arguments.get("task_id")),
     }
@@ -1800,6 +1834,7 @@ def _handle_lore_find_precedents(ctx: McpContext) -> dict[str, Any]:
     arguments = tool_arguments(ctx.params)
     ledger = require_service(ctx.ledger_db, "ledger database")
     limit = max(1, min(int(arguments.get("limit", 20)), 100))
+    actor = _mcp_actor_scope(ctx, arguments)
     result = search_precedents(
         ctx.repo,
         ledger,
@@ -1807,7 +1842,7 @@ def _handle_lore_find_precedents(ctx: McpContext) -> dict[str, Any]:
             entity=optional_string(arguments.get("entity")),
             situation_type=optional_string(arguments.get("situation_type")),
             lane=optional_string(arguments.get("lane")),
-            actor=optional_string(arguments.get("actor")),
+            actor=actor,
             policy=optional_string(arguments.get("policy")),
             keyword=optional_string(arguments.get("keyword")),
             task_ref=optional_string(arguments.get("task_ref")),

@@ -3,10 +3,11 @@ from __future__ import annotations
 # ruff: noqa: B008
 from typing import TYPE_CHECKING, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..deps import get_ledger_db, get_repo
 from ..provenance import get_capture_provenance, get_page_provenance
+from ..route_utils import recall_actor_scope
 from ..schemas import ProvenanceRef, ProvenanceResponse
 
 if TYPE_CHECKING:
@@ -20,6 +21,8 @@ router = APIRouter(prefix="/api/provenance", tags=["provenance"])
 def get_provenance(
     entity_type: Literal["capture", "trace", "page"],
     entity_id: str,
+    request: Request,
+    cross_actor: bool = Query(default=False),
     repo: LoreRepository = Depends(get_repo),
     ledger: LedgerDB = Depends(get_ledger_db),
 ) -> ProvenanceResponse:
@@ -33,6 +36,10 @@ def get_provenance(
         trace = ledger.get_trace(entity_id)
         if trace is None:
             raise HTTPException(status_code=404, detail=f"Trace {entity_id} not found")
+        try:
+            recall_actor_scope(request, requested_actor=trace.actor, cross_actor=cross_actor)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         return ProvenanceResponse(
             entity_type=entity_type,
             entity_id=entity_id,

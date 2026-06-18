@@ -137,7 +137,7 @@ def test_trace_situation_type_filter_excludes_non_matching(client, monkeypatch):
     monkeypatch.setattr(
         client.app.state.ledger_db,
         "list_traces",
-        lambda limit=500: [
+        lambda *, actor=None, limit=500, **kwargs: [
             SimpleNamespace(
                 trace_id="trace-routing-match",
                 actor="nyx",
@@ -173,7 +173,7 @@ def test_trace_situation_type_with_actor_and_lane_filters(client, monkeypatch):
     monkeypatch.setattr(
         client.app.state.ledger_db,
         "list_traces",
-        lambda limit=500: [
+        lambda *, actor=None, limit=500, **kwargs: [
             SimpleNamespace(
                 trace_id="trace-routing-ops-nyx",
                 actor="nyx",
@@ -225,7 +225,7 @@ def test_total_reports_full_match_count_before_limit(client, monkeypatch):
     monkeypatch.setattr(
         client.app.state.ledger_db,
         "list_traces",
-        lambda limit=500: [
+        lambda *, actor=None, limit=500, **kwargs: [
             SimpleNamespace(
                 trace_id="trace-routing-1",
                 actor="nyx",

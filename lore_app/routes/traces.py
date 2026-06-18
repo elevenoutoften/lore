@@ -4,9 +4,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..deps import get_ledger_db
+from ..route_utils import recall_actor_scope
 from ..schemas import TraceCreateRequest, TraceEntry, TraceListResponse, TraceUpdateRequest
 
 if TYPE_CHECKING:
@@ -30,6 +31,7 @@ def create_trace(
 
 @router.get("", response_model=TraceListResponse)
 def list_traces(
+    request: Request,
     actor: str | None = Query(default=None),
     status: str | None = Query(default=None),
     task_id: str | None = Query(default=None),
@@ -37,11 +39,16 @@ def list_traces(
     page_id: str | None = Query(default=None),
     candidate_id: str | None = Query(default=None),
     policy_ref: str | None = Query(default=None),
+    cross_actor: bool = Query(default=False),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     ledger: LedgerDB = Depends(get_ledger_db),
 ) -> TraceListResponse:
     """Query reasoning traces by various filters."""
+    try:
+        actor = recall_actor_scope(request, requested_actor=actor, cross_actor=cross_actor)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     traces = ledger.list_traces(
         actor=actor,
         status=status,
@@ -68,12 +75,18 @@ def list_traces(
 @router.get("/{trace_id}", response_model=TraceEntry)
 def get_trace(
     trace_id: str,
+    request: Request,
+    cross_actor: bool = Query(default=False),
     ledger: LedgerDB = Depends(get_ledger_db),
 ) -> TraceEntry:
     """Get a trace by ID."""
     trace = ledger.get_trace(trace_id)
     if trace is None:
         raise HTTPException(status_code=404, detail=f"Trace {trace_id} not found")
+    try:
+        recall_actor_scope(request, requested_actor=trace.actor, cross_actor=cross_actor)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return trace
 
 

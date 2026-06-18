@@ -51,7 +51,7 @@ def _search_traces(
     seen_ids: set[str],
 ) -> None:
     try:
-        traces = ledger.list_traces(limit=500)
+        traces = ledger.list_traces(actor=request.actor, limit=500)
     except Exception:
         return
 

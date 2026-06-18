@@ -302,3 +302,84 @@ def test_all_claim_read_and_ack_surfaces_enforce_actor_scope(content_dir, search
     assert a_mcp_ack["result"]["structuredContent"]["acknowledged_count"] == 0
     assert b_ack.status_code == 200
     assert b_ack.json()["acknowledged_count"] == 1
+
+
+def test_trace_and_precedent_reads_are_scoped_to_authenticated_actor(content_dir, search_db, tmp_path):
+    app = _app(content_dir, search_db, tmp_path)
+    _, key_a = app.state.api_key_store.create_key(name="trace-agent-a", role="writer")
+    _, key_b = app.state.api_key_store.create_key(name="trace-agent-b", role="writer")
+    _, admin_key = app.state.api_key_store.create_key(name="trace-admin", role="admin")
+    unique_term = "TenantTraceNeedleB"
+
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/traces",
+            json={
+                "actor": "trace-agent-b",
+                "reason_summary": f"{unique_term} belongs only to trace agent B.",
+                "status": "completed",
+                "related_ids": {"task_id": "flow_000843"},
+                "provenance": {"task_ids": ["flow_000843"], "actor": "trace-agent-b"},
+            },
+            headers=_headers(key_b),
+        )
+        assert created.status_code == 201, created.text
+        trace = created.json()
+        trace_id = trace["trace_id"]
+
+        a_list = client.get("/api/traces", headers=_headers(key_a))
+        b_list = client.get("/api/traces", headers=_headers(key_b))
+        admin_list = client.get(
+            "/api/traces",
+            params={"actor": "trace-agent-b", "cross_actor": "true"},
+            headers=_headers(admin_key),
+        )
+        a_get = client.get(f"/api/traces/{trace_id}", headers=_headers(key_a))
+        a_provenance = client.get(f"/api/provenance/trace/{trace_id}", headers=_headers(key_a))
+
+        a_mcp_list = _mcp_call(client, _headers(key_a), "lore_list_traces", {"limit": 10})
+        a_mcp_get = _mcp_call(client, _headers(key_a), "lore_get_trace", {"trace_id": trace_id})
+        a_mcp_provenance = _mcp_call(
+            client,
+            _headers(key_a),
+            "lore_get_provenance",
+            {"entity_type": "trace", "entity_id": trace_id},
+        )
+        a_mcp_precedents = _mcp_call(client, _headers(key_a), "lore_find_precedents", {"keyword": unique_term, "limit": 10})
+        b_mcp_precedents = _mcp_call(client, _headers(key_b), "lore_find_precedents", {"keyword": unique_term, "limit": 10})
+        admin_mcp_list = _mcp_call(
+            client,
+            _headers(admin_key),
+            "lore_list_traces",
+            {"actor": "trace-agent-b", "cross_actor": True, "limit": 10},
+        )
+
+    assert a_list.status_code == 200, a_list.text
+    assert all(item["trace_id"] != trace_id for item in a_list.json()["traces"])
+    assert a_list.json()["total"] == 0
+
+    assert b_list.status_code == 200, b_list.text
+    assert any(item["trace_id"] == trace_id for item in b_list.json()["traces"])
+
+    assert admin_list.status_code == 200, admin_list.text
+    assert any(item["trace_id"] == trace_id for item in admin_list.json()["traces"])
+
+    assert a_get.status_code == 403
+    assert a_provenance.status_code == 403
+
+    assert a_mcp_list["result"]["structuredContent"]["total"] == 0
+    assert all(item["trace_id"] != trace_id for item in a_mcp_list["result"]["structuredContent"]["traces"])
+    assert "error" in a_mcp_get
+    assert "cross-actor" in a_mcp_get["error"]["message"].lower()
+    assert "error" in a_mcp_provenance
+    assert "cross-actor" in a_mcp_provenance["error"]["message"].lower()
+
+    assert a_mcp_precedents["result"]["structuredContent"]["total"] == 0
+    assert unique_term not in str(a_mcp_precedents["result"]["structuredContent"])
+
+    b_precedent_matches = b_mcp_precedents["result"]["structuredContent"]["matches"]
+    assert any(match["id"] == f"trace:{trace_id}" for match in b_precedent_matches)
+
+    assert any(
+        item["trace_id"] == trace_id for item in admin_mcp_list["result"]["structuredContent"]["traces"]
+    )
