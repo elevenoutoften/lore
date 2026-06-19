@@ -13,7 +13,7 @@ from lore_app.rag.eval_retrieval import evaluate_retrieval
 from lore_app.rag.hybrid_retrieval import hybrid_retrieve, hybrid_retrieve_expanded
 from lore_app.rag.vector_store import VectorStore
 from lore_app.repository import LoreRepository
-from lore_app.route_utils import reconcile_vector_index, vector_index_stats
+from lore_app.route_utils import index_vectors_for_page, reconcile_vector_index, vector_index_stats
 from lore_app.schemas import (
     ContextEdgeType,
     ContextGraph,
@@ -132,6 +132,40 @@ reconcile vector drift needle
 
     assert stats["scope_drift"] == 0
     assert store.search("drift needle", actor="agent-a", lane="ops")[0]["page_id"] == "tenant/reconcile"
+
+
+def test_indexing_failure_surfaces_in_drift_gauge(tmp_path, monkeypatch):
+    repo = LoreRepository(tmp_path / "pages")
+    repo.ensure_root()
+    repo.upsert_page(
+        "concepts/drift-test",
+        """---
+title: Drift Test
+actor: agent-a
+lane: ops
+---
+
+# Drift Test
+
+simulated vector indexing failure
+""",
+    )
+    page = repo.read_page("concepts/drift-test")
+    assert page is not None
+
+    store = VectorStore(tmp_path / "vectors.db")
+
+    def raise_indexing_failure(page_id, chunks, *, actor=None, lane=None):
+        del chunks, actor, lane
+        raise RuntimeError(f"simulated indexing failure for {page_id}")
+
+    monkeypatch.setattr(store, "upsert_page_chunks", raise_indexing_failure)
+
+    with pytest.raises(RuntimeError, match="simulated indexing failure"):
+        index_vectors_for_page(store, page)
+
+    assert store.pending_reindex_count() >= 1
+    assert vector_index_stats(repo, store)["page_drift"] >= 1
 
 
 class SynonymEmbeddings:
