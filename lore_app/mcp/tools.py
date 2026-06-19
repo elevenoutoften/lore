@@ -67,6 +67,7 @@ WRITE_TOOL_NAMES = {
     "lore_create_decision",
     "lore_create_procedure",
     "lore_create_stub",
+    "lore_ingest_service",
     "lore_update_metadata",
     "lore_ack_recall",
     "lore_transition_capture",

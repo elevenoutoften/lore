@@ -450,12 +450,32 @@ def test_reader_mcp_can_read_but_not_write(content_dir, search_db, tmp_path):
             },
             headers=headers,
         )
+        recall = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {"name": "lore_recall", "arguments": {"query": "test"}},
+            },
+            headers=headers,
+        )
+        read_page = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {"name": "lore_read_page", "arguments": {"page_id": "concepts/test"}},
+            },
+            headers=headers,
+        )
         # Reader is blocked from a write tool (lore_capture)
         write = client.post(
             "/mcp",
             json={
                 "jsonrpc": "2.0",
-                "id": 4,
+                "id": 6,
                 "method": "tools/call",
                 "params": {"name": "lore_capture", "arguments": {"text": "test"}},
             },
@@ -465,4 +485,52 @@ def test_reader_mcp_can_read_but_not_write(content_dir, search_db, tmp_path):
     assert init.status_code == 200
     assert tool_list.status_code == 200
     assert search.status_code == 200
+    assert recall.status_code == 200
+    assert read_page.status_code == 200
     assert write.status_code == 403
+
+
+def test_reader_mcp_rejects_whitespace_padded_write_tools(content_dir, search_db, tmp_path):
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    store = LoreApiKeyStore(config.api_keys_db)
+    store.initialize()
+    _admin_key_obj, admin_key = store.create_key(name="admin-key", role="admin")
+    app = create_app(config)
+
+    with TestClient(app) as client:
+        admin_headers = {"Authorization": f"Bearer {admin_key}"}
+        created = client.post(
+            "/api/api-keys",
+            json={"name": "reader", "role": "reader"},
+            headers=admin_headers,
+        ).json()
+        headers = {"Authorization": f"Bearer {created['api_key']}"}
+
+        padded_writes = [
+            client.post(
+                "/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": index,
+                    "method": "tools/call",
+                    "params": {"name": padded_name, "arguments": {"text": "test"}},
+                },
+                headers=headers,
+            )
+            for index, padded_name in enumerate(("lore_capture ", " lore_capture", "\tlore_capture\t"), start=1)
+        ]
+        batch = client.post(
+            "/mcp",
+            json=[
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {"name": "lore_capture ", "arguments": {"text": "test"}},
+                }
+            ],
+            headers=headers,
+        )
+
+    assert [response.status_code for response in padded_writes] == [403, 403, 403]
+    assert batch.status_code == 403

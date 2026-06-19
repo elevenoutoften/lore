@@ -22,7 +22,7 @@ from ..deps import (
     get_vector_store,
 )
 from ..mcp import dispatch as mcp_dispatch
-from ..mcp.tools import WRITE_TOOL_NAMES
+from ..mcp.tools import TOOLS, WRITE_TOOL_NAMES
 from ..route_utils import client_rate_limit_key
 from ..routes.admin import package_name
 
@@ -41,6 +41,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger("lore.mcp")
 
 router = APIRouter()
+
+READ_TOOL_NAMES = {str(tool.get("name") or "").strip() for tool in TOOLS} - WRITE_TOOL_NAMES
 
 
 @router.post("/mcp")
@@ -69,7 +71,11 @@ async def mcp(
     role = getattr(request.state, "lore_role", None)
     if role == "reader" and write_call_count > 0:
         return JSONResponse(
-            {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32600, "message": "Forbidden: reader role cannot call write tools"}},
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": -32600, "message": "Forbidden: reader role cannot call write tools"},
+            },
             status_code=403,
         )
 
@@ -118,7 +124,8 @@ def mcp_write_call_count(payload: object) -> int:
     params = payload.get("params") or {}
     if not isinstance(params, dict):
         return 0
-    return 1 if params.get("name") in WRITE_TOOL_NAMES else 0
+    tool_name = str(params.get("name") or "").strip()
+    return 0 if tool_name in READ_TOOL_NAMES else 1
 
 
 @router.get("/mcp")
