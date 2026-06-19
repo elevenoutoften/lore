@@ -107,6 +107,7 @@ class LedgerDB:
         self.db_path = Path(db_path)
         self._tl = threading.local()
         self._conn_lock = threading.Lock()
+        self._all_conns: set[sqlite3.Connection] = set()
         self._lock = threading.RLock()
         self._generation: int = 0
         self._semantic_scorer: Callable[[str, list[str]], list[float] | None] | None = None
@@ -144,6 +145,7 @@ class LedgerDB:
                     conn.execute("PRAGMA busy_timeout = 5000")
                     conn.execute("PRAGMA journal_mode = WAL")
                     conn.execute("PRAGMA foreign_keys = ON")
+                    self._all_conns.add(conn)
                     self._tl.conn = conn
         return conn
 
@@ -1168,9 +1170,11 @@ class LedgerDB:
         Claims are scored on strength (reinforce/decay), recency (freshness of the
         update anchor), salience (acknowledged-use frequency), and -- when a
         query is supplied -- lexical relevance plus optional semantic similarity.
-        Semantic scoring is capped to the strongest 50 candidates so one recall
-        cannot synchronously re-embed the full 500-row pool. Each returned row
-        carries ``recall_score``, a ``recall_signals`` breakdown, and ``age_days``.
+        When a query is supplied, the candidate pool widens up to
+        ``min(pool_limit * 3, 2000)`` before ranking; semantic scoring is still
+        capped to the strongest 50 candidates so one recall cannot synchronously
+        re-embed the widened pool. Each returned row carries ``recall_score``, a
+        ``recall_signals`` breakdown, and ``age_days``.
 
         When ``record_access`` is true, the returned claims have their access
         count incremented and ``last_accessed_at`` stamped for explicit salience
@@ -1931,9 +1935,13 @@ class LedgerDB:
         return int(row["count"] if row is not None else 0)
 
     def close(self) -> None:
-        conn = getattr(self._tl, "conn", None)
-        if conn is not None:
-            conn.close()
+        with self._conn_lock:
+            for conn in list(self._all_conns):
+                try:
+                    conn.close()
+                except sqlite3.ProgrammingError:
+                    pass
+            self._all_conns.clear()
             self._tl.conn = None
 
     def _iter_candidates(self, result: ExtractionResult):

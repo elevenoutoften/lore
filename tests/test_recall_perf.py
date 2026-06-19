@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import json
 import threading
 import time
@@ -223,3 +224,46 @@ def test_parallel_recall_and_access_updates_are_thread_safe(tmp_path):
 
     assert not errors, errors
     assert ledger.recall_claims(query="shared memory", limit=1, record_access=False)[0]["access_count"] > 0
+
+
+def test_close_releases_all_thread_connections(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    _insert_claims(
+        ledger,
+        [
+            {
+                "subject": f"close-{index}",
+                "predicate": "stores",
+                "object": f"close memory {index}",
+                "strength": 0.6,
+            }
+            for index in range(20)
+        ],
+        batch_id="close-test",
+    )
+
+    main_conn = ledger.connection
+    barrier = threading.Barrier(4)
+
+    def worker() -> None:
+        barrier.wait()
+        ledger.recall_claims(query="close memory", limit=5, pool_limit=10, record_access=False)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(worker) for _ in range(4)]
+        for future in as_completed(futures):
+            future.result()
+        assert len(ledger._all_conns) >= 5
+
+    gc.collect()
+    ledger.close()
+
+    assert len(ledger._all_conns) == 0
+    assert ledger._connection is None
+    try:
+        main_conn.execute("SELECT 1")
+    except Exception as exc:
+        assert "closed" in str(exc).lower()
+    else:  # pragma: no cover - exercised on failure
+        raise AssertionError("expected the main-thread SQLite connection to be closed")
