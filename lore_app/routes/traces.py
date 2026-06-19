@@ -94,12 +94,18 @@ def get_trace(
 def update_trace(
     trace_id: str,
     payload: TraceUpdateRequest,
+    request: Request,
+    cross_actor: bool = Query(default=False),
     ledger: LedgerDB = Depends(get_ledger_db),
 ) -> TraceEntry:
     """Update an existing trace (e.g., mark completed, add outcome)."""
     existing = ledger.get_trace(trace_id)
     if existing is None:
         raise HTTPException(status_code=404, detail=f"Trace {trace_id} not found")
+    try:
+        recall_actor_scope(request, requested_actor=existing.actor, cross_actor=cross_actor)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     update_data = payload.model_dump(exclude_unset=True)
     updated = TraceEntry.model_validate(existing.model_dump() | update_data)
     updated.updated_at = datetime.now(UTC).isoformat()

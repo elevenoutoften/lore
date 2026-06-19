@@ -424,6 +424,53 @@ def test_trace_and_precedent_reads_are_scoped_to_authenticated_actor(content_dir
     )
 
 
+def test_trace_update_is_scoped_to_authenticated_actor(content_dir, search_db, tmp_path):
+    app = _app(content_dir, search_db, tmp_path)
+    _, key_a = app.state.api_key_store.create_key(name="trace-agent-a", role="writer")
+    _, key_b = app.state.api_key_store.create_key(name="trace-agent-b", role="writer")
+    _, admin_key = app.state.api_key_store.create_key(name="trace-admin", role="admin")
+
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/traces",
+            json={
+                "actor": "trace-agent-b",
+                "reason_summary": "Trace owned by agent B.",
+                "status": "active",
+                "related_ids": {"task_id": "flow_000875"},
+                "provenance": {"task_ids": ["flow_000875"], "actor": "trace-agent-b"},
+            },
+            headers=_headers(key_b),
+        )
+        assert created.status_code == 201, created.text
+        trace_id = created.json()["trace_id"]
+
+        a_patch = client.patch(
+            f"/api/traces/{trace_id}",
+            json={"status": "completed"},
+            headers=_headers(key_a),
+        )
+        b_patch = client.patch(
+            f"/api/traces/{trace_id}",
+            json={"status": "completed"},
+            headers=_headers(key_b),
+        )
+        admin_patch = client.patch(
+            f"/api/traces/{trace_id}",
+            params={"cross_actor": "true"},
+            json={"status": "abandoned"},
+            headers=_headers(admin_key),
+        )
+
+    assert a_patch.status_code == 403, a_patch.text
+
+    assert b_patch.status_code == 200, b_patch.text
+    assert b_patch.json()["status"] == "completed"
+
+    assert admin_patch.status_code == 200, admin_patch.text
+    assert admin_patch.json()["status"] == "abandoned"
+
+
 def test_rag_include_traces_does_not_leak_cross_actor_trace_ids(content_dir, search_db, tmp_path):
     app = _app(content_dir, search_db, tmp_path)
     _, key_a = app.state.api_key_store.create_key(name="rag-trace-agent-a", role="writer")
