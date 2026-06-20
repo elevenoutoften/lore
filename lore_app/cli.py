@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import sys
@@ -23,11 +24,18 @@ def main(argv: list[str] | None = None) -> int:
     p_backup = sub.add_parser("backup", help="Export vault to a tar.gz backup")
     p_backup.add_argument("--content-dir", default="./data/pages", help="Content directory")
     p_backup.add_argument("--output", required=True, help="Output tar.gz file")
+    p_backup.add_argument("--ledger-db", default="./data/db/ledger.db", help="Claim ledger database")
+    p_backup.add_argument("--settings-db", default="./data/db/settings.db", help="Settings database")
+    p_backup.add_argument("--api-keys-db", default="./data/db/api_keys.db", help="API keys database")
 
     p_restore = sub.add_parser("restore", help="Restore vault from a tar.gz backup")
     p_restore.add_argument("--content-dir", default="./data/pages", help="Content directory")
     p_restore.add_argument("--search-db", default="./data/search.db", help="Search index database")
     p_restore.add_argument("--input", required=True, help="Input tar.gz file")
+    p_restore.add_argument("--ledger-db", default="./data/db/ledger.db", help="Claim ledger database")
+    p_restore.add_argument("--vector-db", default="./data/db/vectors.db", help="Vector index database")
+    p_restore.add_argument("--settings-db", default="./data/db/settings.db", help="Settings database")
+    p_restore.add_argument("--api-keys-db", default="./data/db/api_keys.db", help="API keys database")
 
     p_export = sub.add_parser("export", help="Export vault pages")
     p_export.add_argument("--content-dir", default="./data/pages", help="Content directory")
@@ -102,9 +110,23 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "bootstrap":
         return cmd_bootstrap(args.path)
     if args.command == "backup":
-        return cmd_backup(args.content_dir, args.output)
+        return cmd_backup(
+            args.content_dir,
+            args.output,
+            ledger_db=args.ledger_db,
+            settings_db=args.settings_db,
+            api_keys_db=args.api_keys_db,
+        )
     if args.command == "restore":
-        return cmd_restore(args.input, args.content_dir, args.search_db)
+        return cmd_restore(
+            args.input,
+            args.content_dir,
+            args.search_db,
+            ledger_db=args.ledger_db,
+            vector_db=args.vector_db,
+            settings_db=args.settings_db,
+            api_keys_db=args.api_keys_db,
+        )
     if args.command == "export":
         return cmd_export(args.content_dir, args.output, args.format)
     if args.command == "import":
@@ -170,7 +192,14 @@ def cmd_bootstrap(path: str) -> int:
     return 0
 
 
-def cmd_backup(content_dir: str, output: str) -> int:
+def cmd_backup(
+    content_dir: str,
+    output: str,
+    *,
+    ledger_db: str | None = None,
+    settings_db: str | None = None,
+    api_keys_db: str | None = None,
+) -> int:
     from .repository import LoreRepository
 
     repo = LoreRepository(content_dir)
@@ -183,15 +212,13 @@ def cmd_backup(content_dir: str, output: str) -> int:
         pages.append(page)
         checksums[page.id] = sha256_text(page.content)
 
-    manifest = {
-        "version": 1,
-        "timestamp": datetime.now(UTC).isoformat(),
-        "page_count": len(pages),
-        "checksums": checksums,
-    }
-    metadata = {
-        "catalog": repo.catalog().model_dump(),
-        "pages": [page.model_dump(exclude={"content", "body"}) for page in pages],
+    # Source DBs to snapshot. The claim ledger holds non-reconstructable derived
+    # state (claim strengths, access/recency/salience signals, traces, patch-plan
+    # history, bi-temporal validity); omitting it makes a restore reset recall.
+    db_sources = {
+        "ledger.db": ledger_db,
+        "settings.db": settings_db,
+        "api_keys.db": api_keys_db,
     }
 
     output_path = Path(output)
@@ -200,6 +227,26 @@ def cmd_backup(content_dir: str, output: str) -> int:
         root = Path(temp_dir)
         pages_dir = root / "pages"
         pages_dir.mkdir()
+        db_dir = root / "db"
+        db_dir.mkdir()
+
+        included_dbs: list[str] = []
+        for name, src in db_sources.items():
+            if src and backup_sqlite_db(src, db_dir / name):
+                included_dbs.append(name)
+
+        manifest = {
+            "version": 2,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "page_count": len(pages),
+            "checksums": checksums,
+            "databases": included_dbs,
+        }
+        metadata = {
+            "catalog": repo.catalog().model_dump(),
+            "pages": [page.model_dump(exclude={"content", "body"}) for page in pages],
+        }
+
         (root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         (root / "metadata.json").write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
         for page in pages:
@@ -209,12 +256,47 @@ def cmd_backup(content_dir: str, output: str) -> int:
             archive.add(root / "metadata.json", arcname="metadata.json")
             for page_file in sorted(pages_dir.glob("*.md")):
                 archive.add(page_file, arcname=f"pages/{page_file.name}")
+            for name in included_dbs:
+                archive.add(db_dir / name, arcname=f"db/{name}")
 
-    print(f"Backed up {len(pages)} pages to {output}")
+    db_note = f", {len(included_dbs)} database(s)" if included_dbs else ""
+    print(f"Backed up {len(pages)} pages{db_note} to {output}")
     return 0
 
 
-def cmd_restore(input_file: str, content_dir: str, search_db: str) -> int:
+def backup_sqlite_db(src_path: str, dest_path: Path) -> bool:
+    """Snapshot a SQLite DB to dest via the online backup API.
+
+    Uses ``sqlite3.Connection.backup`` so the copy is a consistent snapshot even
+    under WAL/concurrent writes (the raw on-disk file can miss un-checkpointed WAL
+    frames). Returns False when the source does not exist.
+    """
+    import sqlite3
+
+    if not Path(src_path).exists():
+        return False
+    src = sqlite3.connect(src_path)
+    try:
+        dst = sqlite3.connect(str(dest_path))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+    return True
+
+
+def cmd_restore(
+    input_file: str,
+    content_dir: str,
+    search_db: str,
+    *,
+    ledger_db: str | None = None,
+    vector_db: str | None = None,
+    settings_db: str | None = None,
+    api_keys_db: str | None = None,
+) -> int:
     from .repository import InvalidPageId, LoreRepository
     from .search_index import LoreSearchIndex
 
@@ -229,8 +311,45 @@ def cmd_restore(input_file: str, content_dir: str, search_db: str) -> int:
             print(f"Skipped invalid page: {page_id}")
 
     indexed = LoreSearchIndex(search_db).rebuild(repo)
+
+    # Restore the snapshotted databases (ledger/settings/api_keys) by writing the
+    # archived bytes into place; tighten perms on the secret-bearing ones.
+    db_targets = {
+        "ledger.db": ledger_db,
+        "settings.db": settings_db,
+        "api_keys.db": api_keys_db,
+    }
+    restored_dbs: list[str] = []
+    for name, data in (backup.get("databases") or {}).items():
+        target = db_targets.get(name)
+        if not target:
+            continue
+        target_path = Path(target)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(data)
+        if name in ("ledger.db", "api_keys.db"):
+            # chmod is a POSIX no-op concept on some filesystems; best-effort.
+            with contextlib.suppress(OSError):
+                target_path.chmod(0o600)
+        restored_dbs.append(name)
+
+    # Rebuild the vector index from the restored pages (the index is not archived).
+    vector_indexed = 0
+    if vector_db:
+        from .rag.vector_store import VectorStore
+        from .route_utils import rebuild_vector_index
+
+        vector_store = VectorStore(vector_db)
+        try:
+            vector_indexed = rebuild_vector_index(repo, vector_store)
+        finally:
+            vector_store.close()
+
     print(f"Restored {restored} pages from {input_file}")
     print(f"Rebuilt search index with {indexed} pages")
+    print(f"Rebuilt vector index with {vector_indexed} pages")
+    if restored_dbs:
+        print(f"Restored database(s): {', '.join(restored_dbs)}")
     return 0
 
 
@@ -283,7 +402,14 @@ def cmd_verify(input_file: str) -> int:
     if page_count != actual_count:
         print(f"Backup invalid: manifest has {page_count} pages, archive has {actual_count}")
         return 1
-    print(f"Backup verified: {actual_count} pages, version {manifest.get('version')}")
+    databases = backup.get("databases") or {}
+    if int(manifest.get("version") or 1) >= 2:
+        print(
+            f"Backup verified: {actual_count} pages, {len(databases)} database(s), "
+            f"version {manifest.get('version')}"
+        )
+    else:
+        print(f"Backup verified: {actual_count} pages, version {manifest.get('version')}")
     return 0
 
 
@@ -433,7 +559,7 @@ def read_backup(input_file: str) -> dict[str, Any]:
         if manifest_file is None:
             raise ValueError("Backup manifest is unreadable")
         manifest = json.loads(manifest_file.read().decode("utf-8"))
-        if manifest.get("version") != 1:
+        if manifest.get("version") not in (1, 2):
             raise ValueError(f"Unsupported backup version: {manifest.get('version')}")
 
         checksums = manifest.get("checksums") or {}
@@ -455,7 +581,20 @@ def read_backup(input_file: str) -> dict[str, Any]:
                 raise ValueError(f"Checksum mismatch for {normalized}")
             pages[normalized] = content
 
-    return {"manifest": manifest, "pages": pages}
+        # v2 backups carry binary SQLite snapshots under db/<name>. Tar integrity
+        # covers them (they are binary, so not text-checksummed). v1 has none.
+        databases: dict[str, bytes] = {}
+        if int(manifest.get("version") or 1) >= 2:
+            for name in manifest.get("databases") or []:
+                member_name = f"db/{name}"
+                if member_name not in members:
+                    raise ValueError(f"Backup missing database file for {name}")
+                db_file = archive.extractfile(members[member_name])
+                if db_file is None:
+                    raise ValueError(f"Backup database file is unreadable: {name}")
+                databases[name] = db_file.read()
+
+    return {"manifest": manifest, "pages": pages, "databases": databases}
 
 
 def backup_page_filename(page_id: str) -> str:

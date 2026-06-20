@@ -846,6 +846,7 @@ class MemoryHealthResponse(BaseModel):
     rejected_plans: int = 0
     failed_runs: int = 0
     last_consolidation: str | None = None
+    last_maintenance_at: str | None = None
     stale_pages: int = 0
     contradictions: int = 0
     low_confidence: int = 0

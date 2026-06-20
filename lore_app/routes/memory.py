@@ -130,6 +130,7 @@ def api_memory_capture(
 
 @router.get("/api/memory/health", response_model=MemoryHealthResponse)
 def api_memory_health(
+    request: Request,
     repo: LoreRepository = Depends(get_repo),
     ledger: LedgerDB = Depends(get_ledger_db),
     lint_config: LintConfig = Depends(get_lint_config),
@@ -155,6 +156,7 @@ def api_memory_health(
         rejected_plans=int(plans_by_status.get("rejected", 0)),
         failed_runs=failed_runs,
         last_consolidation=last_run.get("completed_at") or last_run.get("started_at"),
+        last_maintenance_at=getattr(request.app.state, "last_maintenance_at", None),
         stale_pages=heartbeat.stale_pages.count,
         contradictions=heartbeat.contradictions.count,
         low_confidence=heartbeat.low_confidence.count,

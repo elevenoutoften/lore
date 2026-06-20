@@ -5,6 +5,7 @@ import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -18,6 +19,7 @@ from .auth import AuthMiddleware
 from .config import VALID_AUTH_MODES, LoreConfig, merged_llm_config
 from .consolidation_worker import ConsolidationWorker
 from .context_graph import ContextGraphCache
+from .heartbeat import emit_heartbeat_captures
 from .ledger import LedgerDB
 from .link_graph import LinkGraphCache
 from .lint_config import LintConfig
@@ -30,6 +32,7 @@ from .repository import LoreRepository
 from .route_utils import (
     actor_from_request,
     client_rate_limit_key,
+    index_vectors_for_page,
     is_rate_limited_write,
     reconcile_vector_index,
     retrieve_context,
@@ -117,6 +120,78 @@ def _start_vector_reconciler(
                 logging.getLogger("lore").exception("Periodic vector index reconciliation failed.")
 
     thread = threading.Thread(target=reconcile_loop, name="lore-vector-reconciler", daemon=True)
+    thread.start()
+    return thread
+
+
+def run_maintenance_tick(app: FastAPI) -> None:
+    """Run one maintenance pass: heartbeat self-audit, ledger decay, distillation.
+
+    Runs under the existing auto-consolidation coalescing lock so it never mutates
+    the ledger/pages concurrently with a capture-triggered auto-consolidation. Each
+    sub-step is best-effort (a failure in one does not abort the others).
+    """
+    state = app.state
+    logger = logging.getLogger("lore")
+    lock = getattr(state, "auto_consolidate_lock", None)
+    if lock is not None:
+        lock.acquire()
+    try:
+        repo = state.repository
+        ledger = state.ledger_db
+
+        try:
+            captures = emit_heartbeat_captures(
+                repo, config=state.lint_config, graph=state.graph_cache.get(repo)
+            )
+            for capture in captures:
+                state.metrics.increment_index_size()
+                state.search_index.upsert_page_from_detail(capture)
+                index_vectors_for_page(state.vector_store, capture)
+                state.graph_cache.invalidate()
+                state.context_graph_cache.invalidate()
+        except Exception:  # pragma: no cover - best-effort maintenance step
+            logger.exception("Maintenance heartbeat-capture step failed.")
+
+        try:
+            ledger.apply_decay()
+        except Exception:  # pragma: no cover - best-effort maintenance step
+            logger.exception("Maintenance ledger-decay step failed.")
+
+        try:
+            from .distillation import distill_daily, get_pending_days
+            from .schemas import DailyDistillRequest
+
+            llm_client = getattr(state, "llm_client", None)
+            for day in get_pending_days(repo).pending_days:
+                distill_daily(repo, DailyDistillRequest(date=day.date), llm_client=llm_client)
+        except Exception:  # pragma: no cover - best-effort maintenance step
+            logger.exception("Maintenance distillation step failed.")
+
+        state.last_maintenance_at = datetime.now(UTC).isoformat()
+    finally:
+        if lock is not None:
+            lock.release()
+
+
+def _start_maintenance_scheduler(
+    *,
+    app: FastAPI,
+    interval_seconds: int,
+    enabled: bool,
+    stop_event: threading.Event,
+) -> threading.Thread | None:
+    if not enabled or interval_seconds <= 0:
+        return None
+
+    def maintenance_loop() -> None:
+        while not stop_event.wait(interval_seconds):
+            try:
+                run_maintenance_tick(app)
+            except Exception:  # pragma: no cover - defensive background maintenance
+                logging.getLogger("lore").exception("Periodic maintenance tick failed.")
+
+    thread = threading.Thread(target=maintenance_loop, name="lore-maintenance", daemon=True)
     thread.start()
     return thread
 
@@ -232,10 +307,20 @@ def create_app(
             interval_seconds=lore_config.vector_reconcile_interval_seconds,
             stop_event=stop_reconcile,
         )
+        stop_maintenance = threading.Event()
+        maintenance_thread = _start_maintenance_scheduler(
+            app=app,
+            interval_seconds=lore_config.maintenance_interval_seconds,
+            enabled=lore_config.maintenance_enabled,
+            stop_event=stop_maintenance,
+        )
         yield
         stop_reconcile.set()
         if reconcile_thread is not None:
             reconcile_thread.join(timeout=2)
+        stop_maintenance.set()
+        if maintenance_thread is not None:
+            maintenance_thread.join(timeout=2)
         search_idx.close()
         vector_store.close()
         ledger_db.close()
@@ -278,6 +363,7 @@ def create_app(
     # Coalescing guard for background auto-consolidation triggered off captures.
     app.state.auto_consolidate_lock = threading.Lock()
     app.state.auto_consolidate_rerun = False
+    app.state.last_maintenance_at = None
     app.state.metrics = metrics
     app.state.templates = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
     app.state.code_inventories = {}
