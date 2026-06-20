@@ -394,6 +394,8 @@ def create_app(
             secret=lore_config.auth_secret,
             api_key_store=api_key_store,
             trusted_proxy_auth=lore_config.trusted_proxy_auth,
+            trusted_proxy_cidrs=lore_config.trusted_proxy_cidrs,
+            trusted_proxy_secret=lore_config.trusted_proxy_secret,
         )
 
     @app.middleware("http")

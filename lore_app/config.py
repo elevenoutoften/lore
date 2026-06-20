@@ -131,6 +131,17 @@ class LoreConfig:
         self.allow_insecure_bind: bool = os.environ.get("LORE_ALLOW_INSECURE_BIND", "").lower() in ("true", "1", "yes")
         self.trusted_headers: bool = os.environ.get("LORE_TRUSTED_HEADERS", "").lower() in ("true", "1", "yes")
         self.trusted_proxy_auth: bool = os.environ.get("LORE_TRUSTED_PROXY_AUTH", "").lower() in ("true", "1", "yes")
+        # Trusted-proxy identity headers (X-Axis-Admin/X-Axis-User/...) are only
+        # honored when the request proves it came from the fronting proxy: either a
+        # source IP in this CIDR allowlist or a matching X-Lore-Proxy-Secret. With
+        # neither set, proxy promotion is disabled (fail closed) even if
+        # LORE_TRUSTED_PROXY_AUTH=true.
+        self.trusted_proxy_cidrs: list[str] = [
+            cidr.strip()
+            for cidr in os.environ.get("LORE_TRUSTED_PROXY_CIDRS", "").replace(",", " ").split()
+            if cidr.strip()
+        ]
+        self.trusted_proxy_secret: str = os.environ.get("LORE_TRUSTED_PROXY_SECRET", "")
         self.csp_policy: str = os.environ.get("LORE_CSP_POLICY", "")
         self.embed_frame_ancestors: list[str] = [
             origin.strip()
@@ -190,6 +201,8 @@ class LoreConfig:
             "audit_retention_days": self.audit_retention_days,
             "trusted_headers": self.trusted_headers,
             "trusted_proxy_auth": self.trusted_proxy_auth,
+            "trusted_proxy_cidrs": list(self.trusted_proxy_cidrs),
+            "trusted_proxy_secret_configured": bool(self.trusted_proxy_secret),
             "allow_insecure_bind": self.allow_insecure_bind,
             "csp_policy": self.csp_policy,
             "embed_frame_ancestors": list(self.embed_frame_ancestors),

@@ -72,6 +72,8 @@ def workspace_lore_config(base: LoreConfig, workspace: WorkspaceConfig) -> LoreC
     config.audit_retention_days = base.audit_retention_days
     config.trusted_headers = base.trusted_headers
     config.trusted_proxy_auth = base.trusted_proxy_auth
+    config.trusted_proxy_cidrs = base.trusted_proxy_cidrs
+    config.trusted_proxy_secret = base.trusted_proxy_secret
     config.csp_policy = base.csp_policy
     config.workspaces = {}
     return config

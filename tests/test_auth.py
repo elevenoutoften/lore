@@ -248,12 +248,14 @@ def test_trusted_proxy_auth_is_opt_in(content_dir, search_db, tmp_path):
 def test_trusted_proxy_auth_allows_reader_after_api_key_auth_fails(content_dir, search_db, tmp_path):
     config = make_config(content_dir, search_db, tmp_path, "api_key", "")
     config.trusted_proxy_auth = True
+    config.trusted_proxy_secret = "proxy-secret"
     app = create_app(config)
 
     with TestClient(app) as client:
         headers = {
             "Authorization": "Bearer flow_not_a_lore_key",
             "X-Axis-User": "alice",
+            "X-Lore-Proxy-Secret": "proxy-secret",
         }
         read = client.get("/api/pages", headers=headers)
         write = client.put(
@@ -269,10 +271,15 @@ def test_trusted_proxy_auth_allows_reader_after_api_key_auth_fails(content_dir, 
 def test_trusted_proxy_admin_can_manage_api_keys(content_dir, search_db, tmp_path):
     config = make_config(content_dir, search_db, tmp_path, "api_key", "")
     config.trusted_proxy_auth = True
+    config.trusted_proxy_secret = "proxy-secret"
     app = create_app(config)
 
     with TestClient(app) as client:
-        headers = {"X-Axis-User": "admin@example.com", "X-Axis-Admin": "1"}
+        headers = {
+            "X-Axis-User": "admin@example.com",
+            "X-Axis-Admin": "1",
+            "X-Lore-Proxy-Secret": "proxy-secret",
+        }
         listed = client.get("/api/api-keys", headers=headers)
         created = client.post("/api/api-keys", json={"name": "proxy-created"}, headers=headers)
 
@@ -284,12 +291,83 @@ def test_trusted_proxy_admin_can_manage_api_keys(content_dir, search_db, tmp_pat
 def test_trusted_proxy_auth_falls_back_for_bearer_mode(content_dir, search_db, tmp_path):
     config = make_config(content_dir, search_db, tmp_path, "bearer", "valid-secret")
     config.trusted_proxy_auth = True
+    config.trusted_proxy_secret = "proxy-secret"
     app = create_app(config)
 
     with TestClient(app) as client:
-        response = client.get("/api/pages", headers={"X-Lore-Agent": "nyx"})
+        response = client.get(
+            "/api/pages",
+            headers={"X-Lore-Agent": "nyx", "X-Lore-Proxy-Secret": "proxy-secret"},
+        )
 
     assert response.status_code == 200
+
+
+def test_trusted_proxy_admin_not_promoted_from_unallowlisted_source(content_dir, search_db, tmp_path):
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    config.trusted_proxy_auth = True
+    config.trusted_proxy_cidrs = ["10.0.0.0/8"]  # does NOT include the test source IP
+    app = create_app(config)
+
+    headers = {"X-Axis-User": "admin@example.com", "X-Axis-Admin": "1"}
+    with TestClient(app, client=("203.0.113.7", 12345)) as client:
+        response = client.get("/api/api-keys", headers=headers)
+
+    # The X-Axis-Admin spoof from a non-allowlisted origin must NOT be promoted.
+    assert response.status_code == 401
+
+
+def test_trusted_proxy_admin_promoted_from_allowlisted_cidr(content_dir, search_db, tmp_path):
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    config.trusted_proxy_auth = True
+    config.trusted_proxy_cidrs = ["10.0.0.0/8"]
+    app = create_app(config)
+
+    headers = {"X-Axis-User": "admin@example.com", "X-Axis-Admin": "1"}
+    with TestClient(app, client=("10.0.0.5", 12345)) as client:
+        response = client.get("/api/api-keys", headers=headers)
+
+    assert response.status_code == 200
+
+
+def test_policy_write_requires_admin(content_dir, search_db, tmp_path):
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    store = LoreApiKeyStore(config.api_keys_db)
+    store.initialize()
+    _, writer_key = store.create_key(name="writer", role="writer")
+    _, admin_key = store.create_key(name="admin", role="admin")
+    app = create_app(config)
+
+    policy = {"policy_id": "test-gate:v1", "name": "Test Gate", "gate": "auto-apply"}
+    writer_headers = {"Authorization": f"Bearer {writer_key}"}
+    admin_headers = {"Authorization": f"Bearer {admin_key}"}
+
+    with TestClient(app) as client:
+        assert client.post("/api/policies", json=policy, headers=writer_headers).status_code == 403
+        assert client.delete("/api/policies/test-gate:v1", headers=writer_headers).status_code == 403
+
+        created = client.post("/api/policies", json=policy, headers=admin_headers)
+        assert created.status_code == 200, created.text
+        deleted = client.delete("/api/policies/test-gate:v1", headers=admin_headers)
+        assert deleted.status_code == 200, deleted.text
+
+
+def test_audit_and_config_require_admin(content_dir, search_db, tmp_path):
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    store = LoreApiKeyStore(config.api_keys_db)
+    store.initialize()
+    _, writer_key = store.create_key(name="writer", role="writer")
+    _, admin_key = store.create_key(name="admin", role="admin")
+    app = create_app(config)
+
+    writer_headers = {"Authorization": f"Bearer {writer_key}"}
+    admin_headers = {"Authorization": f"Bearer {admin_key}"}
+
+    with TestClient(app) as client:
+        assert client.get("/api/audit", headers=writer_headers).status_code == 403
+        assert client.get("/api/config", headers=writer_headers).status_code == 403
+        assert client.get("/api/audit", headers=admin_headers).status_code == 200
+        assert client.get("/api/config", headers=admin_headers).status_code == 200
 
 
 def test_healthz_config_is_public(content_dir, search_db, tmp_path):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import secrets
 from typing import TYPE_CHECKING, Any
 
@@ -23,6 +24,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         secret: str = "",
         api_key_store: LoreApiKeyStore | None = None,
         trusted_proxy_auth: bool = False,
+        trusted_proxy_cidrs: list[str] | None = None,
+        trusted_proxy_secret: str = "",
     ) -> None:
         if mode in ("bearer", "basic") and (not secret or not secret.strip()):
             raise ValueError(
@@ -34,6 +37,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self.secret = secret
         self.api_key_store = api_key_store
         self.trusted_proxy_auth = trusted_proxy_auth
+        self.trusted_proxy_secret = trusted_proxy_secret
+        self.trusted_proxy_networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+        for cidr in trusted_proxy_cidrs or []:
+            try:
+                self.trusted_proxy_networks.append(ipaddress.ip_network(cidr, strict=False))
+            except ValueError:
+                # Skip malformed CIDRs rather than failing startup; an empty
+                # allowlist (plus no secret) just means no proxy promotion.
+                continue
 
     @staticmethod
     def _is_public_path(path: str) -> bool:
@@ -126,8 +138,32 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return Response(status_code=403, content="Forbidden")
         return await call_next(request)
 
+    def _proxy_origin_trusted(self, request: Request) -> bool:
+        """Whether this request is allowed to supply trusted-proxy identity headers.
+
+        Trust requires proof that the request actually came from the fronting
+        proxy: either a shared secret header (X-Lore-Proxy-Secret) or a source IP
+        inside a configured CIDR allowlist. With neither configured we fail closed
+        and ignore identity headers entirely — the classic ``X-Axis-Admin: 1``
+        spoof from an arbitrary client is rejected.
+        """
+        if self.trusted_proxy_secret:
+            provided = request.headers.get("X-Lore-Proxy-Secret", "")
+            if provided and secrets.compare_digest(provided, self.trusted_proxy_secret):
+                return True
+        if self.trusted_proxy_networks and request.client is not None:
+            try:
+                addr = ipaddress.ip_address(request.client.host)
+            except ValueError:
+                # Non-IP hosts (e.g. Starlette's 'testclient') are never trusted.
+                return False
+            return any(addr in network for network in self.trusted_proxy_networks)
+        return False
+
     def _resolve_trusted_proxy(self, request: Request) -> tuple[str | None, str]:
         """Resolve actor and role from trusted proxy identity headers."""
+        if not self._proxy_origin_trusted(request):
+            return None, ""
         admin_header = request.headers.get("X-Axis-Admin", "").strip()
         agent_header = request.headers.get("X-Lore-Agent", "").strip()
         user_header = request.headers.get("X-Axis-User", "").strip()

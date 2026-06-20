@@ -11,6 +11,7 @@ from fastapi.responses import PlainTextResponse
 
 from ..deps import get_audit_log, get_config, get_metrics
 from ..observability import render_prometheus
+from .api_keys import require_lore_key_admin
 
 if TYPE_CHECKING:
     from ..audit import AuditLog
@@ -72,12 +73,16 @@ def api_version() -> dict[str, str]:
 
 
 @router.get("/api/config")
-def api_config(config: LoreConfig = Depends(get_config)):
+def api_config(
+    _admin: None = Depends(require_lore_key_admin),
+    config: LoreConfig = Depends(get_config),
+):
     return config.to_dict()
 
 
 @router.get("/api/audit")
 def api_audit(
+    _admin: None = Depends(require_lore_key_admin),
     page_id: str | None = Query(default=None),
     actor: str | None = Query(default=None),
     since: str | None = Query(default=None),

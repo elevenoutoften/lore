@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_ledger_db
 from ..schemas import PolicyRule
+from .api_keys import require_lore_key_admin
 
 if TYPE_CHECKING:
     from ..ledger import LedgerDB
@@ -32,12 +33,20 @@ def get_policy(policy_id: str, ledger: LedgerDB = Depends(get_ledger_db)) -> Pol
 
 
 @router.post("", response_model=PolicyRule)
-def store_policy(policy: PolicyRule, ledger: LedgerDB = Depends(get_ledger_db)) -> PolicyRule:
+def store_policy(
+    policy: PolicyRule,
+    _admin: None = Depends(require_lore_key_admin),
+    ledger: LedgerDB = Depends(get_ledger_db),
+) -> PolicyRule:
     return ledger.store_policy(policy)
 
 
 @router.delete("/{policy_id}")
-def delete_policy(policy_id: str, ledger: LedgerDB = Depends(get_ledger_db)) -> dict[str, object]:
+def delete_policy(
+    policy_id: str,
+    _admin: None = Depends(require_lore_key_admin),
+    ledger: LedgerDB = Depends(get_ledger_db),
+) -> dict[str, object]:
     if not ledger.delete_policy(policy_id):
         raise HTTPException(status_code=404, detail=f"Policy {policy_id} not found")
     return {"policy_id": policy_id, "enabled": False}

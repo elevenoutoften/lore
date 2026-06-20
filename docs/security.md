@@ -94,6 +94,32 @@ Only enable `LORE_TRUSTED_PROXY_AUTH=true` when Lore runs behind a reverse proxy
 that authenticates users and strips or replaces these headers before forwarding
 requests.
 
+### Proxy origin must be proven (fail closed)
+
+`LORE_TRUSTED_PROXY_AUTH=true` is necessary but **not sufficient**: identity
+headers are only honored when the request proves it originated from the trusted
+proxy. Otherwise any client that can reach Lore could send `X-Axis-Admin: 1` and
+self-promote to admin. Configure at least one of:
+
+- `LORE_TRUSTED_PROXY_CIDRS` — a space/comma-separated allowlist of the reverse
+  proxy's source IPs/CIDRs (e.g. `10.0.0.0/8 127.0.0.1/32`). Only requests whose
+  source IP falls in the allowlist may supply identity headers.
+- `LORE_TRUSTED_PROXY_SECRET` — a shared secret the proxy must send as the
+  `X-Lore-Proxy-Secret` header. Requests with a matching secret are trusted
+  regardless of source IP.
+
+**Fail-closed default:** with `LORE_TRUSTED_PROXY_AUTH=true` but neither
+`LORE_TRUSTED_PROXY_CIDRS` nor `LORE_TRUSTED_PROXY_SECRET` set, proxy identity
+headers are ignored entirely. Operators upgrading must set one of these or
+trusted-proxy sessions stop working.
+
+### Admin-only endpoints
+
+`POST`/`DELETE /api/policies` (consolidation-safety gates), `GET /api/audit`, and
+`GET /api/config` require an admin identity (admin Lore key, the bearer/basic
+operator, the loopback operator under `auth_mode=none`, or an allowlisted
+admin proxy session). A plain writer key receives `403`.
+
 ### Combining LORE_TRUSTED_HEADERS and LORE_TRUSTED_PROXY_AUTH
 
 A typical GPUBox deployment uses `LORE_AUTH_MODE=api_key`,
