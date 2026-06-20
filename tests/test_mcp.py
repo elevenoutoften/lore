@@ -21,6 +21,7 @@ def test_mcp_initialize_and_tool_list(client):
 
     tools = rpc(client, "tools/list").json()["result"]["tools"]
     assert [tool["name"] for tool in tools] == [
+        "lore_overview",
         "lore_list_pages",
         "lore_read_page",
         "lore_search",
@@ -612,6 +613,76 @@ def test_mcp_list_traces(client):
     ]
     assert content["total"] >= 1
     assert len(matching_traces) == 1
+
+
+def _call(client, name, arguments):
+    return rpc(client, "tools/call", {"name": name, "arguments": arguments}).json()["result"]
+
+
+def test_mcp_list_traces_pagination_offset(client):
+    for i in range(3):
+        _call(client, "lore_create_trace", {"actor": "mcp-page-nyx", "reason_summary": f"Trace {i}."})
+
+    page1 = _call(client, "lore_list_traces", {"actor": "mcp-page-nyx", "limit": 2, "offset": 0})["structuredContent"]
+    assert page1["total"] >= 3
+    assert len(page1["traces"]) == 2
+    assert page1["offset"] == 0
+    assert page1["has_more"] is True
+
+    page2 = _call(client, "lore_list_traces", {"actor": "mcp-page-nyx", "limit": 2, "offset": 2})["structuredContent"]
+    assert page2["offset"] == 2
+    page1_ids = {trace["trace_id"] for trace in page1["traces"]}
+    page2_ids = {trace["trace_id"] for trace in page2["traces"]}
+    assert page1_ids.isdisjoint(page2_ids)
+    assert page2["has_more"] is False
+
+
+def test_mcp_recall_pagination_offset(client):
+    from lore_app.schemas import ExtractedClaim, ExtractionResult
+
+    client.app.state.ledger_db.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-mcp-recall-page",
+            processed_at="2026-05-01T00:00:00+00:00",
+            source_capture_ids=["inbox/2026-05-01/recall-page"],
+            claims=[
+                ExtractedClaim(subject=f"services/r{i}", predicate="states", object=f"fact {i}", confidence="high")
+                for i in range(3)
+            ],
+            entities=[],
+            edges=[],
+            invalidations=[],
+        )
+    )
+
+    page1 = _call(client, "lore_recall", {"limit": 1, "offset": 0})["structuredContent"]
+    assert page1["offset"] == 0
+    assert page1["has_more"] is True
+    assert len(page1["claims"]) == 1
+
+    page2 = _call(client, "lore_recall", {"limit": 1, "offset": 1})["structuredContent"]
+    assert page2["claims"][0]["candidate_id"] != page1["claims"][0]["candidate_id"]
+
+
+def test_mcp_overview_lists_core_loop(client):
+    content = _call(client, "lore_overview", {})["structuredContent"]
+    assert "lore_capture" in content["core_loop"]
+    assert "lore_recall" in content["core_loop"]
+    assert "lore_consolidation_run" in content["core_loop"]
+    assert "taxonomy" in content
+
+    names = [tool["name"] for tool in rpc(client, "tools/list").json()["result"]["tools"]]
+    assert "lore_overview" in names
+
+
+def test_mcp_read_tools_have_readonly_annotations():
+    from lore_app.mcp.tools import TOOLS
+
+    by_name = {tool["name"]: tool for tool in TOOLS}
+    for name in ("lore_list_traces", "lore_recall", "lore_overview"):
+        annotations = by_name[name].get("annotations") or {}
+        assert annotations.get("readOnlyHint") is True
+        assert annotations.get("destructiveHint") is False
 
 
 def test_mcp_unexpected_exception_redacts_message(client):

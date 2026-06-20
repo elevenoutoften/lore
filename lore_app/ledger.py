@@ -1161,6 +1161,7 @@ class LedgerDB:
         min_strength: float = 0.0,
         valid_at: str | None = None,
         limit: int = 20,
+        offset: int = 0,
         pool_limit: int = 500,
         record_access: bool = False,
         now: datetime | None = None,
@@ -1247,7 +1248,9 @@ class LedgerDB:
             key=lambda item: (item["recall_score"], _claim_temporal_key(item), float(item.get("strength") or 0.0)),
             reverse=True,
         )
-        top = scored[: max(1, min(limit, 200))]
+        window = max(1, min(limit, 200))
+        start = max(0, offset)
+        top = scored[start : start + window]
 
         if record_access and top:
             self.record_claim_access(

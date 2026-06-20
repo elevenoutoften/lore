@@ -83,6 +83,16 @@ WRITE_TOOL_NAMES = {
 
 TOOLS: list[dict[str, Any]] = [
     {
+        "name": "lore_overview",
+        "title": "Lore Overview",
+        "description": (
+            "Discoverability index: returns the Lore MCP tool taxonomy (grouped by capability) plus the "
+            "canonical capture -> recall -> consolidate memory loop. Call this first to learn which tool to use."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
+    },
+    {
         "name": "lore_list_pages",
         "title": "List Lore Pages",
         "description": "List pages in Lore, optionally filtered by kind, visibility, or query.",
@@ -226,6 +236,12 @@ TOOLS: list[dict[str, Any]] = [
                     "description": "Minimum ledger strength to consider.",
                 },
                 "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 20},
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0,
+                    "description": "Number of top-ranked claims to skip for pagination.",
+                },
                 "record_access": {
                     "type": "boolean",
                     "default": False,
@@ -238,6 +254,7 @@ TOOLS: list[dict[str, Any]] = [
                 },
             },
         },
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
     },
     {
         "name": "lore_ack_recall",
@@ -813,6 +830,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_list_traces",
+        "title": "List Lore Traces",
         "description": "Query reasoning traces by actor, status, task, or other filters.",
         "inputSchema": {
             "type": "object",
@@ -825,8 +843,15 @@ TOOLS: list[dict[str, Any]] = [
                     "description": "Admin-only: explicitly allow recall outside the authenticated actor scope.",
                 },
                 "limit": {"type": "integer", "description": "Max results. Default: 20."},
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0,
+                    "description": "Number of traces to skip for pagination.",
+                },
             },
         },
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
     },
     {
         "name": "lore_list_policies",
@@ -1263,6 +1288,7 @@ def _handle_lore_recall(ctx: McpContext) -> dict[str, Any]:
     actor = optional_string(arguments.get("actor"))
     min_strength = max(0.0, min(float(arguments.get("min_strength") or 0.0), 1.0))
     limit = max(1, min(int(arguments.get("limit") or 20), 200))
+    offset = max(0, int(arguments.get("offset") or 0))
     record_access = bool(arguments.get("record_access", False))
     cross_actor = bool(arguments.get("cross_actor", False))
     if ctx.request is not None:
@@ -1270,15 +1296,21 @@ def _handle_lore_recall(ctx: McpContext) -> dict[str, Any]:
             actor = recall_actor_scope(ctx.request, requested_actor=actor, cross_actor=cross_actor)
         except PermissionError as exc:
             raise JsonRpcError(-32602, str(exc)) from exc
+    # Over-fetch one extra row to detect has_more cheaply. Skip the probe when
+    # record_access is set so it never stamps an extra (un-returned) claim.
+    probe = 0 if record_access else 1
     rows = ledger.recall_claims(
         query=query,
         subject=subject,
         lane=lane,
         actor=actor,
         min_strength=min_strength,
-        limit=limit,
+        limit=limit + probe,
+        offset=offset,
         record_access=record_access,
     )
+    has_more = len(rows) > limit
+    rows = rows[:limit]
     claims = [_recall_claim_payload(row) for row in rows]
     # Self-diagnosing recall, matching the REST surface: a count=0 result carries the
     # pending-consolidation count and a hint so an MCP agent never hits a silent dead end.
@@ -1287,6 +1319,8 @@ def _handle_lore_recall(ctx: McpContext) -> dict[str, Any]:
     payload = {
         "query": query,
         "count": len(claims),
+        "offset": offset,
+        "has_more": has_more,
         "weights": weights_for_query(
             query,
             semantic_available=bool(query and query.strip()) and ledger.semantic_recall_enabled,
@@ -1310,6 +1344,37 @@ def _handle_lore_ack_recall(ctx: McpContext) -> dict[str, Any]:
     acknowledged_count = ledger.record_claim_access(candidate_ids, now=timestamp, actor=actor)
     payload = {"acknowledged_count": acknowledged_count, "timestamp": timestamp}
     return tool_result(payload, f"Acknowledged {acknowledged_count} recalled claim(s).")
+
+
+def _handle_lore_overview(ctx: McpContext) -> dict[str, Any]:
+    tool_arguments(ctx.params)
+    payload = {
+        "core_loop": ["lore_capture", "lore_consolidation_run", "lore_recall", "lore_ack_recall"],
+        "core_loop_description": "capture -> consolidate -> recall -> acknowledge",
+        "taxonomy": {
+            "discovery": [
+                "lore_overview",
+                "lore_list_pages",
+                "lore_list_lanes",
+                "lore_list_actors",
+                "lore_frontmatter_spec",
+            ],
+            "read_pages": ["lore_read_page", "lore_search", "lore_page_links", "lore_link_graph"],
+            "memory": ["lore_capture", "lore_recall", "lore_ack_recall", "lore_list_captures", "lore_capture_digest"],
+            "consolidation": ["lore_consolidation_status", "lore_consolidation_run", "lore_consolidation_rollback"],
+            "graph": [
+                "lore_context_graph",
+                "lore_graph_analytics",
+                "lore_context_graph_neighbors",
+                "lore_context_graph_paths",
+                "lore_explain_context",
+            ],
+            "traces": ["lore_create_trace", "lore_get_trace", "lore_list_traces"],
+            "write_pages": sorted(WRITE_TOOL_NAMES),
+        },
+        "tool_count": len(TOOLS),
+    }
+    return tool_result(payload, "Lore tool taxonomy + capture->recall->consolidate loop.")
 
 
 def _handle_lore_link_graph(ctx: McpContext) -> dict[str, Any]:
@@ -1806,15 +1871,19 @@ def _handle_lore_list_traces(ctx: McpContext) -> dict[str, Any]:
     arguments = tool_arguments(ctx.params)
     ledger = require_service(ctx.ledger_db, "ledger database")
     limit = max(1, min(int(arguments.get("limit") or 20), 500))
+    offset = max(0, int(arguments.get("offset") or 0))
     filters = {
         "actor": _mcp_actor_scope(ctx, arguments),
         "status": optional_string(arguments.get("status")),
         "task_id": optional_string(arguments.get("task_id")),
     }
-    traces = ledger.list_traces(**filters, limit=limit, offset=0)
+    traces = ledger.list_traces(**filters, limit=limit, offset=offset)
     total = ledger.count_traces(**filters)
-    response = TraceListResponse(traces=traces, total=total, limit=limit, offset=0)
+    response = TraceListResponse(traces=traces, total=total, limit=limit, offset=offset)
     payload = response.model_dump(mode="json")
+    # TraceListResponse has no has_more field; expose it on the dict so an agent
+    # can page without recomputing from total/offset.
+    payload["has_more"] = offset + len(traces) < total
     return tool_result(payload, summarize_traces(payload))
 
 
@@ -2149,6 +2218,7 @@ def _handle_lore_review_batch(ctx: McpContext) -> dict[str, Any]:
 
 
 TOOL_HANDLERS: dict[str, Callable[[McpContext], dict[str, Any]]] = {
+    "lore_overview": _handle_lore_overview,
     "lore_list_pages": _handle_lore_list_pages,
     "lore_read_page": _handle_lore_read_page,
     "lore_search": _handle_lore_search,
