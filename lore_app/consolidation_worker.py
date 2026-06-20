@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from .config import LoreConfig
+    from .observability import MetricsCollector
 
 logger = logging.getLogger("lore.consolidation")
 
@@ -85,12 +86,14 @@ class ConsolidationWorker:
         config: LoreConfig,
         audit_log: AuditLog | None = None,
         llm_client_provider: Callable[[], Any] | None = None,
+        metrics: MetricsCollector | None = None,
     ):
         self.repo = repo
         self.ledger = ledger
         self.planner = planner
         self.config = config
         self.audit_log = audit_log
+        self.metrics = metrics
         self.policy_engine = planner.policy_engine or PolicyEngine(ledger)
         # Resolves the current LLM client at run time. The web app hot-swaps
         # app.state.llm_client on settings changes, so the worker must fetch the
@@ -139,6 +142,8 @@ class ConsolidationWorker:
             batch_id = extraction_result.batch_id
         except Exception as exc:  # pragma: no cover - defensive boundary
             errors.append(f"extraction failed: {exc}")
+            if self.metrics is not None:
+                self.metrics.increment_extraction_failures()
 
         if not dry_run:
             if extraction_result is not None:
@@ -196,6 +201,8 @@ class ConsolidationWorker:
                 auto_applied += 1
             except Exception as exc:
                 errors.append(f"apply failed for plan {plan.plan_id}: {exc}")
+                if self.metrics is not None:
+                    self.metrics.increment_apply_failures()
                 self.ledger.store_trace(
                     TraceEntry(
                         trace_id="",
@@ -236,6 +243,17 @@ class ConsolidationWorker:
         )
         if not dry_run:
             self.ledger.store_consolidation_run(result, status="completed" if not errors else "completed_with_errors")
+            if self.metrics is not None:
+                # Vault-wide backlog gauge: the real manual-review queue plus
+                # plans still pending a decision, not just this run's delta.
+                try:
+                    plans_by_status = self.ledger.get_consolidation_status().get("plans_by_status") or {}
+                    backlog = int(plans_by_status.get("needs_manual_review", 0)) + int(
+                        plans_by_status.get("pending", 0)
+                    )
+                    self.metrics.set_consolidation_backlog(backlog)
+                except Exception:  # pragma: no cover - defensive gauge update
+                    logger.exception("Failed to update consolidation backlog gauge.")
             self.ledger.store_trace(
                 TraceEntry(
                     trace_id="",

@@ -146,7 +146,7 @@ def heartbeat_review(
             "page_id": issue.page_id,
             "title": issue.title,
             "stale_after": issue.detail or "",
-            "days_stale": 0,
+            "days_stale": _days_stale(issue.detail) if issue.detail else 0,
         }
         for issue in lint_result.issues
         if issue.rule == "stale_page" and not issue.suppressed

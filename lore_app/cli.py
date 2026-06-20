@@ -360,7 +360,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     plans_by_status = {
         "draft": 0,
         "pending": 0,
-        "review": 0,
+        "needs_manual_review": 0,
         "applied": 0,
         "rejected": 0,
         **ledger_status.get("plans_by_status", {}),
@@ -380,7 +380,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         "plans_by_status": plans_by_status,
         "generated_plans": sum(plans_by_status.values()),
         "auto_applied": plans_by_status.get("applied", 0),
-        "review_required": plans_by_status.get("review", 0) + plans_by_status.get("pending", 0),
+        "review_required": plans_by_status.get("needs_manual_review", 0) + plans_by_status.get("pending", 0),
         "errors": errors if isinstance(errors, list) else [],
         "stuck_runs": len(ledger_status.get("stuck_runs", [])),
     }

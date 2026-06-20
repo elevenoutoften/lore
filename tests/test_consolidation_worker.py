@@ -77,6 +77,35 @@ def make_context(tmp_path, monkeypatch) -> WorkerContext:
     )
 
 
+def test_consolidation_worker_sets_consolidation_backlog_gauge(tmp_path, monkeypatch):
+    from lore_app.observability import MetricsCollector
+    from lore_app.schemas import PatchPlan, PatchPlanStatus
+
+    ctx = make_context(tmp_path, monkeypatch)
+    metrics = MetricsCollector()
+    worker = ConsolidationWorker(ctx.repo, ctx.ledger, ctx.planner, ctx.config, ctx.audit_log, metrics=metrics)
+
+    ctx.ledger.store_patch_plan(
+        PatchPlan(
+            plan_id="plan-backlog-1",
+            candidate_ids=["c1"],
+            target_page_id="services/lore",
+            operation="insert_new_fact",
+            content_diff="+ a fact awaiting human review",
+            risk_level="low",
+            auto_appliable=False,
+            status=PatchPlanStatus.needs_manual_review,
+            created_at="2026-05-26T00:00:00+00:00",
+            reason="ambiguous match",
+        )
+    )
+
+    worker.run(dry_run=False, batch_size=1, max_auto_apply=0)
+
+    # The vault-wide backlog gauge must reflect the pending manual-review queue.
+    assert metrics.get_metrics()["consolidation_backlog"] >= 1
+
+
 def write_page(repo: LoreRepository, page_id: str, *, kind: str = "service", body: str = "Existing fact.") -> None:
     repo.upsert_page(
         page_id,

@@ -15,6 +15,38 @@ def mcp_call(client, name, arguments=None):
     )
 
 
+def test_heartbeat_stale_page_reports_days_stale(client):
+    created = client.put(
+        "/api/pages/runbooks/days-stale-runbook",
+        json={
+            "content": """---
+title: Days Stale Runbook
+kind: runbook
+visibility: internal
+summary: A stale runbook used to verify days_stale reporting.
+confidence: high
+stale_after: 2020-01-01
+---
+
+# Days Stale Runbook
+""",
+        },
+    )
+    assert created.status_code == 200, created.text
+
+    response = client.get("/api/heartbeat")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+
+    stale = [
+        item for item in payload["stale_pages"]["items"] if item["page_id"] == "runbooks/days-stale-runbook"
+    ]
+    assert len(stale) == 1
+    # Pre-fix days_stale was hardcoded 0 and stale_after was blank.
+    assert stale[0]["days_stale"] > 0
+    assert stale[0]["stale_after"] == "2020-01-01"
+
+
 def test_heartbeat_dashboard_includes_consolidation_section(client):
     response = client.get("/heartbeat")
 

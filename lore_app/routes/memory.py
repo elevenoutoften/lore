@@ -142,7 +142,9 @@ def api_memory_health(
     stuck_runs = consolidation.get("stuck_runs") or []
 
     pending_captures = sum(1 for page in repo.list_pages(kind="capture") if page.status == "draft")
-    review_required = int(plans_by_status.get("pending", 0)) + int(plans_by_status.get("review", 0))
+    # The human-review queue is 'needs_manual_review'; 'review' is not a stored
+    # PatchPlanStatus, so the old sum always read 0 for a real manual backlog.
+    review_required = int(plans_by_status.get("needs_manual_review", 0)) + int(plans_by_status.get("pending", 0))
     failed_runs = len(stuck_runs)
     if str(last_run.get("status") or "") in {"completed_with_errors", "failed"}:
         failed_runs += 1
@@ -185,6 +187,7 @@ def api_memory_recall(
     ),
     ledger: LedgerDB = Depends(get_ledger_db),
     repo: LoreRepository = Depends(get_repo),
+    metrics: MetricsCollector = Depends(get_metrics),
 ) -> MemoryRecallResponse:
     """Recency/salience-weighted recall over the claim ledger.
 
@@ -209,6 +212,11 @@ def api_memory_recall(
     )
     latency_ms = (time.perf_counter() - start) * 1000.0
     claims = [_recall_row_to_claim(row) for row in rows]
+
+    # Recall hit-rate gauges: every recall counts; a count=0 recall is a miss.
+    metrics.increment_recall_requests()
+    if not claims:
+        metrics.increment_recall_zero_results()
 
     # Self-diagnosing: a count=0 recall should never be silent. Surface how many
     # captures are still pending consolidation so an agent knows whether memory is

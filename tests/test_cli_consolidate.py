@@ -114,6 +114,8 @@ def test_cmd_status_returns_fresh_db_json(tmp_path, monkeypatch, capsys):
     assert output["pending_captures"] == 0
     assert output["plans_by_status"]["draft"] == 0
     assert output["plans_by_status"]["applied"] == 0
-    assert output["plans_by_status"]["review"] == 0
+    # 'needs_manual_review' is the real human-review queue status; 'review' is
+    # not a stored PatchPlanStatus and was a dead key in the old seed.
+    assert output["plans_by_status"]["needs_manual_review"] == 0
     assert output["plans_by_status"]["rejected"] == 0
     assert output["stuck_runs"] == 0

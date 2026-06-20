@@ -7,8 +7,10 @@ from importlib.metadata import PackageNotFoundError, metadata, version
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import PlainTextResponse
 
 from ..deps import get_audit_log, get_config, get_metrics
+from ..observability import render_prometheus
 
 if TYPE_CHECKING:
     from ..audit import AuditLog
@@ -38,6 +40,15 @@ def package_version() -> str:
 @router.get("/healthz")
 def healthz(metrics: MetricsCollector = Depends(get_metrics)) -> dict[str, Any]:
     return {"ok": True, "metrics": metrics.get_metrics()}
+
+
+@router.get("/metrics", response_class=PlainTextResponse)
+def metrics_endpoint(metrics: MetricsCollector = Depends(get_metrics)) -> PlainTextResponse:
+    """Prometheus-scrapeable metrics in text exposition format."""
+    return PlainTextResponse(
+        render_prometheus(metrics.get_metrics()),
+        media_type="text/plain; version=0.0.4",
+    )
 
 
 @router.get("/healthz/config")

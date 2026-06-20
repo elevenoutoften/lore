@@ -284,6 +284,7 @@ def lint_freshness(page: PageDetail) -> list[LintIssue]:
                     rule="stale_page",
                     severity="warning",
                     message=f"Page became stale on {parsed.isoformat()}.",
+                    detail=parsed.isoformat(),
                 )
             )
     # Bi-temporal: check for expired validity windows

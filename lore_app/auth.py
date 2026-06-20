@@ -43,7 +43,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         prefix test would let page ids like ``staticsecret`` or ``healthznotes``
         (served by the catch-all reader route) bypass auth entirely.
         """
-        return path in ("/healthz", "/healthz/config", "/static") or path.startswith("/static/")
+        return path in ("/healthz", "/healthz/config", "/metrics", "/static") or path.startswith("/static/")
 
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         if self.mode == "none":

@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from lore_app.config import LoreConfig
 from lore_app.main import create_app
+from lore_app.schemas import PatchPlan, PatchPlanStatus
 
 
 def make_client(tmp_path) -> TestClient:
@@ -97,3 +98,28 @@ CONTRADICTION: this page needs a review pass.
     assert payload["total_issues"] >= (
         payload["stale_pages"] + payload["missing_metadata"] + payload["low_confidence"] + payload["contradictions"]
     )
+
+
+def test_memory_health_review_required_counts_needs_manual_review(tmp_path):
+    with make_client(tmp_path) as client:
+        ledger = client.app.state.ledger_db
+        plan = PatchPlan(
+            plan_id="plan-needs-manual-review-1",
+            candidate_ids=["c1"],
+            target_page_id="services/health-review-target",
+            operation="insert_new_fact",
+            content_diff="+ a fact awaiting human review",
+            risk_level="low",
+            auto_appliable=False,
+            status=PatchPlanStatus.needs_manual_review,
+            created_at="2026-05-26T00:00:00+00:00",
+            reason="ambiguous match",
+        )
+        ledger.store_patch_plan(plan)
+
+        response = client.get("/api/memory/health")
+
+    assert response.status_code == 200
+    # The human-review queue ('needs_manual_review') must be reflected; pre-fix
+    # this read 0 because review_required summed the dead 'review' status.
+    assert response.json()["review_required"] >= 1
