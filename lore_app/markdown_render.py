@@ -62,7 +62,7 @@ ALLOWED_TAGS = {
 _ALLOW_GLOBAL_ATTRS = {"class", "id"}
 
 ALLOWED_ATTRIBUTES = {
-    "a": _ALLOW_GLOBAL_ATTRS | {"href", "rel", "title", "target"},
+    "a": _ALLOW_GLOBAL_ATTRS | {"href", "rel", "title", "target", "aria-label"},
     "blockquote": _ALLOW_GLOBAL_ATTRS,
     "br": _ALLOW_GLOBAL_ATTRS,
     "code": _ALLOW_GLOBAL_ATTRS | {"class"},
@@ -205,11 +205,23 @@ def wiki_link_to_markdown(match: re.Match[str]) -> str:
     parsed = urlparse(target)
     if not parsed.scheme and not parsed.netloc and not target.startswith(("/", ".", "#")):
         target = f"/{target}"
-    return f"[{escape_markdown_label(label)}]({target})"
+    return f"[{escape_markdown_label(label)}]({_format_link_destination(target)})"
 
 
 def escape_markdown_label(label: str) -> str:
     return label.replace("[", "\\[").replace("]", "\\]")
+
+
+def _format_link_destination(target: str) -> str:
+    """Wrap a link destination containing spaces/parens in CommonMark angle
+    brackets so markdown-it parses it as a single link destination instead of
+    truncating at the space (`[x](/a b)` renders literal/broken; `[x](</a b>)`
+    renders `<a href="/a%20b">`). Literal angle brackets are percent-escaped so a
+    crafted target cannot break out of the angle-bracket destination."""
+    if any(char in target for char in " ()"):
+        safe = target.replace("<", "%3C").replace(">", "%3E")
+        return f"<{safe}>"
+    return target
 
 
 def rewrite_links(tokens: list[Token], context: RenderContext) -> None:

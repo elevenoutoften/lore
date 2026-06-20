@@ -158,6 +158,21 @@ def test_missing_page_renders_themed_404(client):
     assert "/search" in resp.text
 
 
+def test_api_404_returns_json_not_html(client):
+    """An unmatched /api/* path must give an SDK client a parseable JSON 404."""
+    resp = client.get("/api/does-not-exist")
+    assert resp.status_code == 404
+    assert resp.headers["content-type"].startswith("application/json")
+    assert "<html" not in resp.text
+
+
+def test_mcp_unmatched_path_returns_json_404(client):
+    resp = client.get("/mcp/bogus")
+    assert resp.status_code == 404
+    assert resp.headers["content-type"].startswith("application/json")
+    assert "<html" not in resp.text
+
+
 def test_nav_exposes_operator_pages(client):
     """The shared nav must make every operator page reachable by a click from /."""
     expected = ("/", "/graph", "/captures", "/procedures", "/heartbeat", "/lint", "/rag", "/api-keys", "/settings")

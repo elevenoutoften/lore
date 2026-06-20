@@ -4,11 +4,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from ..deps import get_api_key_store, get_templates
 from ..route_utils import none_mode_local_operator, template_context
-from ..schemas import LoreApiKeyCreate, LoreApiKeyCreateResponse, LoreApiKeyResponse
+from ..schemas import LoginRequest, LoreApiKeyCreate, LoreApiKeyCreateResponse, LoreApiKeyResponse
+from ..session import DEFAULT_TTL_SECONDS, SESSION_COOKIE_NAME, sign_session
 
 if TYPE_CHECKING:
     from fastapi.templating import Jinja2Templates
@@ -101,6 +102,42 @@ def api_revoke_api_key(
     if api_key is None:
         raise HTTPException(status_code=404, detail="API key not found.")
     return _serialize_key(api_key)
+
+
+@router.post("/api/login")
+def api_login(
+    payload: LoginRequest,
+    request: Request,
+    store: LoreApiKeyStore = Depends(get_api_key_store),
+) -> JSONResponse:
+    """Exchange a Lore API key for a same-origin HttpOnly session cookie.
+
+    The cookie authorizes read-only browser access (reader HTML + read-only XHR);
+    write endpoints stay token-only. Public so a browser can bootstrap a session.
+    """
+    api_key = store.verify_token(payload.api_key.strip())
+    if api_key is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key.")
+    token = sign_session(request.app.state.session_secret, actor=api_key.name, role=api_key.role)
+    response = JSONResponse({"actor": api_key.name, "role": api_key.role})
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        token,
+        max_age=DEFAULT_TTL_SECONDS,
+        httponly=True,
+        samesite="strict",
+        secure=request.url.scheme == "https",
+        path="/",
+    )
+    return response
+
+
+@router.post("/api/logout")
+def api_logout() -> JSONResponse:
+    """Clear the browser session cookie."""
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return response
 
 
 def _extract_bearer_token(authorization: str | None) -> str | None:

@@ -29,6 +29,56 @@ def test_render_rewrites_markdown_and_wiki_links(content_dir):
     assert any(link.page_id == "services/missing" and not link.exists for link in rendered.links)
 
 
+def test_wiki_link_with_spaces_renders_anchor(tmp_path):
+    repo = LoreRepository(tmp_path)
+    repo.ensure_root()
+    repo.upsert_page(
+        "notes/wiki-spaces",
+        """---
+title: Wiki Spaces
+kind: note
+visibility: internal
+---
+
+# Wiki Spaces
+
+See [[Title With Spaces]] and [[Note (Draft)]].
+""",
+    )
+    page = repo.read_page("notes/wiki-spaces")
+    assert page is not None
+
+    rendered = render_page_markdown(page, {"notes/wiki-spaces"})
+
+    # Space/paren targets must render as anchors, not literal markdown.
+    assert ">Title With Spaces</a>" in rendered.html
+    assert "[Title With Spaces](" not in rendered.html
+    assert ">Note (Draft)</a>" in rendered.html
+    assert "[Note (Draft)](" not in rendered.html
+
+
+def test_heading_anchor_aria_label_survives_sanitize(tmp_path):
+    repo = LoreRepository(tmp_path)
+    repo.ensure_root()
+    repo.upsert_page(
+        "notes/aria",
+        """---
+title: Aria
+kind: note
+visibility: internal
+---
+
+# Hello World
+""",
+    )
+    page = repo.read_page("notes/aria")
+    assert page is not None
+
+    rendered = render_page_markdown(page, {"notes/aria"})
+
+    assert 'aria-label="Link to this section"' in rendered.html
+
+
 def test_render_sanitizes_html_and_formats_tables(content_dir):
     repo = LoreRepository(content_dir)
     page = repo.read_page("projects/example-project")

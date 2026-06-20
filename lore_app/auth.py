@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from .session import SESSION_COOKIE_NAME, verify_session
+
 if TYPE_CHECKING:
     from .api_keys import LoreApiKeyStore
 
@@ -26,6 +28,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         trusted_proxy_auth: bool = False,
         trusted_proxy_cidrs: list[str] | None = None,
         trusted_proxy_secret: str = "",
+        session_secret: str = "",
     ) -> None:
         if mode in ("bearer", "basic") and (not secret or not secret.strip()):
             raise ValueError(
@@ -38,6 +41,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self.api_key_store = api_key_store
         self.trusted_proxy_auth = trusted_proxy_auth
         self.trusted_proxy_secret = trusted_proxy_secret
+        self.session_secret = session_secret
         self.trusted_proxy_networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
         for cidr in trusted_proxy_cidrs or []:
             try:
@@ -55,7 +59,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         prefix test would let page ids like ``staticsecret`` or ``healthznotes``
         (served by the catch-all reader route) bypass auth entirely.
         """
-        return path in ("/healthz", "/healthz/config", "/metrics", "/static") or path.startswith("/static/")
+        return (
+            path in ("/healthz", "/healthz/config", "/metrics", "/api/login", "/api/logout", "/static")
+            or path.startswith("/static/")
+        )
 
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         if self.mode == "none":
@@ -74,6 +81,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 # without it the documented /api-keys + /settings bootstrap dead-ends.
                 request.state.lore_role = "admin"
                 return await call_next(request)
+            session_response = await self._session_response(request, call_next)
+            if session_response is not None:
+                return session_response
             proxy_response = await self._trusted_proxy_response(request, call_next)
             if proxy_response is not None:
                 return proxy_response
@@ -91,6 +101,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     # Holder of the single global secret is the trusted admin operator.
                     request.state.lore_role = "admin"
                     return await call_next(request)
+            session_response = await self._session_response(request, call_next)
+            if session_response is not None:
+                return session_response
             proxy_response = await self._trusted_proxy_response(request, call_next)
             if proxy_response is not None:
                 return proxy_response
@@ -107,6 +120,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         return Response(status_code=403, content="Forbidden")
                     return await call_next(request)
 
+            session_response = await self._session_response(request, call_next)
+            if session_response is not None:
+                return session_response
             proxy_response = await self._trusted_proxy_response(request, call_next)
             if proxy_response is not None:
                 return proxy_response
@@ -125,6 +141,32 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return False
         path = request.url.path
         return path.startswith("/api/")
+
+    async def _session_response(self, request: Request, call_next: Any) -> Response | None:
+        """Honor a same-origin signed session cookie for READ-only requests.
+
+        Writes stay token-only even with a valid session: a reader cookie on a
+        write is 403'd, a writer/admin cookie on a write falls through to 401.
+        This is a deliberate CSRF mitigation — the cookie is HttpOnly +
+        SameSite=strict and only authorizes reads.
+        """
+        if not self.session_secret:
+            return None
+        token = request.cookies.get(SESSION_COOKIE_NAME)
+        if not token:
+            return None
+        result = verify_session(self.session_secret, token)
+        if result is None:
+            return None
+        actor, role = result
+        # The session cookie authorizes reads only; any write falls through to the
+        # 401 so it must carry an Authorization token. This keeps writes token-only
+        # regardless of the cookie's role (CSRF mitigation).
+        if self._is_write_request(request):
+            return None
+        request.state.lore_actor = actor
+        request.state.lore_role = role
+        return await call_next(request)
 
     async def _trusted_proxy_response(self, request: Request, call_next: Any) -> Response | None:
         if not self.trusted_proxy_auth:

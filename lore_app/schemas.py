@@ -59,6 +59,12 @@ class LoreApiKeyCreateResponse(LoreApiKeyResponse):
     api_key: str
 
 
+class LoginRequest(BaseModel):
+    """Exchange a Lore API key for a same-origin browser session cookie."""
+
+    api_key: str = Field(min_length=1, max_length=200)
+
+
 class LlmSettingsUpdate(BaseModel):
     provider: str | None = None
     model: str | None = None

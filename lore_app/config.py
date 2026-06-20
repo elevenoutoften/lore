@@ -99,6 +99,10 @@ class LoreConfig:
         self.port: int = int(os.environ.get("LORE_PORT", "8000"))
         self.auth_mode: str = os.environ.get("LORE_AUTH_MODE", "none")
         self.auth_secret: str = os.environ.get("LORE_AUTH_SECRET", "")
+        # Signing secret for browser session cookies. Falls back to auth_secret,
+        # then a per-process random secret (cookies reset on restart) so the
+        # browser session works without an extra hard config requirement.
+        self.session_secret: str = os.environ.get("LORE_SESSION_SECRET", "")
         self.brand_title: str = os.environ.get("LORE_BRAND_TITLE", "LORE")
         self.brand_url: str = os.environ.get("LORE_BRAND_URL", "/")
         self.favicon_url: str = os.environ.get("LORE_FAVICON_URL", "/static/lore.css")

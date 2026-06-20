@@ -238,6 +238,13 @@
               <span>Admin API key</span>
               <input name="bearer_token" type="password" autocomplete="off" placeholder="Paste an admin bearer token">
             </label>
+            <div class="settings-actions">
+              <button type="button" data-session-login>Sign in to this browser</button>
+            </div>
+            <p class="settings-hint">
+              Stores a read-only session cookie so reader pages and read-only data load without pasting the key each
+              time. Writes still require the token above.
+            </p>
           </form>
 
           <h3>Current Configuration</h3>
@@ -357,6 +364,32 @@
     const settingsForm = document.querySelector("[data-settings-form]");
     const tokenForm = document.querySelector("[data-token-form]");
     const tokenInput = tokenForm.elements.bearer_token;
+    const sessionLoginBtn = tokenForm.querySelector("[data-session-login]");
+    if (sessionLoginBtn) {
+      sessionLoginBtn.addEventListener("click", async () => {
+        const key = tokenInput.value.trim();
+        if (!key) {
+          showStatus("Paste an API key first.", "error");
+          return;
+        }
+        try {
+          const resp = await fetch("/api/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ api_key: key }),
+            credentials: "same-origin",
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            showStatus(`Signed in as ${data.actor} (${data.role}). Reader pages now load without the token.`);
+          } else {
+            showStatus("Sign-in failed: invalid API key.", "error");
+          }
+        } catch (err) {
+          showStatus("Sign-in request failed.", "error");
+        }
+      });
+    }
     const resetButton = document.querySelector("[data-reset]");
     const currentFields = new Map(
       Array.from(document.querySelectorAll("[data-field]")).map((element) => [element.dataset.field, element])

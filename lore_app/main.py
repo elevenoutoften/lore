@@ -387,6 +387,11 @@ def create_app(
             f"Set a strong secret or switch to LORE_AUTH_MODE=none or LORE_AUTH_MODE=api_key."
         )
 
+    # Browser session-cookie signing secret: prefer an explicit secret, then the
+    # auth secret, else a per-process random key (cookies reset on restart).
+    session_secret = lore_config.session_secret or lore_config.auth_secret or secrets.token_urlsafe(32)
+    app.state.session_secret = session_secret
+
     if lore_config.auth_mode != "none":
         app.add_middleware(
             AuthMiddleware,
@@ -396,6 +401,7 @@ def create_app(
             trusted_proxy_auth=lore_config.trusted_proxy_auth,
             trusted_proxy_cidrs=lore_config.trusted_proxy_cidrs,
             trusted_proxy_secret=lore_config.trusted_proxy_secret,
+            session_secret=session_secret,
         )
 
     @app.middleware("http")

@@ -370,6 +370,73 @@ def test_audit_and_config_require_admin(content_dir, search_db, tmp_path):
         assert client.get("/api/config", headers=admin_headers).status_code == 200
 
 
+def test_session_helpers_sign_and_verify_roundtrip():
+    from lore_app.session import sign_session, verify_session
+
+    secret = "session-test-secret"
+    token = sign_session(secret, "alice", "reader")
+    assert verify_session(secret, token) == ("alice", "reader")
+
+    # Tampered signature is rejected.
+    tampered = token[:-1] + ("0" if token[-1] != "0" else "1")
+    assert verify_session(secret, tampered) is None
+
+    # Expired token is rejected.
+    expired = sign_session(secret, "alice", "reader", ttl_seconds=-10)
+    assert verify_session(secret, expired) is None
+
+    # Wrong secret is rejected.
+    assert verify_session("other-secret", token) is None
+    # Malformed token never raises.
+    assert verify_session(secret, "not-a-token") is None
+
+
+def test_browser_session_cookie_reaches_reader_and_read_api(content_dir, search_db, tmp_path):
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    store = LoreApiKeyStore(config.api_keys_db)
+    store.initialize()
+    _, reader_key = store.create_key(name="reader", role="reader")
+    app = create_app(config)
+
+    with TestClient(app) as client:
+        # No cookie yet: the reader HTML route and read API are protected.
+        assert client.get("/").status_code == 401
+
+        login = client.post("/api/login", json={"api_key": reader_key})
+        assert login.status_code == 200
+        assert "lore_session" in login.cookies
+
+        # Cookie jar now authorizes reads without an Authorization header.
+        assert client.get("/").status_code == 200
+        assert client.get("/api/graph/enriched").status_code == 200
+
+        # Writes stay token-only: a cookie-only write is rejected.
+        write = client.put("/api/pages/services/cookie-write", json={"content": "# Cookie Write"})
+        assert write.status_code == 401
+
+
+def test_login_rejects_invalid_key_and_writes_stay_token_only(content_dir, search_db, tmp_path):
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    store = LoreApiKeyStore(config.api_keys_db)
+    store.initialize()
+    _, writer_key = store.create_key(name="writer", role="writer")
+    app = create_app(config)
+
+    with TestClient(app) as client:
+        bad = client.post("/api/login", json={"api_key": "lore_not_a_real_key"})
+        assert bad.status_code == 401
+        assert "lore_session" not in bad.cookies
+
+        ok = client.post("/api/login", json={"api_key": writer_key})
+        assert ok.status_code == 200
+
+        # Even a writer session cookie cannot authorize a write (token-only).
+        write = client.put("/api/pages/services/writer-cookie", json={"content": "# x"})
+        assert write.status_code == 401
+        # But the cookie does authorize reads.
+        assert client.get("/api/pages").status_code == 200
+
+
 def test_healthz_config_is_public(content_dir, search_db, tmp_path):
     config = make_config(content_dir, search_db, tmp_path, "api_key", "")
     config.trusted_headers = True

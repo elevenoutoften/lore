@@ -477,6 +477,13 @@ def render_reader_page(
     graph_cache: LinkGraphCache,
     templates: Jinja2Templates,
 ):
+    # The catch-all reader route is the last route registered, so an unmatched
+    # /api/* or /mcp request (e.g. an SDK client hitting a typo'd endpoint) falls
+    # through to here. Return a JSON 404 for those surfaces so a JSON client can
+    # parse the body instead of choking on a themed HTML 404 page.
+    normalized = page_id.lstrip("/")
+    if normalized == "mcp" or normalized.startswith(("mcp/", "api/")):
+        raise HTTPException(status_code=404, detail="Not found.")
     try:
         selected_page = require_page(repo, page_id)
     except HTTPException as exc:
