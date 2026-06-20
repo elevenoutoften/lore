@@ -536,6 +536,26 @@ def test_retrieve_expanded_includes_supporting_claims(client):
     assert decision["supporting_claims"]
 
 
+def test_retrieve_expanded_excludes_rejected_supporting_claims(client):
+    seed_expanded_rag_fixture(client)
+    ledger = client.app.state.ledger_db
+    claim_id = next(
+        c["candidate_id"]
+        for c in ledger.get_candidates(candidate_type="claim", limit=100)
+        if c["batch_id"] == "batch-expanded-rag"
+    )
+    ledger.reject_candidate(claim_id)
+
+    payload = client.post(
+        "/api/rag/retrieve-expanded",
+        json={"query": "alpha routing evidence", "limit": 5, "expand_hops": 2, "include_claims": True},
+    ).json()
+
+    decision = next(result for result in payload["results"] if result["page_id"] == "decisions/routing-policy")
+    # A rejected claim must not surface as a supporting claim in RAG enrichment.
+    assert not decision["supporting_claims"]
+
+
 def test_retrieve_expanded_no_expansion_when_hops_zero(client):
     seed_expanded_rag_fixture(client)
     repo = client.app.state.repository

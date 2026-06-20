@@ -159,3 +159,56 @@ def test_deadletter_increment_retry_updates_metadata(tmp_path):
     assert ledger.increment_retry(deadletter_id) is True
     retried_again = ledger.list_deadletters(status="retried")
     assert retried_again[0]["retry_count"] == 2
+
+
+def test_get_candidates_statuses_filter_excludes_dead_claims(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-filter",
+            processed_at="2026-05-10T00:00:00+00:00",
+            source_capture_ids=["inbox/2026-05-10/filter"],
+            claims=[
+                ExtractedClaim(subject=f"services/s{i}", predicate="states", object=f"fact {i}", confidence="high")
+                for i in range(3)
+            ],
+            entities=[],
+            edges=[],
+            invalidations=[],
+        )
+    )
+    ids = [c["candidate_id"] for c in ledger.get_candidates(candidate_type="claim", limit=10)]
+    ledger.activate_candidate(ids[0])
+    ledger.reject_candidate(ids[1])
+
+    live = {c["candidate_id"] for c in ledger.get_candidates(statuses=("candidate", "active"))}
+    assert ids[0] in live  # active
+    assert ids[2] in live  # still candidate
+    assert ids[1] not in live  # rejected is dead knowledge
+
+
+def test_get_candidates_max_rows_lifts_default_clamp(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-bulk",
+            processed_at="2026-05-10T00:00:00+00:00",
+            source_capture_ids=["inbox/2026-05-10/bulk"],
+            claims=[
+                ExtractedClaim(subject=f"services/s{i}", predicate="states", object=f"fact {i}", confidence="high")
+                for i in range(600)
+            ],
+            entities=[],
+            edges=[],
+            invalidations=[],
+        )
+    )
+    # External callers keep the protective 500-row clamp even with a huge limit.
+    assert len(ledger.get_candidates(candidate_type="claim", limit=10000)) == 500
+    # Internal graph/RAG callers can scan past it with max_rows.
+    uncapped = ledger.get_candidates(
+        candidate_type="claim", statuses=("candidate", "active"), limit=600, max_rows=600
+    )
+    assert len(uncapped) > 500

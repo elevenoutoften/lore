@@ -401,7 +401,12 @@ def _add_ledger_nodes(
     ensure_node: Any,
     add_edge: Any,
 ) -> None:
-    for candidate in _safe_call(lambda: ledger.get_candidates(limit=10000)):
+    # Only live claims (candidate/active) belong in the graph; rejected/superseded/
+    # archived claims must not surface in recall expansion. max_rows lifts the
+    # default 500 clamp so a large ledger's older live claims are not truncated.
+    for candidate in _safe_call(
+        lambda: ledger.get_candidates(statuses=("candidate", "active"), limit=10000, max_rows=10000)
+    ):
         candidate_id = optional_string(candidate.get("candidate_id"))
         if not candidate_id:
             continue
@@ -433,10 +438,17 @@ def _add_ledger_nodes(
             )
         )
 
+        # Materialize placeholder endpoints so provenance edges to a missing
+        # page/capture are traversable rather than silently dropped at traversal
+        # time (which would make stats['edges'] overcount reachable edges).
+        # ensure_node is idempotent and runs after all real page nodes are added,
+        # so real pages/captures keep their richer metadata.
         for capture_id in string_list(candidate.get("source_capture_ids")):
+            ensure_node(capture_id, ContextNodeType.capture, capture_id, placeholder=True)
             add_edge(capture_id, candidate_node_id, ContextEdgeType.generated, capture_id)
 
         for page_id in string_list(candidate.get("source_page_ids")):
+            ensure_node(page_id, ContextNodeType.page, page_id, placeholder=True)
             if node_type == ContextNodeType.invalidation:
                 add_edge(candidate_node_id, page_id, ContextEdgeType.contradicts, page_id)
             else:
@@ -518,8 +530,10 @@ def _add_ledger_nodes(
 
         provenance = trace.provenance.model_dump(mode="json") if isinstance(trace.provenance, ProvenanceRef) else {}
         for page_id in string_list(provenance.get("page_ids")):
+            ensure_node(page_id, ContextNodeType.page, page_id, placeholder=True)
             add_edge(trace_node_id, page_id, ContextEdgeType.provenance, page_id)
         for capture_id in string_list(provenance.get("capture_ids")):
+            ensure_node(capture_id, ContextNodeType.capture, capture_id, placeholder=True)
             add_edge(trace_node_id, capture_id, ContextEdgeType.provenance, capture_id)
         for candidate_id in string_list(provenance.get("candidate_ids")):
             add_edge(trace_node_id, f"candidate:{candidate_id}", ContextEdgeType.provenance, candidate_id)

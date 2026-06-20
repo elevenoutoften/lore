@@ -1566,13 +1566,28 @@ class LedgerDB:
         lane: str | None = None,
         actor: str | None = None,
         limit: int = 100,
+        *,
+        statuses: tuple[str, ...] | None = None,
+        max_rows: int | None = None,
     ) -> list[dict[str, Any]]:
+        """Return extraction candidates ordered newest-first.
+
+        ``statuses`` filters to a SET of statuses (e.g. the live {candidate,
+        active} subset used by graph/RAG enrichment) and takes precedence over the
+        single ``status`` scalar. Internal callers that must scan past the default
+        500-row clamp pass ``max_rows`` to lift the cap; external callers keep the
+        500 ceiling so large ledgers don't fan out unbounded scans.
+        """
         clauses: list[str] = []
         params: list[Any] = []
         if candidate_type:
             clauses.append("candidate_type = ?")
             params.append(candidate_type)
-        if status:
+        if statuses:
+            placeholders = ",".join("?" for _ in statuses)
+            clauses.append(f"status IN ({placeholders})")
+            params.extend(statuses)
+        elif status:
             clauses.append("status = ?")
             params.append(status)
         if capture_id:
@@ -1588,7 +1603,8 @@ class LedgerDB:
             clauses.append("actor = ?")
             params.append(actor)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        params.append(max(1, min(limit, 500)))
+        cap = max_rows if max_rows is not None else 500
+        params.append(max(1, min(limit, cap)))
         rows = self.connection.execute(
             f"""
             SELECT *

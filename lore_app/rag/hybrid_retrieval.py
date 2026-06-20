@@ -401,7 +401,13 @@ def _enrich_with_ledger_context(
     """Enrich expanded results with claim, trace, and decision context from the ledger."""
     if include_claims:
         try:
-            candidates = ledger.get_candidates(limit=500, actor=claim_actor)
+            # Only live claims (candidate/active) may enrich results; rejected/
+            # superseded/archived claims must not surface as supporting/contradicting.
+            # The 2000 ceiling (matching get_active_claims) lets claims past the
+            # default newest-500 window still enrich a large ledger.
+            candidates = ledger.get_candidates(
+                statuses=("candidate", "active"), limit=2000, max_rows=2000, actor=claim_actor
+            )
         except Exception:
             candidates = []
         for candidate in candidates:

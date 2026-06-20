@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from unittest import mock
 
-from lore_app.context_graph import ContextGraphCache, build_context_graph, explain_context, query_neighbors, query_paths
+from lore_app.context_graph import (
+    ContextGraphCache,
+    build_context_graph,
+    explain_context,
+    neighbors_of,
+    query_neighbors,
+    query_paths,
+)
 from lore_app.schemas import (
     ContextExplainQuery,
     ContextGraph,
@@ -273,6 +280,60 @@ def test_context_graph_edges_cover_key_relationships(client):
     assert _edge(graph, "plan:plan-context-graph", "policy:auto-apply:v1", "used-policy") is not None
     assert _edge(graph, "source:README.md", "services/context-graph-service", "source-of") is not None
     assert _edge(graph, "services/context-graph-service", "task:flow_000586", "task-related") is not None
+
+
+def test_rejected_claim_produces_no_supports_edge(client):
+    repo, ledger, _capture_id, candidate_ids = _context_graph_fixture(client)
+    claim_id = candidate_ids["claim_id"]
+    claim_node_id = f"candidate:{claim_id}"
+
+    before = build_context_graph(repo, ledger)
+    assert _edge(before, claim_node_id, "services/context-graph-service", "supports") is not None
+
+    ledger.reject_candidate(claim_id)
+    graph = build_context_graph(repo, ledger)
+
+    # A rejected claim is dead knowledge: no live node, no supports edge.
+    assert _node(graph, claim_node_id) is None
+    assert _edge(graph, claim_node_id, "services/context-graph-service", "supports") is None
+
+
+def test_edge_to_missing_target_is_traversable_placeholder(client):
+    repo = client.app.state.repository
+    ledger = client.app.state.ledger_db
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-missing-target",
+            entities=[],
+            claims=[
+                ExtractedClaim(
+                    subject="Ghost",
+                    predicate="references",
+                    object="a missing page",
+                    confidence="high",
+                    source_page_ids=["ghosts/missing-page"],
+                )
+            ],
+            edges=[],
+            invalidations=[],
+            source_capture_ids=["inbox/2026-05-01/ghost"],
+            processed_at="2026-05-01T00:00:00+00:00",
+        )
+    )
+    claims = ledger.get_candidates(candidate_type="claim", statuses=("candidate", "active"), limit=10000, max_rows=10000)
+    claim_id = next(c["candidate_id"] for c in claims if c["batch_id"] == "batch-missing-target")
+    claim_node_id = f"candidate:{claim_id}"
+
+    graph = build_context_graph(repo, ledger)
+
+    # The missing page endpoint is materialized as a placeholder node so the
+    # supports edge is traversable rather than silently dropped.
+    assert _node(graph, "ghosts/missing-page") is not None
+    assert _edge(graph, claim_node_id, "ghosts/missing-page", "supports") is not None
+    assert graph.stats["edges"] == len(graph.edges)
+
+    reached = {neighbor.node.id for neighbor in neighbors_of(graph, claim_node_id, depth=1).neighbors}
+    assert "ghosts/missing-page" in reached
 
 
 def test_context_graph_deterministic(client):
