@@ -140,7 +140,12 @@ class LedgerDB:
                 conn = getattr(self._tl, "conn", None)
                 if conn is None:
                     self.db_path.parent.mkdir(parents=True, exist_ok=True)
-                    conn = sqlite3.connect(self.db_path, check_same_thread=True)
+                    # check_same_thread=False (matching the sibling stores) so that
+                    # close() can release a connection opened on a worker thread.
+                    # threading.local still hands each thread its own connection, so
+                    # there is no concurrent cross-thread USE during normal operation,
+                    # and close() runs only at shutdown after workers are done.
+                    conn = sqlite3.connect(self.db_path, check_same_thread=False)
                     conn.row_factory = sqlite3.Row
                     conn.execute("PRAGMA busy_timeout = 5000")
                     conn.execute("PRAGMA journal_mode = WAL")
@@ -1954,12 +1959,13 @@ class LedgerDB:
         return int(row["count"] if row is not None else 0)
 
     def close(self) -> None:
+        # Release every per-thread connection (not just the calling thread's).
+        # With check_same_thread=False these foreign-thread closes genuinely
+        # succeed, so connections are not leaked; closing an already-closed
+        # connection is a safe no-op, keeping close() idempotent.
         with self._conn_lock:
             for conn in list(self._all_conns):
-                try:
-                    conn.close()
-                except sqlite3.ProgrammingError:
-                    pass
+                conn.close()
             self._all_conns.clear()
             self._tl.conn = None
 

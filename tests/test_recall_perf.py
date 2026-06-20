@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import gc
 import json
+import sqlite3
 import threading
 import time
 import uuid
+import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from statistics import quantiles
 
@@ -229,41 +231,60 @@ def test_parallel_recall_and_access_updates_are_thread_safe(tmp_path):
 def test_close_releases_all_thread_connections(tmp_path):
     ledger = LedgerDB(tmp_path / "ledger.db")
     ledger.initialize()
-    _insert_claims(
-        ledger,
-        [
-            {
-                "subject": f"close-{index}",
-                "predicate": "stores",
-                "object": f"close memory {index}",
-                "strength": 0.6,
-            }
-            for index in range(20)
-        ],
-        batch_id="close-test",
-    )
+
+    n_workers = 4
+    # Persistent threads (NOT a ThreadPoolExecutor, whose workers die before
+    # close()) so each worker survives to probe its OWN connection from its
+    # owning thread after close(). Probing from the owning thread is the only way
+    # to distinguish a genuinely closed connection ("Cannot operate on a closed
+    # database") from the same-thread guard the pre-fix code raised and swallowed.
+    opened = threading.Barrier(n_workers + 1, timeout=10)
+    closed = threading.Event()
+    probes: dict[int, str] = {}
+
+    def worker(index: int) -> None:
+        conn = ledger.connection  # this thread's own per-thread connection
+        conn.execute("SELECT 1").fetchone()
+        opened.wait()
+        closed.wait(timeout=10)
+        try:
+            conn.execute("SELECT 1").fetchone()
+            probes[index] = "usable"
+        except sqlite3.ProgrammingError as exc:
+            probes[index] = "closed" if "closed database" in str(exc).lower() else f"other:{exc}"
+
+    threads = [threading.Thread(target=worker, args=(index,)) for index in range(n_workers)]
+    for thread in threads:
+        thread.start()
+    opened.wait()  # all worker connections now exist
 
     main_conn = ledger.connection
-    barrier = threading.Barrier(4)
+    assert len(ledger._all_conns) >= n_workers + 1
 
-    def worker() -> None:
-        barrier.wait()
-        ledger.recall_claims(query="close memory", limit=5, pool_limit=10, record_access=False)
-
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = [pool.submit(worker) for _ in range(4)]
-        for future in as_completed(futures):
-            future.result()
-        assert len(ledger._all_conns) >= 5
-
+    # close() must release every per-thread connection without leaking an
+    # unclosed-database ResourceWarning. Drain unrelated garbage first (other
+    # tests' un-closed ledgers) so their warnings don't pollute this capture.
     gc.collect()
-    ledger.close()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        ledger.close()
+        gc.collect()
+    db_warnings = [w for w in caught if issubclass(w.category, ResourceWarning) and "database" in str(w.message).lower()]
+    assert not db_warnings, f"close() leaked an unclosed database: {[str(w.message) for w in db_warnings]}"
 
+    closed.set()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    # Load-bearing: each worker connection is genuinely closed, probed from its
+    # owning thread. Pre-fix every worker connection is still "usable" because the
+    # foreign-thread close() raised ProgrammingError and was swallowed.
+    assert probes == {index: "closed" for index in range(n_workers)}
     assert len(ledger._all_conns) == 0
     assert ledger._connection is None
     try:
         main_conn.execute("SELECT 1")
-    except Exception as exc:
-        assert "closed" in str(exc).lower()
-    else:  # pragma: no cover - exercised on failure
+    except sqlite3.ProgrammingError as exc:
+        assert "closed database" in str(exc).lower()
+    else:  # pragma: no cover - exercised only on regression
         raise AssertionError("expected the main-thread SQLite connection to be closed")
