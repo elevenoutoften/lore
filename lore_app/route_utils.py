@@ -19,7 +19,7 @@ from .security import sanitize_content, sanitize_page_id
 if TYPE_CHECKING:
     from .link_graph import LinkGraphCache
     from .rag.vector_store import VectorStore
-    from .schemas import CaptureRequest, LinkEdge, PageDetail, PageLinks, PageSummary
+    from .schemas import CaptureRequest, LinkEdge, PageDetail, PageLinks, PageSummary, TraceCreateRequest
     from .search_index import LoreSearchIndex
 
 GIT_REF_CACHE_TTL_SECONDS = 300
@@ -94,6 +94,26 @@ def stamp_capture_actor(payload: CaptureRequest, request: Request) -> CaptureReq
     """Return a capture payload attributed to the server-resolved caller."""
     actor = actor_from_request(request)
     return payload.model_copy(update={"actor": actor, "agent": actor})
+
+
+def stamp_trace_actor(payload: TraceCreateRequest, request: Request) -> TraceCreateRequest:
+    """Bind a trace's actor to the authenticated caller (anti-spoofing).
+
+    Mirrors the capture actor stamp, but: under auth_mode='none' (a single shared
+    local tenant) the caller-supplied actor is kept advisory (matching
+    recall_actor_scope's none-mode passthrough), and an admin key may set an
+    explicit cross-actor actor. Every other caller is bound to its own identity
+    regardless of payload.actor.
+    """
+    config = getattr(request.app.state, "config", None)
+    if getattr(config, "auth_mode", "none") == "none":
+        return payload
+    caller_actor = actor_from_request(request)
+    caller_role = str(getattr(request.state, "lore_role", "") or "").strip()
+    requested = str(payload.actor or "").strip()
+    if caller_role == "admin" and requested and requested != caller_actor:
+        return payload
+    return payload.model_copy(update={"actor": caller_actor})
 
 
 def recall_actor_scope(

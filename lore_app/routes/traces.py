@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..deps import get_ledger_db
-from ..route_utils import recall_actor_scope
+from ..route_utils import recall_actor_scope, stamp_trace_actor
 from ..schemas import TraceCreateRequest, TraceEntry, TraceListResponse, TraceUpdateRequest
 
 if TYPE_CHECKING:
@@ -19,9 +19,11 @@ router = APIRouter(prefix="/api/traces", tags=["traces"])
 @router.post("", response_model=TraceEntry, status_code=201)
 def create_trace(
     payload: TraceCreateRequest,
+    request: Request,
     ledger: LedgerDB = Depends(get_ledger_db),
 ) -> TraceEntry:
-    """Create a new reasoning trace."""
+    """Create a new reasoning trace, attributed to the authenticated caller."""
+    payload = stamp_trace_actor(payload, request)
     trace = TraceEntry(
         trace_id="",
         **payload.model_dump(),

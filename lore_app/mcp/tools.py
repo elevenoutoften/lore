@@ -36,7 +36,7 @@ from ..provenance import get_capture_provenance, get_page_provenance
 from ..rag.hybrid_retrieval import hybrid_retrieve_expanded
 from ..recall import count_pending_captures, recall_hint, weights_for_query
 from ..repository import InvalidPageId, LoreRepository
-from ..route_utils import index_vectors_for_page, recall_actor_scope, stamp_capture_actor
+from ..route_utils import index_vectors_for_page, recall_actor_scope, stamp_capture_actor, stamp_trace_actor
 from ..schemas import (
     CaptureRequest,
     ContextExplainQuery,
@@ -1803,6 +1803,8 @@ def _handle_lore_create_trace(ctx: McpContext) -> dict[str, Any]:
         payload = TraceCreateRequest(**arguments)
     except ValidationError as exc:
         raise JsonRpcError(-32602, str(exc)) from exc
+    if ctx.request is not None:
+        payload = stamp_trace_actor(payload, ctx.request)
     trace = TraceEntry(trace_id="", **payload.model_dump())
     stored = ledger.store_trace(trace)
     content = stored.model_dump(mode="json")

@@ -471,6 +471,42 @@ def test_trace_update_is_scoped_to_authenticated_actor(content_dir, search_db, t
     assert admin_patch.json()["status"] == "abandoned"
 
 
+def test_trace_create_binds_actor_to_authenticated_caller(content_dir, search_db, tmp_path):
+    app = _app(content_dir, search_db, tmp_path)
+    _, key_a = app.state.api_key_store.create_key(name="trace-agent-a", role="writer")
+    app.state.api_key_store.create_key(name="trace-agent-b", role="writer")
+    _, admin_key = app.state.api_key_store.create_key(name="trace-admin", role="admin")
+
+    with TestClient(app) as client:
+        # REST: a writer key cannot attribute a trace to another actor.
+        rest = client.post(
+            "/api/traces",
+            json={"actor": "trace-agent-b", "reason_summary": "Spoof attempt.", "status": "active"},
+            headers=_headers(key_a),
+        )
+        assert rest.status_code == 201, rest.text
+        assert rest.json()["actor"] == "trace-agent-a"
+
+        # MCP: same spoof attempt is bound to the caller.
+        mcp = _mcp_call(
+            client,
+            _headers(key_a),
+            "lore_create_trace",
+            {"actor": "trace-agent-b", "reason_summary": "MCP spoof.", "status": "active"},
+        )
+        assert mcp["result"]["isError"] is False
+        assert mcp["result"]["structuredContent"]["actor"] == "trace-agent-a"
+
+        # An admin key may still set an explicit cross-actor actor.
+        admin_rest = client.post(
+            "/api/traces",
+            json={"actor": "trace-agent-b", "reason_summary": "Admin explicit.", "status": "active"},
+            headers=_headers(admin_key),
+        )
+        assert admin_rest.status_code == 201, admin_rest.text
+        assert admin_rest.json()["actor"] == "trace-agent-b"
+
+
 def test_rag_include_traces_does_not_leak_cross_actor_trace_ids(content_dir, search_db, tmp_path):
     app = _app(content_dir, search_db, tmp_path)
     _, key_a = app.state.api_key_store.create_key(name="rag-trace-agent-a", role="writer")
