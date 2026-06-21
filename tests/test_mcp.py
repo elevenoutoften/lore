@@ -664,6 +664,41 @@ def test_mcp_recall_pagination_offset(client):
     assert page2["claims"][0]["candidate_id"] != page1["claims"][0]["candidate_id"]
 
 
+def test_mcp_recall_has_more_with_record_access(client):
+    from lore_app.schemas import ExtractedClaim, ExtractionResult
+
+    client.app.state.ledger_db.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-mcp-recall-record-access",
+            processed_at="2026-05-01T00:00:00+00:00",
+            source_capture_ids=["inbox/2026-05-01/recall-ra"],
+            claims=[
+                ExtractedClaim(subject=f"services/ra{i}", predicate="states", object=f"fact {i}", confidence="high")
+                for i in range(3)
+            ],
+            entities=[],
+            edges=[],
+            invalidations=[],
+        )
+    )
+
+    # has_more must be correct even when record_access=True (the bounced defect:
+    # the over-fetch probe used to be disabled on that path, so has_more was
+    # always False and an agent could never page).
+    page1 = _call(client, "lore_recall", {"limit": 1, "offset": 0, "record_access": True})["structuredContent"]
+    assert page1["has_more"] is True
+    assert len(page1["claims"]) == 1
+    recalled_id = page1["claims"][0]["candidate_id"]
+
+    last = _call(client, "lore_recall", {"limit": 1, "offset": 2, "record_access": True})["structuredContent"]
+    assert last["has_more"] is False
+
+    # record_access still stamps exactly the returned claim (not the probe row).
+    verify = _call(client, "lore_recall", {"limit": 200, "offset": 0, "record_access": False})["structuredContent"]
+    by_id = {claim["candidate_id"]: claim for claim in verify["claims"]}
+    assert by_id[recalled_id]["access_count"] >= 1
+
+
 def test_mcp_overview_lists_core_loop(client):
     content = _call(client, "lore_overview", {})["structuredContent"]
     assert "lore_capture" in content["core_loop"]

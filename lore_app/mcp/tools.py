@@ -1296,21 +1296,24 @@ def _handle_lore_recall(ctx: McpContext) -> dict[str, Any]:
             actor = recall_actor_scope(ctx.request, requested_actor=actor, cross_actor=cross_actor)
         except PermissionError as exc:
             raise JsonRpcError(-32602, str(exc)) from exc
-    # Over-fetch one extra row to detect has_more cheaply. Skip the probe when
-    # record_access is set so it never stamps an extra (un-returned) claim.
-    probe = 0 if record_access else 1
+    # Always over-fetch one extra row to detect has_more -- including when
+    # record_access is set. Fetch WITHOUT stamping so the probe row is never
+    # marked, then stamp the actually-returned page explicitly below. (Disabling
+    # the probe for record_access left has_more permanently False on that path.)
     rows = ledger.recall_claims(
         query=query,
         subject=subject,
         lane=lane,
         actor=actor,
         min_strength=min_strength,
-        limit=limit + probe,
+        limit=limit + 1,
         offset=offset,
-        record_access=record_access,
+        record_access=False,
     )
     has_more = len(rows) > limit
     rows = rows[:limit]
+    if record_access and rows:
+        ledger.record_claim_access([str(row["candidate_id"]) for row in rows], actor=actor)
     claims = [_recall_claim_payload(row) for row in rows]
     # Self-diagnosing recall, matching the REST surface: a count=0 result carries the
     # pending-consolidation count and a hint so an MCP agent never hits a silent dead end.
