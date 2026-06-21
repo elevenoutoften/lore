@@ -143,12 +143,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return path.startswith("/api/")
 
     async def _session_response(self, request: Request, call_next: Any) -> Response | None:
-        """Honor a same-origin signed session cookie for READ-only requests.
+        """Honor a same-origin signed session cookie for safe READ requests only.
 
-        Writes stay token-only even with a valid session: a reader cookie on a
-        write is 403'd, a writer/admin cookie on a write falls through to 401.
-        This is a deliberate CSRF mitigation — the cookie is HttpOnly +
-        SameSite=strict and only authorizes reads.
+        The cookie authorizes only safe HTTP methods (GET/HEAD). Any other method
+        falls through to the 401 so it must carry an Authorization token — this
+        includes POST /mcp, which dispatches both read and write tools and whose
+        write/read split is not visible at the middleware layer. Gating on
+        ``_is_write_request`` (which only treats /api/* POSTs as writes) would let
+        a writer/admin cookie invoke a write tool via POST /mcp; gating on the
+        method closes that cross-surface hole. Cookies are HttpOnly +
+        SameSite=strict, so this keeps every write token-only (CSRF mitigation).
         """
         if not self.session_secret:
             return None
@@ -158,12 +162,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         result = verify_session(self.session_secret, token)
         if result is None:
             return None
-        actor, role = result
-        # The session cookie authorizes reads only; any write falls through to the
-        # 401 so it must carry an Authorization token. This keeps writes token-only
-        # regardless of the cookie's role (CSRF mitigation).
-        if self._is_write_request(request):
+        if request.method.upper() not in ("GET", "HEAD"):
             return None
+        actor, role = result
         request.state.lore_actor = actor
         request.state.lore_role = role
         return await call_next(request)

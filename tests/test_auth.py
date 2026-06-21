@@ -415,6 +415,46 @@ def test_browser_session_cookie_reaches_reader_and_read_api(content_dir, search_
         assert write.status_code == 401
 
 
+def test_session_cookie_cannot_write_via_mcp(content_dir, search_db, tmp_path):
+    """A session cookie must not authorize writes through POST /mcp.
+
+    Regression for the cross-surface write-boundary bypass: /mcp dispatches both
+    read and write tools, so the session cookie (read-only) must not authorize it.
+    """
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    store = LoreApiKeyStore(config.api_keys_db)
+    store.initialize()
+    _, writer_key = store.create_key(name="writer", role="writer")
+    app = create_app(config)
+
+    upsert_call = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "lore_upsert_page",
+            "arguments": {
+                "page_id": "services/cookie-mcp-write",
+                "content": "---\ntitle: Cookie MCP Write\nkind: service\nvisibility: internal\n---\n\n# x\n",
+            },
+        },
+    }
+
+    with TestClient(app) as client:
+        assert client.post("/api/login", json={"api_key": writer_key}).status_code == 200
+
+        # Cookie-only POST /mcp must be rejected before the write tool can run.
+        resp = client.post("/mcp", json=upsert_call)
+        assert resp.status_code == 401
+
+        # The page must not have been created.
+        check = client.get(
+            "/api/pages/services/cookie-mcp-write",
+            headers={"Authorization": f"Bearer {writer_key}"},
+        )
+        assert check.status_code == 404
+
+
 def test_login_rejects_invalid_key_and_writes_stay_token_only(content_dir, search_db, tmp_path):
     config = make_config(content_dir, search_db, tmp_path, "api_key", "")
     store = LoreApiKeyStore(config.api_keys_db)
