@@ -202,6 +202,12 @@ def api_memory_recall(
         actor = recall_actor_scope(request, requested_actor=actor, cross_actor=cross_actor)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    # record_access stamps access_count/last_accessed_at — a state write. A
+    # browser session cookie authorizes safe GETs only, so it must not trigger
+    # this telemetry write on a GET; stamping requires a token (or the explicit
+    # POST /api/memory/recall/ack, which a cookie cannot reach).
+    if record_access and getattr(request.state, "lore_session", False):
+        record_access = False
     rows = ledger.recall_claims(
         query=query,
         subject=subject,

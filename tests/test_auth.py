@@ -455,6 +455,56 @@ def test_session_cookie_cannot_write_via_mcp(content_dir, search_db, tmp_path):
         assert check.status_code == 404
 
 
+def test_cookie_session_get_recall_does_not_stamp_access(content_dir, search_db, tmp_path):
+    """A cookie-authenticated GET recall must not perform the record_access state
+    write; only a token-authenticated caller may stamp access telemetry."""
+    from lore_app.schemas import ExtractedClaim, ExtractionResult
+
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    store = LoreApiKeyStore(config.api_keys_db)
+    store.initialize()
+    _, writer_key = store.create_key(name="recall-writer", role="writer")
+    app = create_app(config)
+    app.state.ledger_db.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-recall-cookie",
+            processed_at="2026-05-01T00:00:00+00:00",
+            source_capture_ids=["inbox/2026-05-01/recall-cookie"],
+            claims=[
+                ExtractedClaim(
+                    subject="services/recall",
+                    predicate="states",
+                    object="recall telemetry.",
+                    confidence="high",
+                    actor="recall-writer",
+                )
+            ],
+            entities=[],
+            edges=[],
+            invalidations=[],
+        )
+    )
+
+    token_headers = {"Authorization": f"Bearer {writer_key}"}
+
+    with TestClient(app) as client:
+        assert client.post("/api/login", json={"api_key": writer_key}).status_code == 200
+
+        # Cookie-only GET recall asking for record_access must NOT stamp.
+        cookie_recall = client.get("/api/memory/recall", params={"record_access": "true"})
+        assert cookie_recall.status_code == 200
+        assert cookie_recall.json()["count"] >= 1
+
+        # Verify via a token read (no stamping): access_count is still 0.
+        after_cookie = client.get("/api/memory/recall", params={"record_access": "false"}, headers=token_headers)
+        assert after_cookie.json()["claims"][0]["access_count"] == 0
+
+        # A token-authenticated GET recall WITH record_access still stamps.
+        client.get("/api/memory/recall", params={"record_access": "true"}, headers=token_headers)
+        after_token = client.get("/api/memory/recall", params={"record_access": "false"}, headers=token_headers)
+        assert after_token.json()["claims"][0]["access_count"] >= 1
+
+
 def test_login_rejects_invalid_key_and_writes_stay_token_only(content_dir, search_db, tmp_path):
     config = make_config(content_dir, search_db, tmp_path, "api_key", "")
     store = LoreApiKeyStore(config.api_keys_db)

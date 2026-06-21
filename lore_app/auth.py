@@ -167,6 +167,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         actor, role = result
         request.state.lore_actor = actor
         request.state.lore_role = role
+        # Mark this request as cookie-authenticated so read routes can refuse to
+        # perform state-changing side effects (e.g. recall access telemetry) for a
+        # browser session — a state change should require a token, not a GET cookie.
+        request.state.lore_session = True
         return await call_next(request)
 
     async def _trusted_proxy_response(self, request: Request, call_next: Any) -> Response | None:
