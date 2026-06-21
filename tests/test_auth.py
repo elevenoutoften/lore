@@ -330,6 +330,35 @@ def test_trusted_proxy_admin_promoted_from_allowlisted_cidr(content_dir, search_
     assert response.status_code == 200
 
 
+def test_trusted_proxy_auth_honors_private_origin_without_explicit_proof(content_dir, search_db, tmp_path):
+    """Backward compat: TRUSTED_PROXY_AUTH=true with no secret/CIDRs must keep an
+    existing proxy deployment working — a fronting proxy reaches Lore over
+    loopback/private, so identity headers from that origin are honored with no new
+    config. (Upgrading must not silently 401 a working browser session.)"""
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    config.trusted_proxy_auth = True  # no secret, no CIDRs -> private/loopback default
+    app = create_app(config)
+
+    headers = {"X-Axis-User": "alice"}
+    with TestClient(app, client=("172.17.0.1", 12345)) as client:  # Docker bridge gateway
+        loopback_read = client.get("/api/pages", headers=headers)
+    assert loopback_read.status_code == 200
+
+
+def test_trusted_proxy_default_origin_still_blocks_public_source(content_dir, search_db, tmp_path):
+    """Secure by default: the private-origin fallback must still reject the
+    X-Axis-Admin spoof from a public source IP (the hole flow_000853 closed)."""
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    config.trusted_proxy_auth = True  # no secret, no CIDRs -> private/loopback default
+    app = create_app(config)
+
+    headers = {"X-Axis-User": "attacker", "X-Axis-Admin": "1"}
+    with TestClient(app, client=("203.0.113.7", 12345)) as client:  # public IP
+        response = client.get("/api/api-keys", headers=headers)
+
+    assert response.status_code == 401
+
+
 def test_policy_write_requires_admin(content_dir, search_db, tmp_path):
     config = make_config(content_dir, search_db, tmp_path, "api_key", "")
     store = LoreApiKeyStore(config.api_keys_db)

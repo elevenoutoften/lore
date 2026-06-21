@@ -393,6 +393,19 @@ def create_app(
     app.state.session_secret = session_secret
 
     if lore_config.auth_mode != "none":
+        if (
+            lore_config.trusted_proxy_auth
+            and not lore_config.trusted_proxy_secret
+            and not lore_config.trusted_proxy_cidrs
+        ):
+            logging.getLogger("lore").warning(
+                "LORE_TRUSTED_PROXY_AUTH is enabled but neither LORE_TRUSTED_PROXY_SECRET "
+                "nor LORE_TRUSTED_PROXY_CIDRS is set; trusting reverse-proxy identity "
+                "headers only from loopback/private source ranges (127.0.0.0/8, RFC1918, "
+                "link-local). Public source IPs are rejected. If your proxy reaches Lore "
+                "from a public IP, or to harden trust, set LORE_TRUSTED_PROXY_SECRET (proxy "
+                "sends a matching X-Lore-Proxy-Secret) or LORE_TRUSTED_PROXY_CIDRS."
+            )
         app.add_middleware(
             AuthMiddleware,
             mode=lore_config.auth_mode,

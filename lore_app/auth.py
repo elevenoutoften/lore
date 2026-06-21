@@ -16,6 +16,27 @@ if TYPE_CHECKING:
     from .api_keys import LoreApiKeyStore
 
 
+# Source ranges treated as a trusted reverse-proxy origin BY DEFAULT when
+# LORE_TRUSTED_PROXY_AUTH is enabled but the operator set no explicit allowlist
+# (LORE_TRUSTED_PROXY_CIDRS) or shared secret (LORE_TRUSTED_PROXY_SECRET). A proxy
+# fronting Lore reaches it over loopback or a private network (Docker bridge, LAN);
+# a request from a public source cannot be that proxy, so the X-Axis-Admin:1
+# escalation spoof from the open internet stays blocked, while a deployment that was
+# already authenticating browsers via the proxy keeps working with no new config.
+# An explicit CIDR/secret overrides this entirely (e.g. to trust a public-IP proxy,
+# or to narrow trust further).
+DEFAULT_TRUSTED_PROXY_CIDRS: tuple[str, ...] = (
+    "127.0.0.0/8",
+    "::1/128",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "169.254.0.0/16",
+    "fc00::/7",
+    "fe80::/10",
+)
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """Auth middleware supporting none, bearer, basic, and Lore API key modes."""
 
@@ -42,13 +63,25 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self.trusted_proxy_auth = trusted_proxy_auth
         self.trusted_proxy_secret = trusted_proxy_secret
         self.session_secret = session_secret
+        explicit_cidrs = [cidr for cidr in (trusted_proxy_cidrs or []) if cidr.strip()]
+        # Backward-compatible secure default: if proxy auth is on but the operator
+        # configured no explicit origin proof, trust the loopback/private ranges a
+        # fronting proxy actually originates from instead of failing closed (which
+        # would silently lock out every already-working trusted-proxy deployment on
+        # upgrade). Public sources are still rejected, so the escalation spoof the
+        # explicit-proof check closed stays closed.
+        self.proxy_origin_defaulted = bool(
+            trusted_proxy_auth and not trusted_proxy_secret and not explicit_cidrs
+        )
+        source_cidrs = explicit_cidrs or (
+            list(DEFAULT_TRUSTED_PROXY_CIDRS) if self.proxy_origin_defaulted else []
+        )
         self.trusted_proxy_networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
-        for cidr in trusted_proxy_cidrs or []:
+        for cidr in source_cidrs:
             try:
                 self.trusted_proxy_networks.append(ipaddress.ip_network(cidr, strict=False))
             except ValueError:
-                # Skip malformed CIDRs rather than failing startup; an empty
-                # allowlist (plus no secret) just means no proxy promotion.
+                # Skip malformed CIDRs rather than failing startup.
                 continue
 
     @staticmethod
@@ -190,9 +223,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         Trust requires proof that the request actually came from the fronting
         proxy: either a shared secret header (X-Lore-Proxy-Secret) or a source IP
-        inside a configured CIDR allowlist. With neither configured we fail closed
-        and ignore identity headers entirely — the classic ``X-Axis-Admin: 1``
-        spoof from an arbitrary client is rejected.
+        inside the trusted CIDR allowlist. When the operator configures neither,
+        the allowlist defaults to loopback/private ranges (see
+        ``DEFAULT_TRUSTED_PROXY_CIDRS``) — a proxy fronting Lore reaches it from
+        there, so existing deployments keep working, while the classic
+        ``X-Axis-Admin: 1`` spoof from a public/arbitrary client is still rejected.
         """
         if self.trusted_proxy_secret:
             provided = request.headers.get("X-Lore-Proxy-Secret", "")

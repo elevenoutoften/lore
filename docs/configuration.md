@@ -18,9 +18,9 @@ Lore reads configuration from environment variables through
 | `LORE_AUTH_MODE` | `none` | Auth mode: `none`, `bearer`, `basic`, or `api_key`. |
 | `LORE_AUTH_SECRET` | empty | Bearer token or `username:password` value for basic auth. |
 | `LORE_TRUSTED_HEADERS` | `false` | Trust reverse proxy headers for rate limiting and audit actor attribution. |
-| `LORE_TRUSTED_PROXY_AUTH` | `false` | Allow trusted proxy identity headers to bypass auth middleware for browser sessions behind GPUBox/Caddy. Requires `LORE_TRUSTED_PROXY_CIDRS` and/or `LORE_TRUSTED_PROXY_SECRET` to actually honor headers (fail closed otherwise). |
-| `LORE_TRUSTED_PROXY_CIDRS` | empty | Space/comma-separated CIDR allowlist of reverse-proxy source IPs that may supply trusted proxy identity headers. |
-| `LORE_TRUSTED_PROXY_SECRET` | empty | Shared secret a trusted proxy must send as the `X-Lore-Proxy-Secret` header to supply identity headers. |
+| `LORE_TRUSTED_PROXY_AUTH` | `false` | Allow trusted proxy identity headers to bypass auth middleware for browser sessions behind GPUBox/Caddy. With no explicit `LORE_TRUSTED_PROXY_CIDRS`/`LORE_TRUSTED_PROXY_SECRET`, headers are honored only from loopback/private source ranges (a fronting proxy's origin); public source IPs are still rejected. |
+| `LORE_TRUSTED_PROXY_CIDRS` | loopback/private | Space/comma-separated CIDR allowlist of reverse-proxy source IPs that may supply trusted proxy identity headers. Setting this overrides the loopback/private default — use it to trust a public-IP proxy or to narrow trust. |
+| `LORE_TRUSTED_PROXY_SECRET` | empty | Shared secret a trusted proxy must send as the `X-Lore-Proxy-Secret` header to supply identity headers regardless of source IP. Overrides the source-IP check when matched. |
 | `LORE_BRAND_TITLE` | `LORE` | Header brand label. |
 | `LORE_BRAND_URL` | `/` | Header brand link. |
 | `LORE_FAVICON_URL` | `/static/lore.css` | Favicon URL used by templates. |

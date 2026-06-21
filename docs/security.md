@@ -94,24 +94,32 @@ Only enable `LORE_TRUSTED_PROXY_AUTH=true` when Lore runs behind a reverse proxy
 that authenticates users and strips or replaces these headers before forwarding
 requests.
 
-### Proxy origin must be proven (fail closed)
+### Proxy origin must be proven
 
-`LORE_TRUSTED_PROXY_AUTH=true` is necessary but **not sufficient**: identity
-headers are only honored when the request proves it originated from the trusted
-proxy. Otherwise any client that can reach Lore could send `X-Axis-Admin: 1` and
-self-promote to admin. Configure at least one of:
+Identity headers (`X-Axis-Admin`, `X-Axis-User`, …) are only honored when the
+request proves it originated from the trusted proxy — otherwise any client that
+could reach Lore directly would send `X-Axis-Admin: 1` and self-promote to admin.
+Origin is proven by one of:
 
+- `LORE_TRUSTED_PROXY_SECRET` — a shared secret the proxy must send as the
+  `X-Lore-Proxy-Secret` header. Requests with a matching secret are trusted
+  regardless of source IP. **Recommended** when the proxy may reach Lore from a
+  non-private address (e.g. a different host).
 - `LORE_TRUSTED_PROXY_CIDRS` — a space/comma-separated allowlist of the reverse
   proxy's source IPs/CIDRs (e.g. `10.0.0.0/8 127.0.0.1/32`). Only requests whose
   source IP falls in the allowlist may supply identity headers.
-- `LORE_TRUSTED_PROXY_SECRET` — a shared secret the proxy must send as the
-  `X-Lore-Proxy-Secret` header. Requests with a matching secret are trusted
-  regardless of source IP.
 
-**Fail-closed default:** with `LORE_TRUSTED_PROXY_AUTH=true` but neither
-`LORE_TRUSTED_PROXY_CIDRS` nor `LORE_TRUSTED_PROXY_SECRET` set, proxy identity
-headers are ignored entirely. Operators upgrading must set one of these or
-trusted-proxy sessions stop working.
+**Secure default (no lockout on upgrade):** with `LORE_TRUSTED_PROXY_AUTH=true`
+but neither knob set, Lore trusts identity headers **only from loopback/private
+source ranges** (`127.0.0.0/8`, RFC1918 `10/8` · `172.16/12` · `192.168/16`,
+link-local, and the IPv6 equivalents) — the origin a co-located reverse proxy
+(Docker bridge, LAN, loopback) actually connects from. A request from a **public**
+source IP is rejected, so the `X-Axis-Admin: 1` escalation spoof from the open
+internet stays closed. This keeps an already-working trusted-proxy deployment
+working across the upgrade with no new configuration. Set
+`LORE_TRUSTED_PROXY_SECRET` or `LORE_TRUSTED_PROXY_CIDRS` to harden further, or if
+your proxy reaches Lore from a public address. A startup warning is logged while
+the default is in effect.
 
 ### Admin-only endpoints
 
