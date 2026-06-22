@@ -10,19 +10,25 @@ if TYPE_CHECKING:
 
 
 def merge_capture_provenance(payload: CaptureRequest, *, related_pages: list[str] | None = None) -> ProvenanceRef:
+    """Normalize capture provenance with structured values taking precedence.
+
+    List-valued legacy REST fields are appended after structured provenance and
+    de-duplicated. Singleton legacy fields only fill missing structured values.
+    """
     provenance = _copy_provenance(payload.provenance)
     _extend_unique(provenance.page_ids, related_pages if related_pages is not None else payload.related_pages)
     _extend_unique(provenance.task_ids, [payload.task_id, payload.decision_id])
     _extend_unique(provenance.trace_ids, [payload.trace_id])
     _extend_unique(provenance.policy_ids, payload.policies_applied)
+    _extend_unique(provenance.sources, payload.sources)
     _extend_unique(provenance.source_paths, payload.source_paths)
     _extend_unique(provenance.source_urls, payload.source_urls)
-    if payload.source_task and provenance.source_task is None:
-        provenance.source_task = payload.source_task
+    provenance.evidence = optional_string(provenance.evidence) or optional_string(payload.evidence)
+    if provenance.source_task is None:
+        provenance.source_task = optional_string(payload.source_task) or optional_string(payload.task_id)
     if payload.actor and provenance.actor is None:
         provenance.actor = payload.actor
-    if payload.tool_calls:
-        provenance.tool_calls.extend(payload.tool_calls)
+    _extend_unique_dicts(provenance.tool_calls, payload.tool_calls)
     _extend_unique(provenance.constraints, payload.constraints)
     return provenance
 
@@ -34,7 +40,7 @@ def merge_trace_provenance(trace: TraceEntry) -> ProvenanceRef:
     _extend_unique(provenance.constraints, trace.constraints)
     _extend_unique(provenance.policy_ids, trace.policy_refs)
     for tool_ref in trace.tool_refs:
-        provenance.tool_calls.append(tool_ref.model_dump(mode="json"))
+        _extend_unique_dicts(provenance.tool_calls, [tool_ref.model_dump(mode="json")])
     for ref in trace.context_refs:
         _merge_context_ref(provenance, ref)
     _merge_related_ids(provenance, trace.related_ids)
@@ -48,8 +54,11 @@ def provenance_from_frontmatter(frontmatter: dict[str, Any]) -> ProvenanceRef:
     _extend_unique(provenance.trace_ids, [frontmatter.get("trace_id")])
     _extend_unique(provenance.task_ids, [frontmatter.get("task_id"), frontmatter.get("decision_id")])
     _extend_unique(provenance.policy_ids, string_list(frontmatter.get("policies_applied")))
+    _extend_unique(provenance.sources, string_list(frontmatter.get("sources")))
     _extend_unique(provenance.source_paths, string_list(frontmatter.get("source_paths")))
     _extend_unique(provenance.source_urls, string_list(frontmatter.get("source_urls")))
+    if provenance.evidence is None:
+        provenance.evidence = optional_string(frontmatter.get("evidence"))
     source_task = optional_string(frontmatter.get("source_task"))
     if source_task and provenance.source_task is None:
         provenance.source_task = source_task
@@ -58,7 +67,7 @@ def provenance_from_frontmatter(frontmatter: dict[str, Any]) -> ProvenanceRef:
         provenance.actor = actor
     tool_calls = frontmatter.get("tool_calls")
     if isinstance(tool_calls, list):
-        provenance.tool_calls.extend([item for item in tool_calls if isinstance(item, dict)])
+        _extend_unique_dicts(provenance.tool_calls, tool_calls)
     _extend_unique(provenance.constraints, string_list(frontmatter.get("constraints")))
     return provenance
 
@@ -83,13 +92,16 @@ def get_page_provenance(repo: LoreRepository, page_id: str) -> ProvenanceRef:
             _extend_unique(provenance.policy_ids, capture_provenance.policy_ids)
             _extend_unique(provenance.candidate_ids, capture_provenance.candidate_ids)
             _extend_unique(provenance.task_ids, capture_provenance.task_ids)
+            _extend_unique(provenance.sources, capture_provenance.sources)
             _extend_unique(provenance.source_paths, capture_provenance.source_paths)
             _extend_unique(provenance.source_urls, capture_provenance.source_urls)
+            if provenance.evidence is None:
+                provenance.evidence = capture_provenance.evidence
             if provenance.source_task is None:
                 provenance.source_task = capture_provenance.source_task
             if provenance.actor is None:
                 provenance.actor = capture_provenance.actor
-            provenance.tool_calls.extend(capture_provenance.tool_calls)
+            _extend_unique_dicts(provenance.tool_calls, capture_provenance.tool_calls)
             _extend_unique(provenance.constraints, capture_provenance.constraints)
     return provenance
 
@@ -105,6 +117,12 @@ def _extend_unique(target: list[str], values: Iterable[Any]) -> None:
         if cleaned and cleaned not in seen:
             target.append(cleaned)
             seen.add(cleaned)
+
+
+def _extend_unique_dicts(target: list[dict[str, Any]], values: Iterable[Any]) -> None:
+    for value in values:
+        if isinstance(value, dict) and value not in target:
+            target.append(value)
 
 
 def _merge_context_ref(provenance: ProvenanceRef, ref: ContextRef) -> None:

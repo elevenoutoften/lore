@@ -28,6 +28,10 @@ results = client.search("ComfyUI gateway", limit=10)
 
 ## Writes
 
+`LoreClient.create_capture(...)` targets the retained page-oriented draft
+inbox/review workflow. Use `MemoryProvider.capture(...)` below for new durable
+agent-memory integrations.
+
 ```python
 client.upsert_page(
     "services/lore",
@@ -66,7 +70,12 @@ memory.capture(
     "Pixl renders text as garbage on Illustrious XL.",
     agent_name="pixie",
     lane="project",
-    metadata={"confidence": "high", "source_task": "flow_000770"},
+    metadata={"confidence": "high"},
+    task_id="flow_000770",
+    provenance={
+        "source_paths": ["ops/deploy/Update-Server.sh"],
+        "evidence": "Verified in the deploy script.",
+    },
 )
 
 # Recall ranked claims by relevance, recency, and salience.

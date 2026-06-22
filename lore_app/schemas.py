@@ -418,8 +418,10 @@ class ProvenanceRef(BaseModel):
     policy_ids: list[str] = Field(default_factory=list, description="Policy IDs that were evaluated.")
     candidate_ids: list[str] = Field(default_factory=list, description="Extraction candidate IDs.")
     task_ids: list[str] = Field(default_factory=list, description="Flow or external task IDs.")
+    sources: list[str] = Field(default_factory=list, description="Generic source references or citations.")
     source_paths: list[str] = Field(default_factory=list, description="Repo or file paths.")
     source_urls: list[str] = Field(default_factory=list, description="HTTP/HTTPS URLs.")
+    evidence: str | None = Field(default=None, description="Supporting evidence text.")
     source_task: str | None = Field(default=None, description="Legacy source task identifier.")
     actor: str | None = Field(default=None, description="Agent that produced this output.")
     tool_calls: list[dict[str, Any]] = Field(default_factory=list, description="Tool calls made during production.")
@@ -443,10 +445,16 @@ class CaptureRequest(BaseModel):
     related_pages: list[str] = Field(default_factory=list)
     confidence: str | None = "unknown"
     suggested_target_page: str | None = None
-    sources: list[str] = Field(default_factory=list)
-    source_paths: list[str] = Field(default_factory=list, description="Repo paths or file references.")
-    source_urls: list[str] = Field(default_factory=list, description="HTTP/HTTPS URLs.")
-    evidence: str | None = Field(default=None, description="Supporting evidence text.")
+    sources: list[str] = Field(default_factory=list, description="Legacy REST input; merged after provenance.sources.")
+    source_paths: list[str] = Field(
+        default_factory=list, description="Legacy REST input; merged after provenance.source_paths."
+    )
+    source_urls: list[str] = Field(
+        default_factory=list, description="Legacy REST input; merged after provenance.source_urls."
+    )
+    evidence: str | None = Field(
+        default=None, description="Legacy REST input used only when provenance.evidence is absent."
+    )
     epistemic_status: EpistemicStatus | None = Field(default=None, description="How this knowledge was obtained.")
     actor: str | None = Field(default=None, description="Agent name that produced this capture.")
     lane: str | None = Field(default=None, description="Retrieval lane: project, procedural, ops, companion, draft.")
@@ -481,6 +489,7 @@ class MemoryCaptureRequest(BaseModel):
     )
     constraints: list[str] = Field(default_factory=list, description="Constraints that applied during capture.")
     policies_applied: list[str] = Field(default_factory=list, description="Policy IDs that were enforced.")
+    provenance: ProvenanceRef | None = Field(default=None, description="Structured provenance for the memory.")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Extra frontmatter fields.")
 
 

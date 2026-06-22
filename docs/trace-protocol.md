@@ -124,7 +124,7 @@ Response excerpt:
       "capture_date": "2026-05-22",
       "related_pages": ["services/flow"],
       "trace_id": "trace-abc123def456",
-      "sources": ["agent:nyx"]
+      "provenance": {"sources": ["agent:nyx"]}
     }
   }
 }

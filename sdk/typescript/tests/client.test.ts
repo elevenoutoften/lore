@@ -75,6 +75,11 @@ test("MemoryProvider capture uses canonical endpoint and shared auth transport",
     namespace: "notes",
     lane: "ops",
     taskId: "flow_000885",
+    provenance: {
+      source_paths: ["src/deploy.ts"],
+      source_urls: ["https://example.test/deploy"],
+      evidence: "Verified in the deployment source.",
+    },
     metadata: { title: "Deployment note", confidence: "high" },
   });
 
@@ -89,6 +94,11 @@ test("MemoryProvider capture uses canonical endpoint and shared auth transport",
     metadata: { title: "Deployment note", confidence: "high" },
     lane: "ops",
     task_id: "flow_000885",
+    provenance: {
+      source_paths: ["src/deploy.ts"],
+      source_urls: ["https://example.test/deploy"],
+      evidence: "Verified in the deployment source.",
+    },
   });
 });
 

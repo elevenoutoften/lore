@@ -77,6 +77,7 @@ class MemoryProvider:
         tool_calls: list[dict[str, Any]] | None = None,
         constraints: list[str] | None = None,
         policies_applied: list[str] | None = None,
+        provenance: dict[str, Any] | None = None,
     ) -> str:
         """Write a memory capture to Lore.
 
@@ -86,13 +87,14 @@ class MemoryProvider:
             namespace: "inbox" for shared, "notes" for agent-scoped.
             metadata: Optional frontmatter fields such as confidence, source_task, tags.
             lane: Retrieval lane — project, procedural, ops, companion, draft.
-            actor: Agent name for provenance (defaults to agent_name if not set).
+            actor: Compatibility hint only; authenticated servers replace it with the token actor.
             task_id: Source task ID (e.g. "flow_000123").
             decision_id: Linked decision page ID.
             trace_id: Reasoning trace correlation ID.
             tool_calls: Tool call records from the capturing session.
             constraints: Constraints that applied during capture.
             policies_applied: Policy IDs that were enforced.
+            provenance: Structured provenance using Lore's ProvenanceRef fields.
         """
         payload: dict[str, Any] = {
             "text": memory_text,
@@ -118,6 +120,8 @@ class MemoryProvider:
             payload["constraints"] = constraints
         if policies_applied:
             payload["policies_applied"] = policies_applied
+        if provenance:
+            payload["provenance"] = provenance
 
         result = self._post_with_retry("/api/memory/capture", payload)
         return str(result.get("capture_id") or result.get("page", {}).get("id"))

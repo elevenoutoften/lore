@@ -42,6 +42,10 @@ running separate Lore instances (separate content dirs and key databases).
 
 Captures are the high-frequency write path. Rough agent memory lands as draft
 Markdown for later consolidation; it is **not** accepted truth until promoted.
+`POST /api/memory/capture`, `lore_capture`, and `MemoryProvider.capture(...)`
+are the canonical durable capture-to-recall surfaces. `POST /api/capture` is a
+supported compatibility endpoint for the page-oriented draft review, status,
+promotion, UI, and older SDK workflow.
 
 HTTP:
 
@@ -53,7 +57,12 @@ curl -sS https://lore.example/api/memory/capture \
     "text": "Pixl renders all text as garbage on Illustrious XL.",
     "agent_name": "pixie",
     "lane": "project",
-    "metadata": {"confidence": "high", "source_task": "flow_000770"}
+    "metadata": {"confidence": "high"},
+    "provenance": {
+      "task_ids": ["flow_000770"],
+      "source_paths": ["ops/deploy/Update-Server.sh"],
+      "evidence": "Verified in the deploy script."
+    }
   }'
 ```
 
@@ -62,7 +71,10 @@ for tenancy. It stamps the capture actor and notes namespace agent from the
 authenticated request actor. Body values are advisory context only and cannot
 write memory as another actor.
 
-MCP tool: `lore_capture`. Python SDK: `MemoryProvider.capture(...)`.
+MCP tool: `lore_capture`. Python SDK: `MemoryProvider.capture(...)`. The MCP
+tool exposes one typed `provenance` object for generic sources, paths, URLs,
+evidence, tasks, and related references. It does not expose writable `actor`;
+the authenticated actor stamp is authoritative.
 
 Captures flow through extraction and consolidation into the **claim ledger** —
 subject/predicate/object facts with strength, confidence, provenance, and temporal

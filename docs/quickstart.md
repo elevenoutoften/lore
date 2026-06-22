@@ -79,9 +79,11 @@ curl -sS "$LORE_URL/api/search/bm25?q=Markdown"
 
 ## Capture
 
-The canonical agent memory write path is `POST /api/memory/capture`. It uses
-typed top-level fields for routing/provenance and a `metadata` envelope for
-extra frontmatter like `title`, `confidence`, and sources.
+The canonical durable agent memory write path is `POST /api/memory/capture`. Use typed
+top-level routing fields, `provenance` for sources/evidence, and `metadata` only
+for extra capture-page fields such as title and confidence. `POST /api/capture`
+is the retained draft inbox/review contract for listing, status, promotion, UI,
+and older page-oriented clients.
 
 ```bash
 curl -sS -X POST "$LORE_URL/api/memory/capture" \
@@ -94,9 +96,9 @@ curl -sS -X POST "$LORE_URL/api/memory/capture" \
     "metadata": {
       "title": "Demo deploy note",
       "related_pages": ["projects/demo"],
-      "confidence": "high",
-      "sources": ["docs/quickstart.md"]
-    }
+      "confidence": "high"
+    },
+    "provenance": {"sources": ["docs/quickstart.md"]}
   }'
 ```
 

@@ -121,6 +121,7 @@ def test_memory_provider_capture_sends_structured_envelope(monkeypatch):
         tool_calls=[{"tool": "search", "query": "test"}],
         constraints=["stay compatible"],
         policies_applied=["L-MEM-02"],
+        provenance={"source_paths": ["README.md"], "evidence": "SDK evidence"},
     )
 
     assert capture_id == "inbox/2026-05-22/sdk-test"
@@ -130,6 +131,10 @@ def test_memory_provider_capture_sends_structured_envelope(monkeypatch):
     assert captured_payload["payload"]["tool_calls"] == [{"tool": "search", "query": "test"}]
     assert captured_payload["payload"]["constraints"] == ["stay compatible"]
     assert captured_payload["payload"]["policies_applied"] == ["L-MEM-02"]
+    assert captured_payload["payload"]["provenance"] == {
+        "source_paths": ["README.md"],
+        "evidence": "SDK evidence",
+    }
 
 
 def test_memory_provider_default_base_url_is_8078(monkeypatch):

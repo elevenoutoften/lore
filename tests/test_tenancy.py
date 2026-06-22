@@ -52,6 +52,7 @@ def test_capture_surfaces_server_stamp_authenticated_actor(content_dir, search_d
                 "namespace": "notes",
                 "agent": "payload-agent",
                 "actor": "payload-actor",
+                "provenance": {"actor": "nested-payload-actor"},
                 "capture_date": "2026-06-18",
             },
             headers=headers,
@@ -63,6 +64,7 @@ def test_capture_surfaces_server_stamp_authenticated_actor(content_dir, search_d
                 "namespace": "notes",
                 "agent_name": "payload-agent",
                 "actor": "payload-actor",
+                "provenance": {"actor": "nested-payload-actor"},
                 "metadata": {"title": "Memory spoof attempt", "capture_date": "2026-06-18"},
             },
             headers=headers,
@@ -77,6 +79,7 @@ def test_capture_surfaces_server_stamp_authenticated_actor(content_dir, search_d
                 "namespace": "notes",
                 "agent": "payload-agent",
                 "actor": "payload-actor",
+                "provenance": {"actor": "nested-payload-actor"},
                 "capture_date": "2026-06-18",
             },
         )
@@ -85,16 +88,19 @@ def test_capture_surfaces_server_stamp_authenticated_actor(content_dir, search_d
     rest_page = rest_capture.json()["page"]
     assert rest_page["id"] == "notes/agent-a/2026-06-18/rest-spoof-attempt"
     assert rest_page["frontmatter"]["actor"] == "agent-a"
+    assert rest_page["frontmatter"]["provenance"]["actor"] == "agent-a"
 
     assert memory_capture.status_code == 201, memory_capture.text
     memory_page = client.app.state.repository.read_page(memory_capture.json()["capture_id"])
     assert memory_page is not None
     assert memory_page.id == "notes/agent-a/2026-06-18/memory-spoof-attempt"
     assert memory_page.frontmatter["actor"] == "agent-a"
+    assert memory_page.frontmatter["provenance"]["actor"] == "agent-a"
 
     mcp_page = mcp_capture["result"]["structuredContent"]["page"]
     assert mcp_page["id"] == "notes/agent-a/2026-06-18/mcp-spoof-attempt"
     assert mcp_page["frontmatter"]["actor"] == "agent-a"
+    assert mcp_page["frontmatter"]["provenance"]["actor"] == "agent-a"
 
 
 def test_rest_recall_is_scoped_to_authenticated_actor(content_dir, search_db, tmp_path):
@@ -384,8 +390,12 @@ def test_trace_and_precedent_reads_are_scoped_to_authenticated_actor(content_dir
             "lore_get_provenance",
             {"entity_type": "trace", "entity_id": trace_id},
         )
-        a_mcp_precedents = _mcp_call(client, _headers(key_a), "lore_find_precedents", {"keyword": unique_term, "limit": 10})
-        b_mcp_precedents = _mcp_call(client, _headers(key_b), "lore_find_precedents", {"keyword": unique_term, "limit": 10})
+        a_mcp_precedents = _mcp_call(
+            client, _headers(key_a), "lore_find_precedents", {"keyword": unique_term, "limit": 10}
+        )
+        b_mcp_precedents = _mcp_call(
+            client, _headers(key_b), "lore_find_precedents", {"keyword": unique_term, "limit": 10}
+        )
         admin_mcp_list = _mcp_call(
             client,
             _headers(admin_key),
@@ -419,9 +429,7 @@ def test_trace_and_precedent_reads_are_scoped_to_authenticated_actor(content_dir
     b_precedent_matches = b_mcp_precedents["result"]["structuredContent"]["matches"]
     assert any(match["id"] == f"trace:{trace_id}" for match in b_precedent_matches)
 
-    assert any(
-        item["trace_id"] == trace_id for item in admin_mcp_list["result"]["structuredContent"]["traces"]
-    )
+    assert any(item["trace_id"] == trace_id for item in admin_mcp_list["result"]["structuredContent"]["traces"])
 
 
 def test_trace_update_is_scoped_to_authenticated_actor(content_dir, search_db, tmp_path):

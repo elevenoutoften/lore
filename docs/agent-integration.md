@@ -31,8 +31,11 @@ memory.capture(
     lane="ops",
     metadata={
         "title": "Deploy ordering",
-        "source_paths": ["ops/deploy/Update-Server.sh"],
         "confidence": "medium",
+    },
+    provenance={
+        "source_paths": ["ops/deploy/Update-Server.sh"],
+        "evidence": "Verified in the deploy script.",
     },
 )
 ```
@@ -116,8 +119,10 @@ curl -sS https://lore.example.com/api/memory/capture \
     "metadata": {
       "title": "Lore CI failed on search tests",
       "related_pages": ["services/lore"],
-      "confidence": "high",
-      "sources": ["$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"]
+      "confidence": "high"
+    },
+    "provenance": {
+      "source_urls": ["$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"]
     }
   }'
 ```

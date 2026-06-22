@@ -80,7 +80,17 @@ def api_promotion_audit(repo: LoreRepository = Depends(get_repo)):
     return build_promotion_audit(repo)
 
 
-@router.post("/api/capture", response_model=CaptureResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/api/capture",
+    response_model=CaptureResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a draft capture for review",
+    description=(
+        "Compatibility-rich, page-oriented draft intake. The returned capture remains available to list, review, "
+        "transition, and promote; shared post-capture indexing and consolidation side effects still run. New agent "
+        "memory clients should use POST /api/memory/capture or lore_capture."
+    ),
+)
 def api_capture(
     payload: CaptureRequest,
     request: Request,

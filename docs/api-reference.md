@@ -147,15 +147,19 @@ curl -sS "$LORE_URL/api/lint/contradictions"
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| `POST` | `/api/capture` | Create a compatibility-rich draft page for review/status/promotion workflows. |
 | `GET` | `/api/captures` | List captures. Query: `status`, `limit`. |
 | `GET` | `/api/captures/digest` | Group draft/review captures. |
 | `POST` | `/api/captures/{page_id}/status` | Change capture status. |
 | `POST` | `/api/captures/{page_id}/promote` | Promote capture into a target page. |
 | `GET` | `/api/promotions` | Promotion audit. |
 
-New agent clients should use `POST /api/memory/capture` for the canonical
-typed memory-write surface. The older `POST /api/capture` endpoint remains
-available for the richer page-oriented capture workflow.
+`POST /api/capture` is the compatibility-rich, page-oriented draft inbox/review
+write. Its page response supports listing, status transitions, promotion, the UI,
+and older SDK clients. It remains supported and runs shared post-capture side
+effects. New agent clients should instead use `POST /api/memory/capture`,
+`lore_capture`, or `MemoryProvider.capture(...)` for the canonical durable
+capture-to-recall loop.
 
 ```bash
 curl -sS "$LORE_URL/api/captures?status=draft&limit=50"
@@ -204,9 +208,12 @@ curl -sS -X POST "$LORE_URL/api/memory/capture" \
       "capture_date": "2026-05-04",
       "related_pages": ["runbooks/deploy-lore"],
       "confidence": "medium",
-      "suggested_target_page": "runbooks/deploy-lore",
+      "suggested_target_page": "runbooks/deploy-lore"
+    },
+    "provenance": {
       "sources": ["docs/api-reference.md"],
-      "source_paths": ["lore_app/routes/memory.py"]
+      "source_paths": ["lore_app/routes/memory.py"],
+      "evidence": "Verified against the current memory route."
     }
   }'
 ```
@@ -348,16 +355,18 @@ These return HTML:
   "tool_calls": [{"tool": "search", "query": "lore config"}],
   "constraints": ["docs-only"],
   "policies_applied": ["policy.docs.v1"],
+  "provenance": {
+    "sources": ["README.md"],
+    "source_paths": ["lore_app/main.py"],
+    "source_urls": ["https://example.com"],
+    "evidence": "Supporting detail."
+  },
   "metadata": {
     "title": "Optional title",
     "capture_date": "2026-05-04",
     "related_pages": ["services/lore"],
     "confidence": "medium",
-    "suggested_target_page": "services/lore",
-    "sources": ["README.md"],
-    "source_paths": ["lore_app/main.py"],
-    "source_urls": ["https://example.com"],
-    "evidence": "Supporting detail."
+    "suggested_target_page": "services/lore"
   }
 }
 ```

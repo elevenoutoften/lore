@@ -74,8 +74,14 @@ See [[dailies/{capture_date}]].
                     "capture_date": capture_date,
                     "confidence": "high",
                     "suggested_target_page": durable_page_id,
-                    "sources": ["tests/test_capture_to_durable.py"],
-                    "evidence": f"{unique_term} appeared in the capture payload.",
+                },
+                "provenance": {
+                    "page_ids": [durable_page_id],
+                    "task_ids": ["flow_provenance"],
+                    "sources": ["durable-memory-regression"],
+                    "source_paths": ["tests/test_capture_to_durable.py"],
+                    "source_urls": ["https://example.test/aurora-evidence"],
+                    "evidence": f"{unique_term} appeared in the structured provenance payload.",
                 },
                 "tool_calls": [{"tool": "pytest", "target": "capture-to-durable"}],
                 "constraints": ["offline-only"],
@@ -93,6 +99,18 @@ See [[dailies/{capture_date}]].
         assert capture_detail["frontmatter"]["status"] == "draft"
         assert capture_detail["frontmatter"]["source_task"] == "flow_000598"
         assert capture_detail["frontmatter"]["confidence"] == "high"
+        capture_provenance = capture_detail["frontmatter"]["provenance"]
+        assert capture_provenance["page_ids"] == [durable_page_id]
+        assert capture_provenance["task_ids"] == ["flow_provenance", "flow_000598"]
+        assert capture_provenance["sources"] == ["durable-memory-regression"]
+        assert capture_provenance["source_paths"] == ["tests/test_capture_to_durable.py"]
+        assert capture_provenance["source_urls"] == ["https://example.test/aurora-evidence"]
+        assert capture_provenance["evidence"] == f"{unique_term} appeared in the structured provenance payload."
+        assert capture_provenance["actor"] == "codex"
+        assert capture_detail["frontmatter"]["sources"] == capture_provenance["sources"]
+        assert capture_detail["frontmatter"]["source_paths"] == capture_provenance["source_paths"]
+        assert capture_detail["frontmatter"]["source_urls"] == capture_provenance["source_urls"]
+        assert capture_detail["frontmatter"]["evidence"] == capture_provenance["evidence"]
         assert capture_detail["tool_calls"] == [{"tool": "pytest", "target": "capture-to-durable"}]
         assert capture_detail["constraints"] == ["offline-only"]
         assert capture_detail["policies_applied"] == ["L-MEM-05"]
@@ -116,9 +134,19 @@ See [[dailies/{capture_date}]].
         assert consolidation_payload["candidates_extracted"] >= 1
         assert consolidation_payload["plans_generated"] >= 1
 
-        candidates = client.get("/api/extraction/candidates", params={"status": "candidate"})
+        candidates = client.get(
+            "/api/ledger/candidates",
+            params={"status": "candidate", "capture_id": capture_id},
+        )
         assert candidates.status_code == 200, candidates.text
-        assert any(capture_id in candidate["source_capture_ids"] for candidate in candidates.json()["candidates"])
+        capture_candidates = candidates.json()
+        assert capture_candidates
+        assert all(capture_id in candidate["source_capture_ids"] for candidate in capture_candidates)
+        assert any(unique_term in (candidate["evidence"] or "") for candidate in capture_candidates)
+
+        provenance_lookup = client.get(f"/api/provenance/capture/{capture_id}")
+        assert provenance_lookup.status_code == 200, provenance_lookup.text
+        assert provenance_lookup.json()["provenance"] == capture_provenance
 
         plans = client.get("/api/consolidation/plans")
         assert plans.status_code == 200, plans.text
@@ -135,6 +163,10 @@ See [[dailies/{capture_date}]].
         assert durable_detail["kind"] != "capture"
         assert durable_detail["frontmatter"]["kind"] == "service"
         assert unique_term in durable_detail["content"]
+
+        recalled = client.get("/api/memory/recall", params={"query": unique_term, "limit": 20})
+        assert recalled.status_code == 200, recalled.text
+        assert any(capture_id in claim["source_capture_ids"] for claim in recalled.json()["claims"])
 
         distilled = client.post(
             "/api/distill/daily",

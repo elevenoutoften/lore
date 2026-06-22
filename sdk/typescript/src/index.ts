@@ -14,6 +14,22 @@ export interface LoreClientOptions {
 export type MemoryNamespace = "inbox" | "notes";
 export type MemoryLane = "project" | "procedural" | "ops" | "companion" | "draft";
 
+export interface ProvenanceRef {
+  page_ids?: string[];
+  capture_ids?: string[];
+  trace_ids?: string[];
+  policy_ids?: string[];
+  candidate_ids?: string[];
+  task_ids?: string[];
+  sources?: string[];
+  source_paths?: string[];
+  source_urls?: string[];
+  evidence?: string;
+  source_task?: string;
+  tool_calls?: JsonObject[];
+  constraints?: string[];
+}
+
 export interface MemoryCaptureOptions {
   agentName?: string;
   namespace?: MemoryNamespace;
@@ -26,6 +42,7 @@ export interface MemoryCaptureOptions {
   toolCalls?: JsonObject[];
   constraints?: string[];
   policiesApplied?: string[];
+  provenance?: ProvenanceRef;
 }
 
 export interface MemoryCaptureResponse {
@@ -428,6 +445,7 @@ export class MemoryProvider extends LoreClient {
         tool_calls: options.toolCalls,
         constraints: options.constraints,
         policies_applied: options.policiesApplied,
+        provenance: options.provenance,
       }),
     })) as MemoryCaptureResponse;
     return result.capture_id;

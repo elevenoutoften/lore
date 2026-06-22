@@ -165,7 +165,7 @@ Search, graph, RAG, and lint:
 
 Captures, heartbeat, distillation, extraction, and memory:
 
-- `POST /api/capture`
+- `POST /api/capture` (draft inbox/review compatibility workflow)
 - `GET /api/captures`
 - `GET /api/captures/digest`
 - `POST /api/captures/{page_id}/status`
@@ -183,7 +183,7 @@ Captures, heartbeat, distillation, extraction, and memory:
 - `POST /api/extraction/deadletters/{deadletter_id}/retry`
 - `GET /api/extraction/batches`
 - `GET /api/extraction/candidates`
-- `POST /api/memory/capture`
+- `POST /api/memory/capture` (canonical durable agent-memory write)
 - `GET /api/memory/recall`
 - `POST /api/memory/recall/ack`
 - `GET /api/memory/health`
@@ -245,8 +245,7 @@ broken internal links, missing metadata or sources, stale pages, duplicate
 titles, orphan pages, low-confidence pages, and contradiction markers. Lint is
 advisory; raw Markdown remains the source of truth.
 
-The capture endpoint writes rough agent memory into ordinary draft Markdown
-pages for autonomous consolidation. Shared captures go under
+Every capture first lands as an ordinary draft Markdown artifact. Shared captures go under
 `inbox/YYYY-MM-DD/<slug>`; agent-scoped notes go under
 `notes/<agent>/YYYY-MM-DD/<slug>`. In authenticated modes Lore server-stamps the
 capture actor and notes agent from the bearer key actor; body-provided actor or
@@ -256,9 +255,17 @@ sources. Captured memory is not accepted project truth until an agent,
 automation, or explicit operator action promotes or incorporates it into
 canonical Lore pages.
 
-New agent clients should prefer `POST /api/memory/capture` for the canonical
-typed memory-write surface. The older `POST /api/capture` endpoint remains
-available for the richer page-oriented capture workflow.
+Use `POST /api/memory/capture`, `lore_capture`, or `MemoryProvider.capture(...)`
+for the canonical durable agent-memory loop: draft intake, indexing, extraction,
+consolidation, then recall. Use `POST /api/capture` only for the compatibility-rich
+draft inbox/review workflow whose page response feeds capture listing, status,
+promotion, UI, and older SDK consumers. It remains supported and runs the same
+post-capture side effects, but it is not the canonical new-client contract.
+
+On `lore_capture`, put source references and evidence only in the structured
+`provenance` object (`sources`, `source_paths`, `source_urls`, `evidence`, and
+related IDs). The tool does not accept a writable `actor`; authenticated identity
+always comes from the server.
 
 The captures endpoint lists the intake queue. It defaults to draft captures and
 accepts `status=all` to show every capture status. Human review is an escalation

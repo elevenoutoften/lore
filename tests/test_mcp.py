@@ -61,6 +61,19 @@ def test_mcp_initialize_and_tool_list(client):
     ]
 
 
+def test_lore_capture_schema_has_one_structured_server_safe_provenance_input(client):
+    tools = rpc(client, "tools/list").json()["result"]["tools"]
+    capture = next(tool for tool in tools if tool["name"] == "lore_capture")
+    properties = capture["inputSchema"]["properties"]
+
+    assert "actor" not in properties
+    assert set(properties).isdisjoint({"sources", "source_paths", "source_urls", "evidence"})
+    provenance = properties["provenance"]
+    assert provenance["type"] == "object"
+    assert {"sources", "source_paths", "source_urls", "evidence"} <= set(provenance["properties"])
+    assert "actor" not in provenance["properties"]
+
+
 def test_mcp_default_tool_payload_is_at_least_80_percent_smaller(client):
     from lore_app.mcp.tools import TOOLS
 

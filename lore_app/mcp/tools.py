@@ -45,6 +45,7 @@ from ..schemas import (
     DailyDistillRequest,
     MetadataUpdate,
     PrecedentSearchRequest,
+    ProvenanceRef,
     TraceCreateRequest,
     TraceEntry,
     TraceListResponse,
@@ -66,6 +67,21 @@ DEFAULT_TOOL_NAMES = (
     "lore_read_page",
     "lore_upsert_page",
 )
+
+
+def _capture_provenance_input_schema() -> dict[str, Any]:
+    """Expose ProvenanceRef without the server-owned actor field."""
+    schema = ProvenanceRef.model_json_schema()
+    properties = dict(schema.get("properties") or {})
+    properties.pop("actor", None)
+    schema["properties"] = properties
+    schema["description"] = (
+        "Structured capture provenance. Values here take precedence; retained legacy REST fields are merged after it."
+    )
+    return schema
+
+
+CAPTURE_PROVENANCE_INPUT_SCHEMA = _capture_provenance_input_schema()
 
 TOOLS: list[dict[str, Any]] = [
     {
@@ -479,7 +495,10 @@ TOOLS: list[dict[str, Any]] = [
         "name": "lore_capture",
         "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Capture Lore Memory",
-        "description": "Capture rough agent memory into a draft inbox or notes Markdown page for autonomous consolidation.",
+        "description": (
+            "Canonical durable agent-memory write. Creates a reviewable draft intake artifact, then runs the shared "
+            "indexing and consolidation loop. Actor identity is always derived from the authenticated caller."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -527,34 +546,11 @@ TOOLS: list[dict[str, Any]] = [
                     "type": "string",
                     "description": "Canonical Lore page where this may eventually be promoted.",
                 },
-                "sources": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Evidence, source paths, or URLs behind the observation.",
-                },
-                "source_paths": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Repo paths or file references supporting the observation.",
-                },
-                "source_urls": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "HTTP/HTTPS URLs supporting the observation.",
-                },
-                "provenance": {"type": "object", "description": "Unified provenance references."},
-                "evidence": {
-                    "type": "string",
-                    "description": "Supporting evidence text behind the observation.",
-                },
+                "provenance": CAPTURE_PROVENANCE_INPUT_SCHEMA,
                 "lane": {
                     "type": "string",
                     "enum": ["project", "procedural", "ops", "companion", "draft"],
                     "description": "Retrieval lane for categorizing the capture.",
-                },
-                "actor": {
-                    "type": "string",
-                    "description": "Agent name that produced this capture.",
                 },
             },
             "required": ["observation"],

@@ -343,7 +343,7 @@ curl http://localhost:8078/api/lint
 ```bash
 curl -X POST http://localhost:8078/api/memory/capture \
   -H "Content-Type: application/json" \
-  -d '{"text":"Workflow Engine queue retries should be documented before changing gateway behavior.","agent_name":"codex","namespace":"notes","lane":"ops","task_id":"FLOW-105","metadata":{"title":"Workflow Engine queue note","capture_date":"2026-05-01","related_pages":["services/workflow-engine"],"confidence":"medium","suggested_target_page":"services/workflow-engine","sources":["src/gateway/app.py"]}}'
+  -d '{"text":"Workflow Engine queue retries should be documented before changing gateway behavior.","agent_name":"codex","namespace":"notes","lane":"ops","task_id":"FLOW-105","provenance":{"source_paths":["src/gateway/app.py"]},"metadata":{"title":"Workflow Engine queue note","capture_date":"2026-05-01","related_pages":["services/workflow-engine"],"confidence":"medium","suggested_target_page":"services/workflow-engine"}}'
 ```
 
 Request body:
@@ -355,13 +355,15 @@ Request body:
   "namespace": "notes",
   "lane": "ops",
   "task_id": "FLOW-105",
+  "provenance": {
+    "source_paths": ["src/gateway/app.py"]
+  },
   "metadata": {
     "title": "Workflow Engine queue note",
     "capture_date": "2026-05-01",
     "related_pages": ["services/workflow-engine"],
     "confidence": "medium",
-    "suggested_target_page": "services/workflow-engine",
-    "sources": ["src/gateway/app.py"]
+    "suggested_target_page": "services/workflow-engine"
   }
 }
 ```

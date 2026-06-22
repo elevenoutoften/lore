@@ -211,6 +211,58 @@ def test_capture_with_structured_sources(client):
     assert fm.get("evidence") == "Verified by running ops/checks/test-lore-public.sh"
 
 
+def test_legacy_capture_provenance_normalizes_with_structured_precedence(client):
+    response = client.post(
+        "/api/capture",
+        json={
+            "observation": "Structured and legacy provenance normalize once.",
+            "sources": ["legacy-source", "shared-source"],
+            "source_paths": ["legacy.py", "shared.py"],
+            "source_urls": ["https://legacy.example", "https://shared.example"],
+            "evidence": "legacy evidence",
+            "task_id": "flow_legacy",
+            "related_pages": ["services/legacy-related"],
+            "provenance": {
+                "sources": ["structured-source", "shared-source"],
+                "source_paths": ["structured.py", "shared.py"],
+                "source_urls": ["https://structured.example", "https://shared.example"],
+                "evidence": "structured evidence",
+                "task_ids": ["flow_structured"],
+                "page_ids": ["services/structured-related"],
+            },
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    frontmatter = response.json()["page"]["frontmatter"]
+    provenance = frontmatter["provenance"]
+    assert provenance["sources"] == ["structured-source", "shared-source", "legacy-source"]
+    assert provenance["source_paths"] == ["structured.py", "shared.py", "legacy.py"]
+    assert provenance["source_urls"] == [
+        "https://structured.example",
+        "https://shared.example",
+        "https://legacy.example",
+    ]
+    assert provenance["evidence"] == "structured evidence"
+    assert provenance["task_ids"] == ["flow_structured", "flow_legacy"]
+    assert provenance["page_ids"] == ["services/structured-related", "services/legacy-related"]
+    assert frontmatter["sources"] == provenance["sources"]
+    assert frontmatter["source_paths"] == provenance["source_paths"]
+    assert frontmatter["source_urls"] == provenance["source_urls"]
+    assert frontmatter["evidence"] == provenance["evidence"]
+
+
+def test_capture_endpoints_publish_explicit_draft_and_durable_semantics(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    draft = paths["/api/capture"]["post"]
+    durable = paths["/api/memory/capture"]["post"]
+
+    assert draft["summary"] == "Create a draft capture for review"
+    assert "list, review, transition, and promote" in draft["description"]
+    assert durable["summary"] == "Capture durable agent memory"
+    assert "consolidation loop used by recall" in durable["description"]
+
+
 def test_capture_template_matches_docs(client):
     """Capture output matches the documented template conventions."""
     resp = client.post(
@@ -535,8 +587,8 @@ def test_promotion_audit_mcp(client):
     assert len(audit["promoted_captures"]) >= 1
 
 
-def test_capture_mcp_structured_sources(client):
-    """MCP lore_capture tool accepts new source fields."""
+def test_capture_mcp_structured_provenance(client):
+    """MCP lore_capture accepts the canonical structured provenance object."""
     resp = rpc(
         client,
         "tools/call",
@@ -544,9 +596,11 @@ def test_capture_mcp_structured_sources(client):
             "name": "lore_capture",
             "arguments": {
                 "observation": "MCP structured sources test.",
-                "source_paths": ["src/main.py"],
-                "source_urls": ["https://example.com/docs"],
-                "evidence": "Seen in CI logs",
+                "provenance": {
+                    "source_paths": ["src/main.py"],
+                    "source_urls": ["https://example.com/docs"],
+                    "evidence": "Seen in CI logs",
+                },
             },
         },
     )

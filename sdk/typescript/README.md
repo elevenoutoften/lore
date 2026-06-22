@@ -47,6 +47,10 @@ const captureId = await memory.capture("Staging uses the blue deployment lane.",
   namespace: "notes",
   lane: "ops",
   taskId: "flow_000885",
+  provenance: {
+    source_paths: ["ops/deploy/Update-Server.sh"],
+    evidence: "Verified in the deploy script.",
+  },
   metadata: { confidence: "high" },
 });
 
@@ -63,6 +67,10 @@ admin callers can request an explicit cross-actor read with
 `recallResponse(query, { crossActor: true })`.
 
 ## Writes
+
+`LoreClient.createCapture(...)` targets the retained page-oriented draft
+inbox/review workflow. Use `MemoryProvider.capture(...)` for new durable
+agent-memory integrations.
 
 ```typescript
 await client.upsertPage(

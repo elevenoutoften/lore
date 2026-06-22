@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -9,6 +10,7 @@ SDK_PATH = ROOT / "sdk" / "python"
 sys.path.insert(0, str(SDK_PATH))
 
 from lore_sdk import LoreClient, MemoryProvider  # noqa: E402
+
 from lore_app.mcp.tools import TOOLS  # noqa: E402
 
 DOCS = ROOT / "docs"
@@ -58,3 +60,36 @@ def test_readme_mcp_tool_list_matches_registry():
     expected = [tool["name"] for tool in TOOLS]
 
     assert documented == expected, "README MCP tool list drifted from lore_app.mcp.tools.TOOLS"
+
+
+def test_capture_docs_distinguish_draft_review_from_durable_memory():
+    documents = {
+        "README.md": README.read_text(encoding="utf-8"),
+        "api-reference.md": (DOCS / "api-reference.md").read_text(encoding="utf-8"),
+        "agent-memory-contract.md": (DOCS / "agent-memory-contract.md").read_text(encoding="utf-8"),
+        "quickstart.md": (DOCS / "quickstart.md").read_text(encoding="utf-8"),
+    }
+    for name, text in documents.items():
+        assert "POST /api/memory/capture" in text, name
+        assert "POST /api/capture" in text, name
+        assert "canonical durable" in text, name
+        assert "draft" in text and "review" in text, name
+
+
+def test_lore_capture_examples_use_only_structured_provenance():
+    for filename in ("mcp-examples.md", "trace-protocol.md"):
+        text = (DOCS / filename).read_text(encoding="utf-8")
+        assert '"name": "lore_capture"' in text
+        assert '"provenance"' in text
+        capture_requests = []
+        for block in re.findall(r"```json\s*(.*?)```", text, re.DOTALL):
+            if '"name": "lore_capture"' not in block:
+                continue
+            payload = json.loads(block)
+            if "params" not in payload:
+                continue
+            capture_requests.append(payload["params"]["arguments"])
+        assert capture_requests, filename
+        for arguments in capture_requests:
+            assert set(arguments).isdisjoint({"actor", "sources", "source_paths", "source_urls", "evidence"})
+            assert "provenance" in arguments

@@ -14,6 +14,7 @@ from .config import LOOPBACK_HOSTS, LoreConfig, WorkspaceConfig
 from .rag.chunker import chunk_page
 from .rag.hybrid_retrieval import hybrid_retrieve
 from .repository import InvalidPageId, LoreRepository, build_candidate_page_index, page_result_provenance
+from .schemas import ProvenanceRef
 from .security import sanitize_content, sanitize_page_id
 
 if TYPE_CHECKING:
@@ -93,7 +94,9 @@ def actor_from_request(request: Request) -> str:
 def stamp_capture_actor(payload: CaptureRequest, request: Request) -> CaptureRequest:
     """Return a capture payload attributed to the server-resolved caller."""
     actor = actor_from_request(request)
-    return payload.model_copy(update={"actor": actor, "agent": actor})
+    provenance = payload.provenance.model_copy(deep=True) if payload.provenance is not None else ProvenanceRef()
+    provenance.actor = actor
+    return payload.model_copy(update={"actor": actor, "agent": actor, "provenance": provenance})
 
 
 def stamp_trace_actor(payload: TraceCreateRequest, request: Request) -> TraceCreateRequest:

@@ -338,6 +338,11 @@ Response:
 
 ## Tool: `lore_capture`
 
+This is the canonical durable agent-memory write. It creates a reviewable draft
+artifact and runs the shared indexing/consolidation loop. Put all source and
+evidence data in the typed `provenance` object. Actor is server-owned and is not
+a writable tool input.
+
 Request:
 
 ```json
@@ -353,7 +358,10 @@ Request:
       "capture_date": "2026-05-01",
       "related_pages": ["services/workflow-engine"],
       "confidence": "medium",
-      "sources": ["src/gateway/app.py"]
+      "provenance": {
+        "source_paths": ["src/gateway/app.py"],
+        "evidence": "Verified in the gateway source."
+      }
     }
   }
 }
@@ -506,7 +514,7 @@ Request:
       "capture_date": "2026-05-22",
       "related_pages": ["services/flow"],
       "trace_id": "trace-abc123def456",
-      "sources": ["agent:nyx"]
+      "provenance": {"sources": ["agent:nyx"]}
     }
   }
 }

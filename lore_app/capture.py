@@ -59,15 +59,14 @@ def capture_memory(repo: LoreRepository, payload: CaptureRequest) -> PageDetail:
             validate_page_id(raw_id, "related_pages")
     if payload.suggested_target_page and payload.suggested_target_page.strip():
         validate_page_id(payload.suggested_target_page, "suggested_target_page")
-    for url in payload.source_urls:
-        if not validate_source_url(url):
-            raise InvalidPageId(f"Invalid source URL: {url!r}. Must start with http:// or https://")
-
     related_pages = normalize_page_ids(payload.related_pages)
     suggested_target_page = normalize_optional_page_id(payload.suggested_target_page)
     page_id = unique_page_id(repo, base_page_id)
-    effective_source_task = optional_string(payload.source_task) or optional_string(payload.task_id)
     provenance = merge_capture_provenance(payload, related_pages=related_pages)
+    for url in provenance.source_urls:
+        if not validate_source_url(url):
+            raise InvalidPageId(f"Invalid source URL: {url!r}. Must start with http:// or https://")
+    effective_source_task = optional_string(provenance.source_task)
     content = build_capture_markdown(
         title=title,
         observation=payload.observation,
@@ -76,12 +75,12 @@ def capture_memory(repo: LoreRepository, payload: CaptureRequest) -> PageDetail:
         source_task=effective_source_task,
         related_pages=related_pages,
         suggested_target_page=suggested_target_page,
-        sources=string_list(payload.sources),
-        source_paths=string_list(payload.source_paths),
-        source_urls=string_list(payload.source_urls),
-        evidence=optional_string(payload.evidence),
+        sources=provenance.sources,
+        source_paths=provenance.source_paths,
+        source_urls=provenance.source_urls,
+        evidence=provenance.evidence,
         epistemic_status=payload.epistemic_status,
-        actor=optional_string(payload.actor) or optional_string(payload.agent),
+        actor=provenance.actor,
         lane=optional_string(payload.lane),
         observed_at=optional_string(payload.observed_at) or datetime.now(UTC).isoformat(),
         valid_from=optional_string(payload.valid_from),
@@ -89,9 +88,9 @@ def capture_memory(repo: LoreRepository, payload: CaptureRequest) -> PageDetail:
         task_id=optional_string(payload.task_id),
         decision_id=optional_string(payload.decision_id),
         trace_id=optional_string(payload.trace_id),
-        tool_calls=payload.tool_calls or None,
-        constraints=string_list(payload.constraints) or None,
-        policies_applied=string_list(payload.policies_applied) or None,
+        tool_calls=provenance.tool_calls or None,
+        constraints=provenance.constraints or None,
+        policies_applied=provenance.policy_ids or None,
         tags=string_list(payload.tags) or None,
         provenance=provenance.model_dump(mode="json"),
     )

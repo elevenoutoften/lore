@@ -6,6 +6,11 @@ before they are accepted as Lore truth.
 
 ## Standard Inbox Capture
 
+This section documents compatibility fields accepted by the page-oriented
+`POST /api/capture` draft review endpoint. New durable agent clients should use
+`POST /api/memory/capture`, `lore_capture`, or `MemoryProvider.capture(...)` and
+place sources, paths, URLs, and evidence in the structured `provenance` object.
+
 Page ID format: `inbox/YYYY-MM-DD/<slug>`
 
 Use `namespace=inbox` for the shared intake queue. Inbox captures are rough

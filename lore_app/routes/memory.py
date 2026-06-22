@@ -48,7 +48,16 @@ if TYPE_CHECKING:
 router = APIRouter()
 
 
-@router.post("/api/memory/capture", response_model=MemoryCaptureResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/api/memory/capture",
+    response_model=MemoryCaptureResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Capture durable agent memory",
+    description=(
+        "Canonical durable agent-memory write. Creates a reviewable draft intake artifact, then runs the shared "
+        "indexing and consolidation loop used by recall."
+    ),
+)
 def api_memory_capture(
     payload: MemoryCaptureRequest,
     request: Request,
@@ -95,6 +104,7 @@ def api_memory_capture(
         or (metadata.get("constraints") if isinstance(metadata.get("constraints"), list) else []),
         policies_applied=payload.policies_applied
         or (metadata.get("policies_applied") if isinstance(metadata.get("policies_applied"), list) else []),
+        provenance=payload.provenance or metadata.get("provenance"),
     )
     capture_request = stamp_capture_actor(capture_request, request)
 
