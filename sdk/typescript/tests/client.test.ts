@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { LoreClient, LoreError } from "../src/index.js";
+import { LoreClient, LoreError, MemoryProvider } from "../src/index.js";
 
 type FetchCall = {
   url: string;
@@ -63,6 +63,101 @@ test("POST request createCapture", async () => {
     tags: ["gpu"],
     observation: "Observed a deployment detail.",
     sources: ["README.md"],
+  });
+});
+
+test("MemoryProvider capture uses canonical endpoint and shared auth transport", async () => {
+  mockFetch(201, { capture_id: "notes/nyx/2026-06-22/deployment-note", timestamp: "2026-06-22T00:00:00Z" });
+  const memory = new MemoryProvider({ baseUrl: "https://lore.example.test", authToken: "nyx-token" });
+
+  const captureId = await memory.capture("Deployment uses the blue lane.", {
+    agentName: "nyx",
+    namespace: "notes",
+    lane: "ops",
+    taskId: "flow_000885",
+    metadata: { title: "Deployment note", confidence: "high" },
+  });
+
+  assert.equal(captureId, "notes/nyx/2026-06-22/deployment-note");
+  assert.equal(calls[0].url, "https://lore.example.test/api/memory/capture");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal((calls[0].init.headers as Record<string, string>).Authorization, "Bearer nyx-token");
+  assert.deepEqual(JSON.parse(calls[0].init.body as string), {
+    text: "Deployment uses the blue lane.",
+    agent_name: "nyx",
+    namespace: "notes",
+    metadata: { title: "Deployment note", confidence: "high" },
+    lane: "ops",
+    task_id: "flow_000885",
+  });
+});
+
+test("MemoryProvider recall mirrors Python options and returns typed claims", async () => {
+  mockFetch(200, {
+    query: "deployment",
+    count: 1,
+    latency_ms: 1.2,
+    weights: { strength: 0.45 },
+    claims: [{ candidate_id: "c1", subject: "services/lore", recall_score: 0.9 }],
+    pending_captures: 0,
+    hint: null,
+  });
+  const memory = new MemoryProvider({ baseUrl: "https://lore.example.test" });
+
+  const claims = await memory.recall("deployment", {
+    subject: "services/lore",
+    lane: "ops",
+    actor: "nyx",
+    minStrength: 0.25,
+    limit: 7,
+    recordAccess: true,
+    crossActor: true,
+  });
+
+  assert.equal(claims[0].candidate_id, "c1");
+  assert.equal(
+    calls[0].url,
+    "https://lore.example.test/api/memory/recall?query=deployment&subject=services%2Flore&lane=ops&actor=nyx&min_strength=0.25&limit=7&record_access=true&cross_actor=true",
+  );
+  assert.equal(calls[0].init.method, "GET");
+});
+
+test("MemoryProvider recallResponse preserves the diagnostic envelope", async () => {
+  mockFetch(200, {
+    query: "pending",
+    count: 0,
+    latency_ms: 0.5,
+    weights: {},
+    claims: [],
+    pending_captures: 1,
+    hint: "Capture is awaiting consolidation.",
+  });
+  const memory = new MemoryProvider({ baseUrl: "https://lore.example.test" });
+
+  const response = await memory.recallResponse("pending");
+
+  assert.equal(response.count, 0);
+  assert.equal(response.pending_captures, 1);
+  assert.match(response.hint ?? "", /consolidation/i);
+  assert.equal(
+    calls[0].url,
+    "https://lore.example.test/api/memory/recall?query=pending&limit=20&record_access=false",
+  );
+});
+
+test("MemoryProvider acknowledgeRecall supports explicit authorized cross-actor scope", async () => {
+  mockFetch(200, { acknowledged_count: 2, timestamp: "2026-06-22T00:00:00Z" });
+  const memory = new MemoryProvider({ baseUrl: "https://lore.example.test", authToken: "admin-token" });
+
+  const response = await memory.acknowledgeRecall(["c1", "c2"], { actor: "nyx", crossActor: true });
+
+  assert.equal(response.acknowledged_count, 2);
+  assert.equal(calls[0].url, "https://lore.example.test/api/memory/recall/ack");
+  assert.equal((calls[0].init.headers as Record<string, string>).Authorization, "Bearer admin-token");
+  assert.deepEqual(JSON.parse(calls[0].init.body as string), {
+    candidate_ids: ["c1", "c2"],
+    actor: "nyx",
+    cross_actor: true,
   });
 });
 

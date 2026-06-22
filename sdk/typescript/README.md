@@ -1,6 +1,6 @@
 # Lore SDK
 
-Native-fetch TypeScript client for the Lore REST API.
+Native-fetch TypeScript client for Lore pages and durable memory.
 
 ## Installation
 
@@ -26,6 +26,41 @@ const pages = await client.listPages({ kind: "project" });
 const page = await client.getPage("projects/example-project");
 const results = await client.search("ComfyUI gateway", { limit: 10 });
 ```
+
+## Durable Memory
+
+`MemoryProvider` shares `LoreClient`'s configuration, bearer authentication,
+timeouts, and `LoreError` behavior. Capture and recall are scoped by the actor
+resolved from the bearer token; an admin must opt in with `crossActor: true` to
+recall outside that scope.
+
+```typescript
+import { MemoryProvider } from "axis-lore-sdk";
+
+const memory = new MemoryProvider({
+  baseUrl: "https://lore.example",
+  authToken: process.env.LORE_API_KEY,
+});
+
+const captureId = await memory.capture("Staging uses the blue deployment lane.", {
+  agentName: "nyx",
+  namespace: "notes",
+  lane: "ops",
+  taskId: "flow_000885",
+  metadata: { confidence: "high" },
+});
+
+const recalled = await memory.recallResponse("staging deployment", { limit: 5 });
+const usedIds = recalled.claims.map((claim) => claim.candidate_id);
+if (usedIds.length > 0) {
+  await memory.acknowledgeRecall(usedIds);
+}
+```
+
+`recall()` returns just the typed claims array. `recallResponse()` also returns
+the count, ranking weights, pending-capture count, and diagnostic hint. Authorized
+admin callers can request an explicit cross-actor read with
+`recallResponse(query, { crossActor: true })`.
 
 ## Writes
 

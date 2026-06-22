@@ -1,6 +1,6 @@
 name: lore
-version: 2.0.0
-description: "Lore knowledge backend — structured memory with pages, wikilinks, search, and capture pipeline. Uses lore_sdk for API calls."
+version: 2.1.0
+description: "Lore knowledge backend — structured memory with page search/read and the durable capture/recall/ack loop. Uses lore_sdk for API calls."
 hooks:
   - on_memory_write
   - on_pre_compress

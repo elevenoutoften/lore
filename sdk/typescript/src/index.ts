@@ -11,6 +11,82 @@ export interface LoreClientOptions {
   timeout?: number;
 }
 
+export type MemoryNamespace = "inbox" | "notes";
+export type MemoryLane = "project" | "procedural" | "ops" | "companion" | "draft";
+
+export interface MemoryCaptureOptions {
+  agentName?: string;
+  namespace?: MemoryNamespace;
+  metadata?: JsonObject;
+  lane?: MemoryLane;
+  actor?: string;
+  taskId?: string;
+  decisionId?: string;
+  traceId?: string;
+  toolCalls?: JsonObject[];
+  constraints?: string[];
+  policiesApplied?: string[];
+}
+
+export interface MemoryCaptureResponse {
+  capture_id: string;
+  timestamp: string;
+}
+
+export interface MemoryRecallOptions {
+  subject?: string;
+  lane?: MemoryLane;
+  actor?: string;
+  minStrength?: number;
+  limit?: number;
+  recordAccess?: boolean;
+  /** Admin-only: explicitly recall outside the authenticated actor scope. */
+  crossActor?: boolean;
+}
+
+export interface MemoryRecallClaim {
+  candidate_id: string;
+  subject: string;
+  predicate: string;
+  object: string;
+  status: string;
+  confidence: string | null;
+  actor: string | null;
+  lane: string | null;
+  strength: number;
+  access_count: number;
+  age_days: number;
+  recall_score: number;
+  recall_signals: Record<string, number>;
+  source_page_ids: string[];
+  source_capture_ids: string[];
+  valid_from: string | null;
+  valid_until: string | null;
+  updated_at: string | null;
+}
+
+export interface MemoryRecallResponse {
+  query: string | null;
+  count: number;
+  latency_ms: number;
+  weights: Record<string, number>;
+  claims: MemoryRecallClaim[];
+  pending_captures: number;
+  hint: string | null;
+}
+
+export interface MemoryRecallAckOptions {
+  /** Admin-only actor target; requires crossActor. */
+  actor?: string;
+  /** Admin-only: acknowledge claims outside the authenticated actor scope. */
+  crossActor?: boolean;
+}
+
+export interface MemoryRecallAckResponse {
+  acknowledged_count: number;
+  timestamp: string;
+}
+
 type QueryParams = Record<string, string | number | boolean | string[] | number[] | undefined | null>;
 type RequestBody = JsonObject | any[];
 
@@ -244,7 +320,7 @@ export class LoreClient {
     return this.request("GET", "/mcp");
   }
 
-  private async request(
+  protected async request(
     method: string,
     path: string,
     options: { params?: QueryParams; data?: RequestBody } = {},
@@ -304,7 +380,7 @@ export class LoreClient {
       .join("/");
   }
 
-  private withoutUndefined(values: JsonObject): JsonObject {
+  protected withoutUndefined(values: JsonObject): JsonObject {
     return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined && value !== null));
   }
 
@@ -332,5 +408,60 @@ export class LoreClient {
       return text;
     }
     return text;
+  }
+}
+
+/** Typed durable-memory client using the same transport, auth, timeout, and errors as LoreClient. */
+export class MemoryProvider extends LoreClient {
+  async capture(memoryText: string, options: MemoryCaptureOptions = {}): Promise<string> {
+    const result = (await this.request("POST", "/api/memory/capture", {
+      data: this.withoutUndefined({
+        text: memoryText,
+        agent_name: options.agentName,
+        namespace: options.namespace ?? "inbox",
+        metadata: options.metadata,
+        lane: options.lane,
+        actor: options.actor,
+        task_id: options.taskId,
+        decision_id: options.decisionId,
+        trace_id: options.traceId,
+        tool_calls: options.toolCalls,
+        constraints: options.constraints,
+        policies_applied: options.policiesApplied,
+      }),
+    })) as MemoryCaptureResponse;
+    return result.capture_id;
+  }
+
+  async recall(query?: string, options: MemoryRecallOptions = {}): Promise<MemoryRecallClaim[]> {
+    return (await this.recallResponse(query, options)).claims;
+  }
+
+  recallResponse(query?: string, options: MemoryRecallOptions = {}): Promise<MemoryRecallResponse> {
+    return this.request("GET", "/api/memory/recall", {
+      params: {
+        query,
+        subject: options.subject,
+        lane: options.lane,
+        actor: options.actor,
+        min_strength: options.minStrength || undefined,
+        limit: options.limit ?? 20,
+        record_access: options.recordAccess ?? false,
+        cross_actor: options.crossActor || undefined,
+      },
+    }) as Promise<MemoryRecallResponse>;
+  }
+
+  acknowledgeRecall(
+    candidateIds: string[],
+    options: MemoryRecallAckOptions = {},
+  ): Promise<MemoryRecallAckResponse> {
+    return this.request("POST", "/api/memory/recall/ack", {
+      data: this.withoutUndefined({
+        candidate_ids: candidateIds,
+        actor: options.actor,
+        cross_actor: options.crossActor || undefined,
+      }),
+    }) as Promise<MemoryRecallAckResponse>;
   }
 }

@@ -1,10 +1,10 @@
 """Lore memory plugin — MemoryProvider for the Lore knowledge backend.
 
 Connects Hermes to a Lore server (default http://localhost:8078) and
-exposes search, read, and capture tools.  Lifecycle hooks mirror
+exposes search, read, capture, recall, and acknowledgement tools.  Lifecycle hooks mirror
 built-in memory writes and extract insights before context compression.
 
-All API calls go through ``lore_sdk.LoreClient`` — no local HTTP code.
+All API calls go through the canonical ``lore_sdk`` clients — no local HTTP code.
 
 Configuration is via environment variables only:
   LORE_BASE_URL  — Lore server URL (default: http://localhost:8078)
@@ -38,9 +38,11 @@ if _SDK_PATH.name == "lore_sdk" and _SDK_PATH.is_dir():
 if _SDK_PATH.is_dir() and str(_SDK_PATH) not in sys.path:
     sys.path.append(str(_SDK_PATH))
 
-from agent.memory_provider import MemoryProvider  # noqa: E402
+from agent.memory_provider import MemoryProvider as HermesMemoryProvider  # noqa: E402
 from lore_sdk import LoreClient  # noqa: E402
+from lore_sdk import MemoryProvider as LoreSdkMemoryProvider  # noqa: E402
 from lore_sdk.exceptions import LoreError  # noqa: E402
+from lore_sdk.memory_provider import MemoryProviderError  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +100,8 @@ LORE_READ_SCHEMA: dict[str, Any] = {
 LORE_CAPTURE_SCHEMA: dict[str, Any] = {
     "name": "lore_capture",
     "description": (
-        "Capture an observation or insight to the Lore knowledge base. "
-        "Creates a draft capture that can later be promoted to a canonical page. "
+        "Capture an observation or insight into Lore durable memory. "
+        "The capture is consolidated into ranked claims for later recall. "
         "Use for important discoveries, decisions, or facts worth remembering "
         "across sessions."
     ),
@@ -118,6 +120,11 @@ LORE_CAPTURE_SCHEMA: dict[str, Any] = {
                 "type": "string",
                 "enum": ["inbox", "notes"],
                 "description": "inbox for quick captures, notes for agent observations (default: notes)",
+            },
+            "lane": {
+                "type": "string",
+                "enum": ["project", "procedural", "ops", "companion", "draft"],
+                "description": "Optional retrieval lane for filtering later recall",
             },
             "confidence": {
                 "type": "string",
@@ -138,10 +145,70 @@ LORE_CAPTURE_SCHEMA: dict[str, Any] = {
     },
 }
 
+LORE_RECALL_SCHEMA: dict[str, Any] = {
+    "name": "lore_recall",
+    "description": (
+        "Recall durable Lore claims ranked by relevance, recency, strength, and salience. "
+        "Returns candidate IDs for lore_ack plus a hint when no claims are ready."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Optional natural-language query to bias ranking",
+            },
+            "subject": {
+                "type": "string",
+                "description": "Filter to an exact normalized subject",
+            },
+            "lane": {
+                "type": "string",
+                "enum": ["project", "procedural", "ops", "companion", "draft"],
+                "description": "Filter to a retrieval lane",
+            },
+            "min_strength": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Minimum claim strength (default 0)",
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 200,
+                "description": "Maximum claims to return (default 20)",
+            },
+        },
+    },
+}
+
+LORE_ACK_SCHEMA: dict[str, Any] = {
+    "name": "lore_ack",
+    "description": (
+        "Acknowledge recalled Lore claims that were actually used. "
+        "This boosts their salience without changing recency or decay age."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "candidate_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "description": "Candidate IDs returned by lore_recall",
+            },
+        },
+        "required": ["candidate_ids"],
+    },
+}
+
 ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     LORE_SEARCH_SCHEMA,
     LORE_READ_SCHEMA,
     LORE_CAPTURE_SCHEMA,
+    LORE_RECALL_SCHEMA,
+    LORE_ACK_SCHEMA,
 ]
 
 
@@ -150,10 +217,11 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
 # ---------------------------------------------------------------------------
 
 
-class LoreMemoryProvider(MemoryProvider):
+class LoreMemoryProvider(HermesMemoryProvider):
     """Lore knowledge backend — pages, wikilinks, search, and capture pipeline.
 
-    Delegates all HTTP I/O to ``lore_sdk.LoreClient``.
+    Delegates all HTTP I/O to ``lore_sdk.LoreClient`` and the canonical
+    ``lore_sdk.MemoryProvider``.
     """
 
     def __init__(self) -> None:
@@ -162,6 +230,7 @@ class LoreMemoryProvider(MemoryProvider):
         self._agent_context: str = ""
         self._connected: bool = False
         self._client: LoreClient | None = None
+        self._memory_client: LoreSdkMemoryProvider | None = None
         # Prefetch cache: {query: result_string}
         self._prefetch_cache: dict[str, str] = {}
         self._prefetch_lock = threading.Lock()
@@ -203,10 +272,13 @@ class LoreMemoryProvider(MemoryProvider):
         self._connected = False
 
         try:
+            base_url = os.environ.get("LORE_BASE_URL", "http://localhost:8078")
+            api_key = os.environ.get("LORE_API_KEY", "")
             self._client = LoreClient(
-                base_url=os.environ.get("LORE_BASE_URL", "http://localhost:8078"),
-                auth_token=os.environ.get("LORE_API_KEY", ""),
+                base_url=base_url,
+                auth_token=api_key,
             )
+            self._memory_client = LoreSdkMemoryProvider(base_url=base_url, api_key=api_key)
             # Warm-up: verify connectivity with a lightweight request.
             self._client.list_pages(limit=1)
             self._connected = True
@@ -242,7 +314,8 @@ class LoreMemoryProvider(MemoryProvider):
             "Lore knowledge backend connected. "
             "Use lore_search to find relevant context, "
             "lore_read to retrieve pages, and "
-            "lore_capture to persist important observations. "
+            "lore_capture to persist important observations, lore_recall to retrieve "
+            "ranked durable claims, and lore_ack after using recalled claims. "
             "Lore pages are structured knowledge — concepts, decisions, runbooks, "
             "and project docs linked by wikilinks."
         )
@@ -257,7 +330,7 @@ class LoreMemoryProvider(MemoryProvider):
         return ALL_TOOL_SCHEMAS
 
     def handle_tool_call(self, tool_name: str, args: dict[str, Any], **kwargs) -> str:
-        if not self._client:
+        if not self._client or not self._memory_client:
             return json.dumps({"error": "Lore provider not configured"})
 
         # Lazy reconnect if disconnected.
@@ -277,26 +350,41 @@ class LoreMemoryProvider(MemoryProvider):
             elif tool_name == "lore_read":
                 result = self._client.get_page(args["page_id"])
             elif tool_name == "lore_capture":
-                metadata: dict[str, Any] = {}
+                metadata: dict[str, Any] = {"tags": ["agent-memory"]}
+                if args.get("title"):
+                    metadata["title"] = args["title"]
                 if args.get("confidence"):
                     metadata["confidence"] = args["confidence"]
-                if args.get("source_task"):
-                    metadata["source_task"] = args["source_task"]
                 if args.get("related_pages"):
                     metadata["related_pages"] = args["related_pages"]
-                result = self._client.create_capture(
-                    title=args.get("title", ""),
-                    body=args["observation"],
-                    source=self._agent_name,
-                    tags=["agent-memory"],
-                    **metadata,
+                capture_id = self._memory_client.capture(
+                    memory_text=args["observation"],
+                    agent_name=self._agent_name,
+                    namespace=args.get("namespace", "notes"),
+                    metadata=metadata,
+                    lane=args.get("lane"),
+                    task_id=args.get("source_task"),
                 )
+                result = {"capture_id": capture_id}
+            elif tool_name == "lore_recall":
+                result = self._memory_client.recall_response(
+                    args.get("query"),
+                    subject=args.get("subject"),
+                    lane=args.get("lane"),
+                    min_strength=args.get("min_strength", 0.0),
+                    limit=args.get("limit", 20),
+                )
+            elif tool_name == "lore_ack":
+                result = self._memory_client.acknowledge_recall(args["candidate_ids"])
             else:
                 return json.dumps({"error": f"Unknown Lore tool: {tool_name}"})
             return json.dumps(result)
         except LoreError as exc:
             logger.error("Lore tool %s failed: %s", tool_name, exc)
             return json.dumps({"error": exc.message, "status_code": exc.status_code})
+        except MemoryProviderError as exc:
+            logger.error("Lore memory tool %s failed: %s", tool_name, exc)
+            return json.dumps({"error": str(exc)})
         except Exception as exc:
             logger.error("Lore tool %s unexpected error: %s", tool_name, exc)
             return json.dumps({"error": str(exc)})
@@ -365,7 +453,7 @@ class LoreMemoryProvider(MemoryProvider):
         # Skip writes for non-primary contexts (cron, subagent, etc.)
         if self._agent_context and self._agent_context != "primary":
             return
-        if not self._client:
+        if not self._memory_client:
             return
         # Lazy reconnect if needed.
         if not self._connected and not self._try_reconnect():
@@ -377,15 +465,15 @@ class LoreMemoryProvider(MemoryProvider):
             # Lore sanitizes the tags field on captures, keeping only known tags.
             # Use structured capture fields (source_task) for primary provenance
             # and add a compact provenance line to the body for the rest.
-            tags = ["agent-memory"]
             prov_parts = []
             for key in ("write_origin", "execution_context", "platform", "tool_name"):
                 if meta.get(key):
                     prov_parts.append(f"{key}={meta[key]}")
             provenance_line = f"[{' '.join(prov_parts)}]" if prov_parts else ""
-            extra: dict[str, Any] = {}
-            if source_task:
-                extra["source_task"] = source_task
+            capture_metadata: dict[str, Any] = {
+                "title": f"Memory: {target}/{action}",
+                "tags": ["agent-memory"],
+            }
             hermes_builtin_targets = {"memory", "user"}
             if target in hermes_builtin_targets and not meta.get("lore_worthy"):
                 logger.debug(
@@ -395,14 +483,14 @@ class LoreMemoryProvider(MemoryProvider):
                 )
                 return
             if "/" in target:
-                extra["suggested_target_page"] = target
-                extra["related_pages"] = [target]
-            self._client.create_capture(
-                title=f"Memory: {target}/{action}",
-                body=f"{content}\n\n{provenance_line}" if provenance_line else content,
-                source=self._agent_name,
-                tags=tags,
-                **extra,
+                capture_metadata["suggested_target_page"] = target
+                capture_metadata["related_pages"] = [target]
+            self._memory_client.capture(
+                memory_text=f"{content}\n\n{provenance_line}" if provenance_line else content,
+                agent_name=self._agent_name,
+                namespace="notes",
+                metadata=capture_metadata,
+                task_id=str(source_task) if source_task else None,
             )
         except Exception as exc:
             logger.debug("Lore on_memory_write mirror failed: %s", exc)
