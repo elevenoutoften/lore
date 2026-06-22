@@ -2,6 +2,33 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
+ESTABLISHED_WRITE_TOOL_NAMES = frozenset(
+    {
+        "lore_ack_recall",
+        "lore_apply_patch",
+        "lore_capture",
+        "lore_consolidation_rollback",
+        "lore_consolidation_run",
+        "lore_create_decision",
+        "lore_create_procedure",
+        "lore_create_stub",
+        "lore_create_trace",
+        "lore_distill_daily",
+        "lore_heartbeat_audit",
+        "lore_ingest_service",
+        "lore_promote_capture",
+        "lore_promote_daily",
+        "lore_propose_procedure_candidate",
+        "lore_reject_patch",
+        "lore_retry_extraction_deadletter",
+        "lore_transition_capture",
+        "lore_update_metadata",
+        "lore_upsert_page",
+    }
+)
+
 
 def rpc(client, method, params=None, request_id=1, headers=None):
     request_headers = {"Mcp-Method": method}
@@ -146,28 +173,93 @@ def test_mcp_write_tools_are_rate_limited(client):
     assert second.status_code == 429
 
 
-def test_write_tool_names_are_dispatchable_and_cover_page_writes():
-    """WRITE_TOOL_NAMES must list only real tools and cover every page-mutating tool.
+def test_annotations_drive_rate_limiting_for_every_registered_tool(client, monkeypatch):
+    from lore_app.mcp.tools import READ_TOOL_NAMES, TOOL_HANDLERS, WRITE_TOOL_NAMES
+    from lore_app.routes.mcp import mcp_write_call_count
+    from lore_app.security import RateLimiter
 
-    Guards the L-SEC-11 default-deny rate limiter: a missing name silently
-    unthrottles a write tool, and a dead name (no handler) is misleading cruft.
-    """
-    from lore_app.mcp.tools import TOOLS, WRITE_TOOL_NAMES
+    def fake_handler(_ctx):
+        return {"content": [], "structuredContent": {}, "isError": False}
+
+    for name in TOOL_HANDLERS:
+        monkeypatch.setitem(TOOL_HANDLERS, name, fake_handler)
+
+    batch = [
+        {"jsonrpc": "2.0", "id": index, "method": "tools/call", "params": {"name": name, "arguments": {}}}
+        for index, name in enumerate(sorted(WRITE_TOOL_NAMES), start=1)
+    ]
+    assert mcp_write_call_count(batch) == len(WRITE_TOOL_NAMES)
+
+    for name in WRITE_TOOL_NAMES:
+        client.app.state.write_rate_limiter = RateLimiter(max_requests=0, window_seconds=60)
+        assert rpc(client, "tools/call", {"name": name, "arguments": {}}).status_code == 429
+
+    client.app.state.write_rate_limiter = RateLimiter(max_requests=0, window_seconds=60)
+    for name in READ_TOOL_NAMES:
+        assert rpc(client, "tools/call", {"name": name, "arguments": {}}).status_code == 200
+
+    assert rpc(client, "tools/call", {"name": "lore_not_registered", "arguments": {}}).status_code == 429
+
+
+def test_tool_annotations_are_explicit_and_preserve_established_behavior():
+    from lore_app.mcp.tools import (
+        READ_TOOL_NAMES,
+        TOOL_HANDLERS,
+        TOOLS,
+        WRITE_TOOL_NAMES,
+        has_valid_tool_annotations,
+        tool_access_mode,
+    )
 
     tool_names = {tool["name"] for tool in TOOLS}
-    assert tool_names >= WRITE_TOOL_NAMES, f"unknown tool names: {WRITE_TOOL_NAMES - tool_names}"
+    assert len(tool_names) == len(TOOLS)
+    assert tool_names == set(TOOL_HANDLERS)
+    assert all(has_valid_tool_annotations(tool) for tool in TOOLS)
+    assert tool_names == READ_TOOL_NAMES | WRITE_TOOL_NAMES
+    assert READ_TOOL_NAMES.isdisjoint(WRITE_TOOL_NAMES)
+    assert WRITE_TOOL_NAMES == ESTABLISHED_WRITE_TOOL_NAMES
+    assert {tool["name"] for tool in TOOLS if tool_access_mode(tool) == "write"} == ESTABLISHED_WRITE_TOOL_NAMES
 
-    page_mutating = {
-        "lore_create_procedure",
-        "lore_create_stub",
-        "lore_update_metadata",
-        "lore_transition_capture",
-        "lore_distill_daily",
-        "lore_promote_daily",
-        "lore_upsert_page",
-        "lore_capture",
-    }
-    assert page_mutating <= WRITE_TOOL_NAMES, f"unthrottled write tools: {page_mutating - WRITE_TOOL_NAMES}"
+
+def test_mcp_classification_uses_annotations_and_fails_closed(monkeypatch):
+    import lore_app.mcp.tools as tools_module
+    from lore_app.routes.mcp import mcp_write_call_count
+
+    def count(name):
+        return mcp_write_call_count(
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": {}}}
+        )
+
+    assert count("lore_search") == 0
+    search_tool = next(tool for tool in tools_module.TOOLS if tool["name"] == "lore_search")
+    original_annotations = search_tool["annotations"]
+    monkeypatch.setitem(search_tool, "annotations", {"readOnlyHint": False, "destructiveHint": True})
+    assert count("lore_search") == 1
+    monkeypatch.setitem(search_tool, "annotations", original_annotations)
+
+    for invalid in (
+        None,
+        {},
+        {"readOnlyHint": True},
+        {"readOnlyHint": "true", "destructiveHint": False},
+        {"readOnlyHint": True, "destructiveHint": True},
+        {"readOnlyHint": False, "destructiveHint": False},
+    ):
+        monkeypatch.setitem(search_tool, "annotations", invalid)
+        assert count("lore_search") == 1
+    monkeypatch.setitem(search_tool, "annotations", original_annotations)
+
+    monkeypatch.setattr(tools_module, "TOOLS", [*tools_module.TOOLS, dict(search_tool)])
+    assert count("lore_search") == 1
+    assert count("lore_not_registered") == 1
+
+
+def test_registry_validation_rejects_handler_drift(monkeypatch):
+    from lore_app.mcp.tools import TOOL_HANDLERS, validate_tool_registry
+
+    monkeypatch.delitem(TOOL_HANDLERS, "lore_search")
+    with pytest.raises(RuntimeError, match="registry and handlers"):
+        validate_tool_registry()
 
 
 def test_mcp_batch_isolates_malformed_items(client):

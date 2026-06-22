@@ -58,29 +58,6 @@ if TYPE_CHECKING:
 
     from ..config import LoreConfig
 
-WRITE_TOOL_NAMES = {
-    "lore_capture",
-    "lore_apply_patch",
-    "lore_consolidation_rollback",
-    "lore_consolidation_run",
-    "lore_create_trace",
-    "lore_create_decision",
-    "lore_create_procedure",
-    "lore_create_stub",
-    "lore_ingest_service",
-    "lore_update_metadata",
-    "lore_ack_recall",
-    "lore_transition_capture",
-    "lore_distill_daily",
-    "lore_promote_daily",
-    "lore_propose_procedure_candidate",
-    "lore_retry_extraction_deadletter",
-    "lore_heartbeat_audit",
-    "lore_promote_capture",
-    "lore_reject_patch",
-    "lore_upsert_page",
-}
-
 DEFAULT_TOOL_NAMES = (
     "lore_capture",
     "lore_recall",
@@ -103,6 +80,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_list_pages",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "List Lore Pages",
         "description": "List pages in Lore, optionally filtered by kind, visibility, or query.",
         "inputSchema": {
@@ -123,6 +101,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_read_page",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Read Lore Page",
         "description": "Read a Markdown page from Lore.",
         "inputSchema": {
@@ -138,6 +117,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_search",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Search Lore",
         "description": "Search Lore pages. Returns ranked results with snippets when FTS is available.",
         "inputSchema": {
@@ -164,6 +144,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_list_lanes",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "List Lore Retrieval Lanes",
         "description": "List available retrieval lanes and their page counts. Lanes categorize memory by purpose: project, procedural, ops, companion, draft.",
         "inputSchema": {
@@ -173,6 +154,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_list_actors",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "List Lore Actors",
         "description": "List known agents (actors) that have produced captures or pages in Lore, with their counts.",
         "inputSchema": {
@@ -185,6 +167,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_rag_context",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore RAG Context",
         "description": "Retrieve relevant Lore context for a query using hybrid search (BM25 + vector + graph).",
         "inputSchema": {
@@ -200,6 +183,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_rag_context_expanded",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore RAG Context Expanded",
         "description": "Retrieve Lore context with multi-hop graph expansion, returning relevance paths, supporting/contradicting claims, related decisions, and relevant-because summaries.",
         "inputSchema": {
@@ -267,6 +251,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_ack_recall",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Acknowledge Lore Recall",
         "description": "Explicitly acknowledge that recalled claims were used, incrementing access_count and last_accessed_at for salience without affecting recency or decay age.",
         "inputSchema": {
@@ -285,6 +270,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_link_graph",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore Link Graph",
         "description": "Return Lore page links and broken internal links for graph-aware agent navigation.",
         "inputSchema": {
@@ -294,6 +280,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_context_graph",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore Context Graph",
         "description": "Get the full context graph spanning pages, captures, entities, claims, plans, traces, actors, tasks, policies, and sources with typed edges.",
         "inputSchema": {
@@ -303,6 +290,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_graph_analytics",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore Graph Analytics",
         "description": "Compute degree centrality, betweenness, community detection, and semantic entry points for the context graph. Results are advisory and cacheable.",
         "inputSchema": {
@@ -312,6 +300,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_context_graph_neighbors",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore Context Graph Neighbors",
         "description": "Find neighbors of a node in the Lore context graph, optionally filtered by direction, edge type, and node type.",
         "inputSchema": {
@@ -336,6 +325,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_context_graph_paths",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore Context Graph Paths",
         "description": "Find bounded paths between two nodes in the Lore context graph.",
         "inputSchema": {
@@ -356,6 +346,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_explain_context",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Explain Lore Context",
         "description": "Explain the context around a node by expanding its neighborhood in the context graph.",
         "inputSchema": {
@@ -374,6 +365,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_page_links",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore Page Links",
         "description": "Return outgoing links, backlinks, and missing links for one Lore page.",
         "inputSchema": {
@@ -389,6 +381,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_lint",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lint Lore",
         "description": "Return knowledge-quality issues such as broken links, missing provenance, stale pages, and orphans.",
         "inputSchema": {
@@ -398,6 +391,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_stale_pages",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore Stale Pages",
         "description": "Return Lore pages that are stale or missing freshness review metadata.",
         "inputSchema": {
@@ -407,6 +401,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_contradiction_review",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore Contradiction Review",
         "description": "Return contradiction and verification markers with surrounding context.",
         "inputSchema": {
@@ -416,6 +411,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_frontmatter_spec",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore Frontmatter Spec",
         "description": "Return the per-kind frontmatter contract for Lore pages.",
         "inputSchema": {
@@ -425,6 +421,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_list_procedures",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "List Lore Procedures",
         "description": "List reusable agent workflow procedure pages with trigger and steps metadata.",
         "inputSchema": {
@@ -434,6 +431,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_create_procedure",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Create Lore Procedure",
         "description": "Create a procedure page from structured workflow fields.",
         "inputSchema": {
@@ -466,6 +464,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_export_procedure",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Export Lore Procedure",
         "description": "Export a procedure page as a skill-style Markdown document.",
         "inputSchema": {
@@ -478,6 +477,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_capture",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Capture Lore Memory",
         "description": "Capture rough agent memory into a draft inbox or notes Markdown page for autonomous consolidation.",
         "inputSchema": {
@@ -562,6 +562,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_list_captures",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "List Lore Captures",
         "description": "List draft or reviewed capture pages waiting for promotion into canonical Lore pages.",
         "inputSchema": {
@@ -578,6 +579,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_capture_digest",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore Capture Digest",
         "description": "Summarize unreviewed captures grouped by date, source task, and suggested target page.",
         "inputSchema": {
@@ -587,6 +589,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_transition_capture",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Transition Capture Status",
         "description": "Change the status of a Lore capture page to draft, review, accepted, rejected, or archived.",
         "inputSchema": {
@@ -607,6 +610,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_promote_capture",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Promote Capture",
         "description": "Promote a reviewed capture into a canonical Lore page. Sets capture status to accepted and records the target page.",
         "inputSchema": {
@@ -630,6 +634,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_promotion_audit",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore Promotion Audit",
         "description": "Return the promotion audit trail: which captures were promoted to which pages, and which pages cite capture sources.",
         "inputSchema": {
@@ -639,6 +644,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_create_stub",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Create Lore Stub",
         "description": "Create a draft stub page for a missing internal Lore link.",
         "inputSchema": {
@@ -657,6 +663,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_update_metadata",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Update Lore Metadata",
         "description": "Update owner, freshness, confidence, or status frontmatter without replacing the page body.",
         "inputSchema": {
@@ -683,6 +690,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_ingest_service",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Ingest Service Code",
         "description": "Scan a service source directory and return route, symbol, and source file inventory.",
         "inputSchema": {
@@ -702,6 +710,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_create_decision",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Create Lore Decision",
         "description": "Create a decision record page from ADR-style fields.",
         "inputSchema": {
@@ -724,6 +733,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_create_trace",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "description": "Record a reasoning trace - a concise rationale summary explaining why a decision was made. NOT for raw model chain-of-thought. Use this when making important agent decisions, choosing between alternatives, or applying policies.",
         "inputSchema": {
             "type": "object",
@@ -808,6 +818,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_get_trace",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "description": "Retrieve a reasoning trace by ID.",
         "inputSchema": {
             "type": "object",
@@ -823,6 +834,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_get_provenance",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "description": "Return provenance references for a capture, trace, or page.",
         "inputSchema": {
             "type": "object",
@@ -864,6 +876,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_list_policies",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "List Lore Policies",
         "description": "List policy rules that gate patch planning decisions.",
         "inputSchema": {
@@ -879,6 +892,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_find_precedents",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Find Lore Precedents",
         "description": "Search for prior traces, decisions, policies, and pages that match entity, situation, actor, policy, keyword, or task criteria.",
         "inputSchema": {
@@ -905,6 +919,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_get_policy",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Get Lore Policy",
         "description": "Retrieve one patch planning policy by ID.",
         "inputSchema": {
@@ -917,6 +932,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_upsert_page",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Upsert Lore Page",
         "description": "Create or replace a Markdown page in Lore.",
         "inputSchema": {
@@ -936,6 +952,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_distill_daily",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Distill Daily Note",
         "description": "Distill session captures for a given date into a daily note page under dailies/YYYY-MM-DD. Defaults to today.",
         "inputSchema": {
@@ -954,6 +971,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_get_daily",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Get Daily Captures",
         "description": "List session captures for a specific date.",
         "inputSchema": {
@@ -969,6 +987,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_promote_daily",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Promote Daily Note",
         "description": "Confirm a daily note has been reviewed and mark it as the canonical daily page.",
         "inputSchema": {
@@ -984,6 +1003,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_heartbeat_review",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore Heartbeat Review",
         "description": "Return an aggregated freshness and quality report covering stale pages, contradictions, low-confidence pages, expired facts, and procedure issues.",
         "inputSchema": {
@@ -993,6 +1013,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_heartbeat_summary",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore Heartbeat Summary",
         "description": "Return just the issue counts per category without item details.",
         "inputSchema": {
@@ -1002,6 +1023,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_heartbeat_audit",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Lore Heartbeat Self-Audit Captures",
         "description": "Run heartbeat review and create capture drafts for any issues found (stale, contradictory, low-confidence, expired, or procedure problems). Idempotent: skips categories already captured today.",
         "inputSchema": {
@@ -1011,6 +1033,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_find_repeated_captures",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Find Repeated Captures",
         "description": "Find groups of captures with similar content that may indicate a repeated procedure worth codifying.",
         "inputSchema": {
@@ -1020,6 +1043,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_propose_procedure_candidate",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Propose Procedure Candidate",
         "description": "Create a procedure candidate page from repeated captures, linking back to source captures.",
         "inputSchema": {
@@ -1039,6 +1063,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_retry_extraction_deadletter",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Retry Extraction Dead-Letter",
         "description": "Reset and retry one extraction dead-letter by ID, resolving it when candidates are produced.",
         "inputSchema": {
@@ -1051,12 +1076,14 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_consolidation_status",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Lore Consolidation Status",
         "description": "Get consolidation pipeline status: last run, plan counts by status, stuck runs.",
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "lore_consolidation_run",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Run Lore Consolidation",
         "description": "Run the consolidation pipeline: extract candidates, generate patch plans, and optionally auto-apply safe plans.",
         "inputSchema": {
@@ -1071,6 +1098,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_consolidation_rollback",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Rollback Lore Consolidation Patch",
         "description": "Roll back an applied patch plan, restoring the page to its pre-patch state.",
         "inputSchema": {
@@ -1081,6 +1109,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_list_patch_plans",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "List Lore Patch Plans",
         "description": "List patch plans, optionally filtered by status or target page.",
         "inputSchema": {
@@ -1094,6 +1123,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_preview_patch",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Preview Lore Patch",
         "description": "Preview the diff for a patch plan before applying it.",
         "inputSchema": {
@@ -1104,6 +1134,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_apply_patch",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Apply Lore Patch",
         "description": "Apply a patch plan to its target canonical page. Use force=true for plans that are not auto-appliable.",
         "inputSchema": {
@@ -1117,6 +1148,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_reject_patch",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Reject Lore Patch",
         "description": "Reject a pending patch plan with an optional reason.",
         "inputSchema": {
@@ -1130,6 +1162,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "lore_review_batch",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
         "title": "Review Lore Consolidation Batch",
         "description": "Summarize a consolidation batch for agent review, grouped by risk level with recommendations.",
         "inputSchema": {
@@ -1138,6 +1171,36 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
 ]
+
+
+def has_valid_tool_annotations(tool: object) -> bool:
+    if not isinstance(tool, dict):
+        return False
+    annotations = tool.get("annotations")
+    if not isinstance(annotations, dict):
+        return False
+    read_only = annotations.get("readOnlyHint")
+    destructive = annotations.get("destructiveHint")
+    if type(read_only) is not bool or type(destructive) is not bool:
+        return False
+    return (read_only, destructive) in {(True, False), (False, True)}
+
+
+def tool_access_mode(tool: object) -> str:
+    """Classify one schema, defaulting every invalid state to write."""
+    if not has_valid_tool_annotations(tool):
+        return "write"
+    annotations = tool["annotations"]
+    return "read" if annotations["readOnlyHint"] is True else "write"
+
+
+def is_read_tool_name(name: object) -> bool:
+    """Return true only for one unambiguously registered, annotated read tool."""
+    if not isinstance(name, str) or not name:
+        return False
+    matches = [tool for tool in TOOLS if isinstance(tool, dict) and tool.get("name") == name]
+    return len(matches) == 1 and tool_access_mode(matches[0]) == "read"
+
 
 def _without_schema_descriptions(value: Any) -> Any:
     if isinstance(value, dict):
@@ -1148,6 +1211,8 @@ def _without_schema_descriptions(value: Any) -> Any:
 
 
 _TOOLS_BY_NAME = {tool["name"]: tool for tool in TOOLS}
+READ_TOOL_NAMES = frozenset(name for name in _TOOLS_BY_NAME if is_read_tool_name(name))
+WRITE_TOOL_NAMES = frozenset(_TOOLS_BY_NAME) - READ_TOOL_NAMES
 DEFAULT_TOOLS = [
     {
         "name": _TOOLS_BY_NAME[name]["name"],
@@ -2297,6 +2362,28 @@ TOOL_HANDLERS: dict[str, Callable[[McpContext], dict[str, Any]]] = {
 }
 
 
+def validate_tool_registry() -> None:
+    if any(not isinstance(tool, dict) for tool in TOOLS):
+        raise RuntimeError("Every Lore MCP tool must be an object.")
+    names = [tool.get("name") for tool in TOOLS]
+    if any(not isinstance(name, str) or not name for name in names):
+        raise RuntimeError("Every Lore MCP tool must have a non-empty string name.")
+    if len(names) != len(set(names)):
+        raise RuntimeError("Lore MCP tool names must be unique.")
+    invalid_annotations = [tool["name"] for tool in TOOLS if not has_valid_tool_annotations(tool)]
+    if invalid_annotations:
+        raise RuntimeError(f"Lore MCP tools have invalid annotations: {invalid_annotations}")
+    if set(names) != set(TOOL_HANDLERS):
+        raise RuntimeError("Lore MCP tool registry and handlers must contain the same names.")
+    if len(DEFAULT_TOOL_NAMES) != len(set(DEFAULT_TOOL_NAMES)) or not set(DEFAULT_TOOL_NAMES) <= set(names):
+        raise RuntimeError("Lore MCP default tools must be unique registered tools.")
+    if [tool["name"] for tool in DEFAULT_TOOLS] != list(DEFAULT_TOOL_NAMES):
+        raise RuntimeError("Lore MCP default schemas must follow DEFAULT_TOOL_NAMES exactly.")
+
+
+validate_tool_registry()
+
+
 def call_tool(
     repo: LoreRepository,
     params: dict[str, Any],
@@ -2314,8 +2401,9 @@ def call_tool(
     request: Any | None = None,
 ) -> dict[str, Any]:
     name = require_string(params.get("name"), "name")
+    registered = [tool for tool in TOOLS if isinstance(tool, dict) and tool.get("name") == name]
     handler = TOOL_HANDLERS.get(name)
-    if handler is None:
+    if len(registered) != 1 or handler is None:
         raise JsonRpcError(-32601, f"Unsupported Lore tool: {name}")
     ctx = McpContext(
         repo=repo,

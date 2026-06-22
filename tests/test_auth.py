@@ -754,6 +754,71 @@ def test_reader_mcp_can_read_but_not_write(content_dir, search_db, tmp_path):
     assert write.status_code == 403
 
 
+def test_reader_mcp_authorization_follows_every_tool_annotation(content_dir, search_db, tmp_path, monkeypatch):
+    from lore_app.mcp.tools import READ_TOOL_NAMES, TOOL_HANDLERS, WRITE_TOOL_NAMES
+
+    def fake_handler(_ctx):
+        return {"content": [], "structuredContent": {}, "isError": False}
+
+    for name in TOOL_HANDLERS:
+        monkeypatch.setitem(TOOL_HANDLERS, name, fake_handler)
+
+    config = make_config(content_dir, search_db, tmp_path, "api_key", "")
+    store = LoreApiKeyStore(config.api_keys_db)
+    store.initialize()
+    _admin_key_obj, admin_key = store.create_key(name="admin-key", role="admin")
+    app = create_app(config)
+
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/api-keys",
+            json={"name": "reader", "role": "reader"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        ).json()
+        headers = {"Authorization": f"Bearer {created['api_key']}"}
+
+        read_statuses = {
+            name: client.post(
+                "/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": index,
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": {}},
+                },
+                headers=headers,
+            ).status_code
+            for index, name in enumerate(sorted(READ_TOOL_NAMES), start=1)
+        }
+        write_statuses = {
+            name: client.post(
+                "/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": index,
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": {}},
+                },
+                headers=headers,
+            ).status_code
+            for index, name in enumerate(sorted(WRITE_TOOL_NAMES), start=100)
+        }
+        unknown = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 999,
+                "method": "tools/call",
+                "params": {"name": "lore_not_registered", "arguments": {}},
+            },
+            headers=headers,
+        )
+
+    assert set(read_statuses.values()) == {200}, read_statuses
+    assert set(write_statuses.values()) == {403}, write_statuses
+    assert unknown.status_code == 403
+
+
 def test_reader_mcp_rejects_whitespace_padded_write_tools(content_dir, search_db, tmp_path):
     config = make_config(content_dir, search_db, tmp_path, "api_key", "")
     store = LoreApiKeyStore(config.api_keys_db)
