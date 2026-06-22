@@ -77,6 +77,13 @@ on by default), so `capture` then `recall` "just works" with no manual step. A
 capture with no obvious home still consolidates — it lands on a per-actor
 `memory/<actor>` page rather than being stranded.
 
+On authenticated instances with LLM extraction configured, that "just works"
+path is still actor-scoped: capture and recall must use the same actor token by
+default. A different actor token will see `count: 0` unless an admin explicitly
+uses `cross_actor=true`. In other words, successful capture -> recall on those
+instances depends on both consolidation and actor scope, not just the presence
+of extracted claims.
+
 If you disable auto-consolidation (for very high write volume plus a scheduled
 runner), drive it explicitly with `POST /api/consolidation/run` (MCP
 `lore_consolidation_run`). Recall is **self-diagnosing**: a `count: 0` response

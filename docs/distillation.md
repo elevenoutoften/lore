@@ -11,7 +11,7 @@ providing an autonomous path from raw agent memory to canonical knowledge.
 
 ## Workflow
 
-1. Agents create captures throughout the day via `lore_capture` or the `/api/capture` endpoint.
+1. Agents create captures throughout the day via `lore_capture` or the `/api/memory/capture` endpoint.
 2. At session end (or on schedule), call **distill** to consolidate the day's captures into a daily note.
 3. Agents or scheduled automation verify confidence, sources, and conflicts.
 4. **Promote** the daily note to mark it as canonical. Manual review is reserved

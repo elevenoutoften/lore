@@ -151,13 +151,14 @@ the current UI templates.
 
 ## Rate Limiting
 
-Lore rate-limits write operations in memory at 30 requests per 60 seconds per
+Lore rate-limits write operations in memory at 300 requests per 60 seconds per
 client key. The client key is the first `X-Forwarded-For` address when trusted
 headers are enabled, or the direct client host.
 
 Rate-limited operations include:
 
 - `PUT`, `PATCH`, and `DELETE` under `/api/pages/`
+- `POST /api/memory/capture`
 - `POST /api/capture`
 - `POST /api/captures/{page_id}/status`
 - `POST /api/captures/{page_id}/promote`

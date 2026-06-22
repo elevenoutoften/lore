@@ -79,18 +79,24 @@ curl -sS "$LORE_URL/api/search/bm25?q=Markdown"
 
 ## Capture
 
-Captures store draft observations in the vault for autonomous consolidation.
+The canonical agent memory write path is `POST /api/memory/capture`. It uses
+typed top-level fields for routing/provenance and a `metadata` envelope for
+extra frontmatter like `title`, `confidence`, and sources.
 
 ```bash
-curl -sS -X POST "$LORE_URL/api/capture" \
+curl -sS -X POST "$LORE_URL/api/memory/capture" \
   -H "Content-Type: application/json" \
   -d '{
-    "title": "Demo deploy note",
-    "observation": "The demo service was started locally on port 8078.",
-    "source_task": "quickstart",
-    "related_pages": ["projects/demo"],
-    "confidence": "high",
-    "sources": ["docs/quickstart.md"]
+    "text": "The demo service was started locally on port 8078.",
+    "agent_name": "quickstart",
+    "lane": "project",
+    "task_id": "quickstart",
+    "metadata": {
+      "title": "Demo deploy note",
+      "related_pages": ["projects/demo"],
+      "confidence": "high",
+      "sources": ["docs/quickstart.md"]
+    }
   }'
 ```
 
@@ -109,20 +115,26 @@ pip install -e sdk/python
 ```
 
 ```python
-from lore_sdk import LoreClient
+from lore_sdk import LoreClient, MemoryProvider
 
 client = LoreClient(base_url="http://localhost:8078")
+memory = MemoryProvider(base_url="http://localhost:8078")
 client.upsert_page(
     "projects/sdk-demo",
     "---\ntitle: SDK Demo\nkind: project\nvisibility: internal\n---\n\n# SDK Demo\n\nCreated from Python.\n",
 )
 hits = client.search("SDK Demo")
-client.create_capture(
-    title="Python SDK quickstart",
-    body="The Python SDK created and searched a page.",
-    source="docs/quickstart.md",
-    related_pages=["projects/sdk-demo"],
-    confidence="high",
+memory.capture(
+    "The Python SDK created and searched a page.",
+    agent_name="quickstart",
+    lane="project",
+    task_id="quickstart",
+    metadata={
+        "title": "Python SDK quickstart",
+        "related_pages": ["projects/sdk-demo"],
+        "confidence": "high",
+        "sources": ["docs/quickstart.md"],
+    },
 )
 ```
 

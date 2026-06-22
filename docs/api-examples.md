@@ -338,53 +338,38 @@ curl http://localhost:8078/api/lint
 }
 ```
 
-## `POST /api/capture`
+## `POST /api/memory/capture`
 
 ```bash
-curl -X POST http://localhost:8078/api/capture \
+curl -X POST http://localhost:8078/api/memory/capture \
   -H "Content-Type: application/json" \
-  -d '{"title":"Workflow Engine queue note","observation":"Workflow Engine queue retries should be documented before changing gateway behavior.","capture_date":"2026-05-01","source_task":"FLOW-105","related_pages":["services/workflow-engine"],"confidence":"medium","suggested_target_page":"services/workflow-engine","sources":["src/gateway/app.py"]}'
+  -d '{"text":"Workflow Engine queue retries should be documented before changing gateway behavior.","agent_name":"codex","namespace":"notes","lane":"ops","task_id":"FLOW-105","metadata":{"title":"Workflow Engine queue note","capture_date":"2026-05-01","related_pages":["services/workflow-engine"],"confidence":"medium","suggested_target_page":"services/workflow-engine","sources":["src/gateway/app.py"]}}'
 ```
 
 Request body:
 
 ```json
 {
-  "title": "Workflow Engine queue note",
-  "observation": "Workflow Engine queue retries should be documented before changing gateway behavior.",
-  "capture_date": "2026-05-01",
-  "source_task": "FLOW-105",
-  "related_pages": ["services/workflow-engine"],
-  "confidence": "medium",
-  "suggested_target_page": "services/workflow-engine",
-  "sources": ["src/gateway/app.py"]
+  "text": "Workflow Engine queue retries should be documented before changing gateway behavior.",
+  "agent_name": "codex",
+  "namespace": "notes",
+  "lane": "ops",
+  "task_id": "FLOW-105",
+  "metadata": {
+    "title": "Workflow Engine queue note",
+    "capture_date": "2026-05-01",
+    "related_pages": ["services/workflow-engine"],
+    "confidence": "medium",
+    "suggested_target_page": "services/workflow-engine",
+    "sources": ["src/gateway/app.py"]
+  }
 }
 ```
 
 ```json
 {
-  "page": {
-    "id": "inbox/2026-05-01/workflow-engine-queue-note",
-    "title": "Workflow Engine queue note",
-    "kind": "capture",
-    "visibility": "internal",
-    "status": "draft",
-    "summary": "Rough agent memory capture; not canonical truth.",
-    "tags": ["capture", "agent-memory"],
-    "sources": ["src/gateway/app.py"],
-    "updated_at": "2026-05-01T12:20:00+00:00",
-    "size": 520,
-    "content": "---\ntitle: Workflow Engine queue note\nkind: capture\nvisibility: internal\nstatus: draft\nsummary: Rough agent memory capture; not canonical truth.\ntags: [capture, agent-memory]\n---\n\n# Workflow Engine queue note\n\n> Captured memory is rough intake for agent consolidation, not final Lore truth.\n\n## Observation\n\nWorkflow Engine queue retries should be documented before changing gateway behavior.\n",
-    "body": "# Workflow Engine queue note\n\n> Captured memory is rough intake for agent consolidation, not final Lore truth.\n\n## Observation\n\nWorkflow Engine queue retries should be documented before changing gateway behavior.\n",
-    "frontmatter": {
-      "title": "Workflow Engine queue note",
-      "kind": "capture",
-      "visibility": "internal",
-      "status": "draft",
-      "summary": "Rough agent memory capture; not canonical truth.",
-      "tags": ["capture", "agent-memory"]
-    }
-  }
+  "capture_id": "notes/codex/2026-05-01/workflow-engine-queue-note",
+  "timestamp": "2026-05-01T12:20:00+00:00"
 }
 ```
 

@@ -21,6 +21,15 @@ description of the product surface: how an agent connects with a token, captures
 durable memory, and recalls it ranked by relevance, recency, and salience over
 HTTP and MCP.
 
+Documentation hub: [docs/index.md](docs/index.md)
+
+Quick links:
+
+- [Quickstart](docs/quickstart.md)
+- [API Reference](docs/api-reference.md)
+- [Configuration](docs/configuration.md)
+- [Security](docs/security.md)
+
 ## Local development
 
 ```bash
@@ -101,8 +110,8 @@ Core and configuration:
 - `GET /healthz`
 - `GET /healthz/config`
 - `GET /api/version`
-- `GET /api/config`
-- `GET /api/audit`
+- `GET /api/config` (admin only)
+- `GET /api/audit` (admin only)
 - `GET /api/semantics`
 - `GET /api/catalog`
 - `GET /api/frontmatter/spec`
@@ -247,6 +256,10 @@ sources. Captured memory is not accepted project truth until an agent,
 automation, or explicit operator action promotes or incorporates it into
 canonical Lore pages.
 
+New agent clients should prefer `POST /api/memory/capture` for the canonical
+typed memory-write surface. The older `POST /api/capture` endpoint remains
+available for the richer page-oriented capture workflow.
+
 The captures endpoint lists the intake queue. It defaults to draft captures and
 accepts `status=all` to show every capture status. Human review is an escalation
 path for low-confidence, conflicting, or sensitive captures, not the default
@@ -294,6 +307,7 @@ security hardening, and beta release.
 
 Tools:
 
+- `lore_overview`
 - `lore_list_pages`
 - `lore_read_page`
 - `lore_search`
@@ -343,6 +357,7 @@ Tools:
 - `lore_heartbeat_audit`
 - `lore_find_repeated_captures`
 - `lore_propose_procedure_candidate`
+- `lore_retry_extraction_deadletter`
 - `lore_consolidation_status`
 - `lore_consolidation_run`
 - `lore_consolidation_rollback`

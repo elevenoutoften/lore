@@ -15,11 +15,11 @@ basic auth.
 | --- | --- | --- |
 | `GET` | `/healthz` | Health and metrics. |
 | `GET` | `/api/version` | Package, Python, and API versions. |
-| `GET` | `/api/config` | Effective configuration. |
+| `GET` | `/api/config` | Effective configuration. Admin only. |
 | `GET` | `/api/catalog` | Known kinds, visibilities, and tags. |
 | `GET` | `/api/frontmatter/spec` | Frontmatter field spec. |
 | `GET` | `/api/semantics` | Confidence, status, and visibility definitions. |
-| `GET` | `/api/audit` | Audit log query. |
+| `GET` | `/api/audit` | Audit log query. Admin only. |
 
 ```bash
 curl -sS "$LORE_URL/healthz"
@@ -143,32 +143,19 @@ curl -sS "$LORE_URL/api/lint/stale"
 curl -sS "$LORE_URL/api/lint/contradictions"
 ```
 
-## Captures and Promotion
+## Capture Queue and Promotion
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/capture` | Create a draft capture. |
 | `GET` | `/api/captures` | List captures. Query: `status`, `limit`. |
 | `GET` | `/api/captures/digest` | Group draft/review captures. |
 | `POST` | `/api/captures/{page_id}/status` | Change capture status. |
 | `POST` | `/api/captures/{page_id}/promote` | Promote capture into a target page. |
 | `GET` | `/api/promotions` | Promotion audit. |
 
-```bash
-curl -sS -X POST "$LORE_URL/api/capture" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Deploy finding",
-    "observation": "The deploy runbook expects the search index to be rebuilt after restore.",
-    "namespace": "inbox",
-    "source_task": "api-reference",
-    "related_pages": ["runbooks/deploy-lore"],
-    "confidence": "medium",
-    "suggested_target_page": "runbooks/deploy-lore",
-    "sources": ["docs/api-reference.md"],
-    "source_paths": ["services/lore/lore_app/cli.py"]
-  }'
-```
+New agent clients should use `POST /api/memory/capture` for the canonical
+typed memory-write surface. The older `POST /api/capture` endpoint remains
+available for the richer page-oriented capture workflow.
 
 ```bash
 curl -sS "$LORE_URL/api/captures?status=draft&limit=50"
@@ -202,6 +189,34 @@ curl -sS "$LORE_URL/api/promotions"
 | `GET` | `/api/memory/recall` | Ranked claim recall. Authenticated modes are scoped to the token actor; admins must set `cross_actor=true` for cross-actor reads. Read-only by default; `record_access=false` unless explicitly set. |
 | `POST` | `/api/memory/recall/ack` | Acknowledge used recall claims. Body: `{candidate_ids}`. |
 | `GET` | `/api/memory/health` | Memory subsystem health counts. |
+
+```bash
+curl -sS -X POST "$LORE_URL/api/memory/capture" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "The deploy runbook expects the search index to be rebuilt after restore.",
+    "agent_name": "api-reference",
+    "namespace": "notes",
+    "lane": "ops",
+    "task_id": "api-reference",
+    "metadata": {
+      "title": "Deploy finding",
+      "capture_date": "2026-05-04",
+      "related_pages": ["runbooks/deploy-lore"],
+      "confidence": "medium",
+      "suggested_target_page": "runbooks/deploy-lore",
+      "sources": ["docs/api-reference.md"],
+      "source_paths": ["lore_app/routes/memory.py"]
+    }
+  }'
+```
+
+```json
+{
+  "capture_id": "notes/api-reference/2026-05-04/deploy-finding",
+  "timestamp": "2026-05-04T12:20:00+00:00"
+}
+```
 
 ## Runtime Settings
 
@@ -319,23 +334,31 @@ These return HTML:
 }
 ```
 
-`CaptureRequest`:
+`MemoryCaptureRequest`:
 
 ```json
 {
-  "observation": "Required.",
-  "title": "Optional title",
-  "namespace": "inbox",
-  "agent": "codex",
-  "capture_date": "2026-05-04",
-  "source_task": "flow_000174",
-  "related_pages": ["services/lore"],
-  "confidence": "medium",
-  "suggested_target_page": "services/lore",
-  "sources": ["README.md"],
-  "source_paths": ["lore_app/main.py"],
-  "source_urls": ["https://example.com"],
-  "evidence": "Supporting detail."
+  "text": "Required.",
+  "agent_name": "codex",
+  "namespace": "notes",
+  "tags": ["agent-memory"],
+  "lane": "project",
+  "task_id": "flow_000174",
+  "trace_id": "trace_123",
+  "tool_calls": [{"tool": "search", "query": "lore config"}],
+  "constraints": ["docs-only"],
+  "policies_applied": ["policy.docs.v1"],
+  "metadata": {
+    "title": "Optional title",
+    "capture_date": "2026-05-04",
+    "related_pages": ["services/lore"],
+    "confidence": "medium",
+    "suggested_target_page": "services/lore",
+    "sources": ["README.md"],
+    "source_paths": ["lore_app/main.py"],
+    "source_urls": ["https://example.com"],
+    "evidence": "Supporting detail."
+  }
 }
 ```
 
@@ -439,5 +462,5 @@ application errors usually use `{"detail":"message"}`.
 
 ## Rate Limiting
 
-Write operations are limited to 30 requests per 60 seconds per client key. The
+Write operations are limited to 300 requests per 60 seconds per client key. The
 client key is the first `X-Forwarded-For` address or the direct client host.

@@ -14,21 +14,26 @@ Setup:
 Recommended workflow:
 - Read `/api/search`, `/api/pages/{page_id}`, and `/api/rag/retrieve` before
   changing code.
-- Write uncertain findings to `/api/capture`.
+- Write uncertain findings to `/api/memory/capture`.
 - Promote or incorporate captures autonomously when evidence and target pages
   are clear; escalate low-confidence or conflicting captures for manual audit.
 
 ```python
-from lore_sdk import LoreClient
+from lore_sdk import LoreClient, MemoryProvider
 
 client = LoreClient(base_url="https://lore.example.com", auth_token="token")
+memory = MemoryProvider(base_url="https://lore.example.com", api_key="token")
 hits = client.search("gpu runtime deployment")
 page = client.get_page(hits["hits"][0]["page"]["id"])
-client.create_capture(
-    title="Deploy ordering",
-    body="Deploy script expects Caddy before Lore restart.",
-    source="ops/deploy/Update-Server.sh",
-    confidence="medium",
+memory.capture(
+    "Deploy script expects Caddy before Lore restart.",
+    agent_name="codex",
+    lane="ops",
+    metadata={
+        "title": "Deploy ordering",
+        "source_paths": ["ops/deploy/Update-Server.sh"],
+        "confidence": "medium",
+    },
 )
 ```
 
@@ -100,16 +105,20 @@ Recommended workflow:
 - Link captures to service or runbook pages through `related_pages`.
 
 ```bash
-curl -sS https://lore.example.com/api/capture \
+curl -sS https://lore.example.com/api/memory/capture \
   -H "Authorization: Bearer $LORE_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "title": "Lore CI failed on search tests",
-    "observation": "pytest failed in services/lore/tests/test_search_index.py on the main branch.",
-    "source_task": "github-actions/lore-ci",
-    "related_pages": ["services/lore"],
-    "confidence": "high",
-    "sources": ["$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"]
+    "text": "pytest failed in services/lore/tests/test_search_index.py on the main branch.",
+    "agent_name": "ci",
+    "lane": "ops",
+    "task_id": "github-actions/lore-ci",
+    "metadata": {
+      "title": "Lore CI failed on search tests",
+      "related_pages": ["services/lore"],
+      "confidence": "high",
+      "sources": ["$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"]
+    }
   }'
 ```
 
