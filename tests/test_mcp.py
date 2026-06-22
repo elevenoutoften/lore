@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 
 def rpc(client, method, params=None, request_id=1, headers=None):
     request_headers = {"Mcp-Method": method}
@@ -18,69 +20,29 @@ def test_mcp_initialize_and_tool_list(client):
     payload = initialized.json()
     assert payload["result"]["serverInfo"]["name"] == "lore"
     assert "tools" in payload["result"]["capabilities"]
+    assert "lore_overview" in payload["result"]["instructions"]
+    assert "six core tools only" in payload["result"]["instructions"]
 
     tools = rpc(client, "tools/list").json()["result"]["tools"]
     assert [tool["name"] for tool in tools] == [
-        "lore_overview",
-        "lore_list_pages",
-        "lore_read_page",
-        "lore_search",
-        "lore_list_lanes",
-        "lore_list_actors",
-        "lore_rag_context",
-        "lore_rag_context_expanded",
+        "lore_capture",
         "lore_recall",
         "lore_ack_recall",
-        "lore_link_graph",
-        "lore_context_graph",
-        "lore_graph_analytics",
-        "lore_context_graph_neighbors",
-        "lore_context_graph_paths",
-        "lore_explain_context",
-        "lore_page_links",
-        "lore_lint",
-        "lore_stale_pages",
-        "lore_contradiction_review",
-        "lore_frontmatter_spec",
-        "lore_list_procedures",
-        "lore_create_procedure",
-        "lore_export_procedure",
-        "lore_capture",
-        "lore_list_captures",
-        "lore_capture_digest",
-        "lore_transition_capture",
-        "lore_promote_capture",
-        "lore_promotion_audit",
-        "lore_create_stub",
-        "lore_update_metadata",
-        "lore_ingest_service",
-        "lore_create_decision",
-        "lore_create_trace",
-        "lore_get_trace",
-        "lore_get_provenance",
-        "lore_list_traces",
-        "lore_list_policies",
-        "lore_find_precedents",
-        "lore_get_policy",
+        "lore_search",
+        "lore_read_page",
         "lore_upsert_page",
-        "lore_distill_daily",
-        "lore_get_daily",
-        "lore_promote_daily",
-        "lore_heartbeat_review",
-        "lore_heartbeat_summary",
-        "lore_heartbeat_audit",
-        "lore_find_repeated_captures",
-        "lore_propose_procedure_candidate",
-        "lore_retry_extraction_deadletter",
-        "lore_consolidation_status",
-        "lore_consolidation_run",
-        "lore_consolidation_rollback",
-        "lore_list_patch_plans",
-        "lore_preview_patch",
-        "lore_apply_patch",
-        "lore_reject_patch",
-        "lore_review_batch",
     ]
+
+
+def test_mcp_default_tool_payload_is_at_least_80_percent_smaller(client):
+    from lore_app.mcp.tools import TOOLS
+
+    default_tools = rpc(client, "tools/list").json()["result"]["tools"]
+
+    def compact(value):
+        return len(json.dumps(value, separators=(",", ":")))
+
+    assert compact(default_tools) <= compact(TOOLS) * 0.2
 
 
 def test_mcp_search_read_and_upsert(client):
@@ -699,15 +661,44 @@ def test_mcp_recall_has_more_with_record_access(client):
     assert by_id[recalled_id]["access_count"] >= 1
 
 
-def test_mcp_overview_lists_core_loop(client):
-    content = _call(client, "lore_overview", {})["structuredContent"]
-    assert "lore_capture" in content["core_loop"]
-    assert "lore_recall" in content["core_loop"]
-    assert "lore_consolidation_run" in content["core_loop"]
-    assert "taxonomy" in content
+def test_mcp_overview_is_complete_runtime_derived_index(client):
+    from lore_app.mcp.tools import DEFAULT_TOOL_NAMES, TOOL_HANDLERS, TOOLS
 
-    names = [tool["name"] for tool in rpc(client, "tools/list").json()["result"]["tools"]]
-    assert "lore_overview" in names
+    default_names = [tool["name"] for tool in rpc(client, "tools/list").json()["result"]["tools"]]
+    assert default_names == list(DEFAULT_TOOL_NAMES)
+    assert "lore_overview" not in default_names
+
+    # lore_overview is a well-known, on-demand discovery call. It is
+    # deliberately callable without adding a seventh schema to the default list.
+    content = _call(client, "lore_overview", {})["structuredContent"]
+    assert content["default_tools"] == list(DEFAULT_TOOL_NAMES)
+    assert content["tools"] == TOOLS
+    assert content["tool_count"] == len(TOOLS)
+    assert {tool["name"] for tool in content["tools"]} == set(TOOL_HANDLERS)
+
+
+def test_every_advanced_tool_remains_callable_on_demand(monkeypatch):
+    from lore_app.mcp.tools import DEFAULT_TOOL_NAMES, TOOL_HANDLERS, TOOLS, call_tool
+
+    registered = {tool["name"] for tool in TOOLS}
+    assert registered == set(TOOL_HANDLERS)
+
+    advanced = registered - set(DEFAULT_TOOL_NAMES)
+    called: set[str] = set()
+
+    def fake_handler(tool_name):
+        def handle(_ctx):
+            called.add(tool_name)
+            return {"content": [], "structuredContent": {"name": tool_name}, "isError": False}
+
+        return handle
+
+    for name in advanced:
+        monkeypatch.setitem(TOOL_HANDLERS, name, fake_handler(name))
+        result = call_tool(object(), {"name": name, "arguments": {}})
+        assert result["structuredContent"]["name"] == name
+
+    assert called == advanced
 
 
 def test_mcp_read_tools_have_readonly_annotations():

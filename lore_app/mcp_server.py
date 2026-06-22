@@ -11,7 +11,7 @@ from .config import LoreConfig
 from .ledger import LedgerDB
 from .link_graph import LinkGraphCache
 from .llm_provider import _primary_config_from_lore_config, build_embedding_client_from_config
-from .mcp import PROJECT_NAME, PROTOCOL_VERSION, TOOLS
+from .mcp import DEFAULT_TOOLS, PROJECT_NAME, PROTOCOL_VERSION, SERVER_INSTRUCTIONS
 from .rag.vector_store import VectorStore
 from .repository import LoreRepository
 from .route_utils import rebuild_vector_index
@@ -68,9 +68,10 @@ def main() -> int:
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": {"name": PROJECT_NAME, "version": "0.3.0b1"},
+                "instructions": SERVER_INSTRUCTIONS,
             }
         elif method == "tools/list":
-            response["result"] = {"tools": TOOLS}
+            response["result"] = {"tools": DEFAULT_TOOLS}
         elif method == "tools/call":
             from .mcp import call_tool
             from .mcp.dispatch import JsonRpcError

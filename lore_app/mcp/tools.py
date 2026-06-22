@@ -81,6 +81,15 @@ WRITE_TOOL_NAMES = {
     "lore_upsert_page",
 }
 
+DEFAULT_TOOL_NAMES = (
+    "lore_capture",
+    "lore_recall",
+    "lore_ack_recall",
+    "lore_search",
+    "lore_read_page",
+    "lore_upsert_page",
+)
+
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "lore_overview",
@@ -1130,6 +1139,25 @@ TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+def _without_schema_descriptions(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _without_schema_descriptions(item) for key, item in value.items() if key != "description"}
+    if isinstance(value, list):
+        return [_without_schema_descriptions(item) for item in value]
+    return value
+
+
+_TOOLS_BY_NAME = {tool["name"]: tool for tool in TOOLS}
+DEFAULT_TOOLS = [
+    {
+        "name": _TOOLS_BY_NAME[name]["name"],
+        "description": _TOOLS_BY_NAME[name]["description"],
+        "inputSchema": _without_schema_descriptions(_TOOLS_BY_NAME[name]["inputSchema"]),
+        **({"annotations": _TOOLS_BY_NAME[name]["annotations"]} if "annotations" in _TOOLS_BY_NAME[name] else {}),
+    }
+    for name in DEFAULT_TOOL_NAMES
+]
+
 
 def _handle_lore_list_pages(ctx: McpContext) -> dict[str, Any]:
     arguments = tool_arguments(ctx.params)
@@ -1357,32 +1385,11 @@ def _handle_lore_ack_recall(ctx: McpContext) -> dict[str, Any]:
 def _handle_lore_overview(ctx: McpContext) -> dict[str, Any]:
     tool_arguments(ctx.params)
     payload = {
-        "core_loop": ["lore_capture", "lore_consolidation_run", "lore_recall", "lore_ack_recall"],
-        "core_loop_description": "capture -> consolidate -> recall -> acknowledge",
-        "taxonomy": {
-            "discovery": [
-                "lore_overview",
-                "lore_list_pages",
-                "lore_list_lanes",
-                "lore_list_actors",
-                "lore_frontmatter_spec",
-            ],
-            "read_pages": ["lore_read_page", "lore_search", "lore_page_links", "lore_link_graph"],
-            "memory": ["lore_capture", "lore_recall", "lore_ack_recall", "lore_list_captures", "lore_capture_digest"],
-            "consolidation": ["lore_consolidation_status", "lore_consolidation_run", "lore_consolidation_rollback"],
-            "graph": [
-                "lore_context_graph",
-                "lore_graph_analytics",
-                "lore_context_graph_neighbors",
-                "lore_context_graph_paths",
-                "lore_explain_context",
-            ],
-            "traces": ["lore_create_trace", "lore_get_trace", "lore_list_traces"],
-            "write_pages": sorted(WRITE_TOOL_NAMES),
-        },
+        "default_tools": list(DEFAULT_TOOL_NAMES),
+        "tools": TOOLS,
         "tool_count": len(TOOLS),
     }
-    return tool_result(payload, "Lore tool taxonomy + capture->recall->consolidate loop.")
+    return tool_result(payload, f"Lore runtime tool index: {len(TOOLS)} tools.")
 
 
 def _handle_lore_link_graph(ctx: McpContext) -> dict[str, Any]:

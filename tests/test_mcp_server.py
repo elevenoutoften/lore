@@ -3,6 +3,18 @@ from __future__ import annotations
 import lore_app.mcp_server as mcp_server
 
 
+def test_standalone_mcp_lists_only_core_tools_by_default():
+    assert "lore_overview" in mcp_server.SERVER_INSTRUCTIONS
+    assert [tool["name"] for tool in mcp_server.DEFAULT_TOOLS] == [
+        "lore_capture",
+        "lore_recall",
+        "lore_ack_recall",
+        "lore_search",
+        "lore_read_page",
+        "lore_upsert_page",
+    ]
+
+
 class FakeVectorStore:
     dense_enabled = True
 

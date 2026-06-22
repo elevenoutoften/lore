@@ -5,6 +5,7 @@ from .decisions import build_decision_markdown, build_procedure_markdown, export
 from .dispatch import (
     PROJECT_NAME,
     PROTOCOL_VERSION,
+    SERVER_INSTRUCTIONS,
     JsonRpcError,
     error_response,
     exception_response,
@@ -14,11 +15,14 @@ from .dispatch import (
     success_response,
 )
 from .resources import page_id_from_resource_uri, resource_for_page, uri_for_page
-from .tools import TOOLS, WRITE_TOOL_NAMES, call_tool
+from .tools import DEFAULT_TOOL_NAMES, DEFAULT_TOOLS, TOOLS, WRITE_TOOL_NAMES, call_tool
 
 __all__ = [
+    "DEFAULT_TOOLS",
+    "DEFAULT_TOOL_NAMES",
     "PROJECT_NAME",
     "PROTOCOL_VERSION",
+    "SERVER_INSTRUCTIONS",
     "TOOLS",
     "WRITE_TOOL_NAMES",
     "JsonRpcError",

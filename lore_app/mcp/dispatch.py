@@ -5,6 +5,10 @@ from typing import Any
 
 PROTOCOL_VERSION = "2025-11-25"
 PROJECT_NAME = "lore"
+SERVER_INSTRUCTIONS = (
+    "tools/list advertises Lore's six core tools only. Call the well-known lore_overview tool via tools/call "
+    "to load the complete runtime tool index and advanced schemas on demand."
+)
 
 
 def package_version() -> str:
@@ -123,7 +127,7 @@ def handle_mcp_request(
 ) -> dict[str, Any]:
     from .prompts import list_prompts
     from .resources import list_resource_templates, list_resources, read_resource, require_string
-    from .tools import TOOLS, call_tool
+    from .tools import DEFAULT_TOOLS, call_tool
 
     if method == "initialize":
         return {
@@ -134,6 +138,7 @@ def handle_mcp_request(
                 "prompts": {"listChanged": False},
             },
             "serverInfo": {"name": PROJECT_NAME, "version": package_version()},
+            "instructions": SERVER_INSTRUCTIONS,
         }
 
     if method == "ping":
@@ -143,7 +148,7 @@ def handle_mcp_request(
         return {}
 
     if method == "tools/list":
-        return {"tools": TOOLS}
+        return {"tools": DEFAULT_TOOLS}
 
     if method == "tools/call":
         return call_tool(
