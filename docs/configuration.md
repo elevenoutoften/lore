@@ -31,7 +31,7 @@ Inspect active configuration:
 
 ```bash
 curl -sS http://localhost:8078/api/config
-lore info
+lore-admin info
 ```
 
 ## Auth Modes
@@ -110,19 +110,19 @@ import-safe and only exposes the application factory.
 Create a backup:
 
 ```bash
-lore backup --content-dir ./data/pages --output ./backups/lore-pages.tar.gz
+lore-admin backup --content-dir ./data/pages --output ./backups/lore-pages.tar.gz
 ```
 
 Verify a backup:
 
 ```bash
-lore verify --input ./backups/lore-pages.tar.gz
+lore-admin verify --input ./backups/lore-pages.tar.gz
 ```
 
 Restore and rebuild the search index:
 
 ```bash
-lore restore \
+lore-admin restore \
   --input ./backups/lore-pages.tar.gz \
   --content-dir ./data/pages \
   --search-db ./data/search.db
@@ -131,6 +131,6 @@ lore restore \
 Export or import JSON:
 
 ```bash
-lore export --content-dir ./data/pages --output pages.json
-lore import pages.json --content-dir ./data/pages
+lore-admin export --content-dir ./data/pages --output pages.json
+lore-admin import pages.json --content-dir ./data/pages
 ```

@@ -19,7 +19,9 @@ dependencies = [
 ]
 
 [project.scripts]
-lore = "lore_app.cli:main"
+# Operator/admin CLI (runs on the server host: bootstrap, backup, consolidate, key).
+# The agent-facing memory CLI named `lore` ships from the SDK (sdk/python).
+lore-admin = "lore_app.cli:main"
 
 [project.optional-dependencies]
 dense = [

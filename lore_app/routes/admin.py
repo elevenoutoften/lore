@@ -72,6 +72,24 @@ def api_version() -> dict[str, str]:
     }
 
 
+@router.get("/api/whoami")
+def api_whoami(request: Request, config: LoreConfig = Depends(get_config)) -> dict[str, str | None]:
+    """Echo the caller's resolved actor and role.
+
+    Any authenticated caller may read this. It exists so an agent can see the
+    identity its captures are stamped with and that its default recall is scoped
+    to — making tenancy visible instead of something to infer. The actor matches
+    what ``stamp_capture_actor`` records, so ``whoami`` and capture attribution agree.
+    """
+    from ..route_utils import actor_from_request
+
+    return {
+        "actor": actor_from_request(request),
+        "role": getattr(request.state, "lore_role", None),
+        "auth_mode": config.auth_mode,
+    }
+
+
 @router.get("/api/config")
 def api_config(
     _admin: None = Depends(require_lore_key_admin),

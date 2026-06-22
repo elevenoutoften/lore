@@ -76,8 +76,11 @@ are managed by the holder of `LORE_AUTH_SECRET` — send that secret as the bear
 token:
 
 ```bash
-lore key create --name bootstrap --role admin
+lore-admin key create --name bootstrap --role admin
 ```
+
+(The operator CLI is `lore-admin`. The agent-facing memory CLI named `lore` —
+`lore capture/recall/ack/search/read/write` — ships from the SDK in `sdk/python`.)
 
 ## Configuration
 

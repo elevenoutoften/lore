@@ -7,7 +7,7 @@ Lore consolidation turns draft capture pages into extracted candidates, patch pl
 Run a dry pass with:
 
 ```bash
-lore consolidate
+lore-admin consolidate
 ```
 
 Dry run is the default. It extracts from the selected captures and reports the patch plans that would be generated, but it does not persist extraction candidates, patch plans, run records, or worker traces.
@@ -15,7 +15,7 @@ Dry run is the default. It extracts from the selected captures and reports the p
 Run and auto-apply safe plans with:
 
 ```bash
-lore consolidate --apply
+lore-admin consolidate --apply
 ```
 
 Useful flags:
@@ -51,7 +51,7 @@ scripts/run-consolidation.sh
 Show the current consolidation status with:
 
 ```bash
-lore status
+lore-admin status
 ```
 
 The output includes the last run timestamp, pending captures, patch plans by status, total generated plans, auto-applied plans, plans requiring review, errors from the last run, and stuck runs.
@@ -79,8 +79,8 @@ Example:
 
 ## Dry-run Semantics
 
-`lore consolidate` and `lore consolidate --dry-run` are non-destructive. They run extraction and planning in memory or temporary storage and leave the durable ledger unchanged. This makes dry runs safe to repeat.
+`lore-admin consolidate` and `lore-admin consolidate --dry-run` are non-destructive. They run extraction and planning in memory or temporary storage and leave the durable ledger unchanged. This makes dry runs safe to repeat.
 
-`lore consolidate --apply` persists extraction state, stores patch plans, records the consolidation run and worker trace, and auto-applies safe plans up to `--max-auto-apply`.
+`lore-admin consolidate --apply` persists extraction state, stores patch plans, records the consolidation run and worker trace, and auto-applies safe plans up to `--max-auto-apply`.
 
 If an apply run has already processed captures, a later apply run skips those captures unless `--force-reextract` is used. A dry run followed by an apply run does not require `--force-reextract`, because dry runs do not mark captures as extracted.

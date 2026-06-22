@@ -9,6 +9,17 @@ def test_version_endpoint(client):
     assert payload["version"] == "0.3.0b1"
 
 
+def test_whoami_reports_resolved_actor(client):
+    response = client.get("/api/whoami")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload.keys() >= {"actor", "role", "auth_mode"}
+    # The none-mode test client resolves to the shared local actor, matching what
+    # capture stamping uses (actor_from_request), so whoami and attribution agree.
+    assert payload["actor"] == "anonymous"
+    assert payload["auth_mode"] == "none"
+
+
 def test_list_read_and_catalog(client):
     pages = client.get("/api/pages").json()
     assert [page["id"] for page in pages] == [

@@ -151,6 +151,39 @@ class MemoryProvider:
             cross_actor: Admin-only flag to explicitly recall outside the
                 authenticated actor scope.
         """
+        result = self.recall_response(
+            query,
+            subject=subject,
+            lane=lane,
+            actor=actor,
+            min_strength=min_strength,
+            limit=limit,
+            record_access=record_access,
+            cross_actor=cross_actor,
+        )
+        claims = result.get("claims")
+        return claims if isinstance(claims, list) else []
+
+    def recall_response(
+        self,
+        query: str | None = None,
+        *,
+        subject: str | None = None,
+        lane: str | None = None,
+        actor: str | None = None,
+        min_strength: float = 0.0,
+        limit: int = 20,
+        record_access: bool = False,
+        cross_actor: bool = False,
+    ) -> dict[str, Any]:
+        """Like :meth:`recall` but returns the full response envelope.
+
+        Where ``recall`` returns just the ranked claims list, this returns the
+        whole response — ``claims`` plus the self-diagnosing ``count``,
+        ``pending_captures``, ``hint`` and ``weights`` fields. Use it when you
+        need to know *why* a recall came back empty (memory not consolidated yet,
+        scoped to another actor, or genuinely absent).
+        """
         params: dict[str, str] = {"limit": str(int(limit))}
         if query:
             params["query"] = query
@@ -167,8 +200,7 @@ class MemoryProvider:
             params["cross_actor"] = "true"
         path = "/api/memory/recall?" + urllib.parse.urlencode(params)
         result = self._send_with_retry("GET", path)
-        claims = result.get("claims") if isinstance(result, dict) else None
-        return claims if isinstance(claims, list) else []
+        return result if isinstance(result, dict) else {}
 
     def acknowledge_recall(self, candidate_ids: list[str]) -> dict[str, Any]:
         """Acknowledge recalled claims that were used, boosting salience."""

@@ -33,7 +33,7 @@ docker run -d --name lore -p 8078:8000 \
   -v "$PWD/sample-vault:/data/pages" \
   -v "$PWD/lore-db:/data/db" \
   lore-app
-docker exec lore lore key create --name quickstart --role admin
+docker exec lore lore-admin key create --name quickstart --role admin
 ```
 
 Copy the printed token; the Docker instance needs it on every API call as

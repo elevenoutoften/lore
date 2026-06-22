@@ -31,6 +31,11 @@ class LoreClient:
     def config(self) -> dict[str, Any] | list[Any]:
         return self._request("GET", "/api/config")
 
+    def whoami(self) -> dict[str, Any] | list[Any]:
+        """Return the caller's resolved actor and role (the identity captures are
+        stamped with and recall is scoped to)."""
+        return self._request("GET", "/api/whoami")
+
     def list_pages(
         self,
         category: str | None = None,

@@ -15,7 +15,7 @@ from typing import Any
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="lore", description="Lore knowledge wiki CLI")
+    parser = argparse.ArgumentParser(prog="lore-admin", description="Lore operator/admin CLI")
     sub = parser.add_subparsers(dest="command")
 
     p_bootstrap = sub.add_parser("bootstrap", help="Initialize a new Lore vault")

@@ -13,6 +13,9 @@ dependencies = []
 [project.optional-dependencies]
 test = ["pytest>=7"]
 
+[project.scripts]
+lore = "lore_sdk.cli:main"
+
 [tool.setuptools.packages.find]
 include = ["lore_sdk*"]
 
