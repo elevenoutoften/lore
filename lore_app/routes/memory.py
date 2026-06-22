@@ -21,7 +21,7 @@ from ..deps import (
 )
 from ..heartbeat import heartbeat_review
 from ..post_capture import run_post_capture_side_effects
-from ..recall import count_pending_captures, recall_hint, weights_for_query
+from ..recall import count_pending_captures, count_scoped_out_claims, recall_hint, weights_for_query
 from ..repository import InvalidPageId, LoreRepository
 from ..route_utils import recall_actor_scope, record_audit, stamp_capture_actor, validate_content
 from ..schemas import (
@@ -231,7 +231,15 @@ def api_memory_recall(
     # genuinely absent or just not consolidated yet. Count only captures not yet
     # extracted — an extracted draft is already recallable as a candidate claim.
     pending_captures = count_pending_captures(repo, ledger)
-    hint = recall_hint(len(claims), pending_captures)
+    # When a scoped recall comes up empty and nothing is pending, check whether the
+    # query matches memory owned by *other* actors so the hint can point at actor
+    # scope rather than wrongly implying no memory exists.
+    scoped_out = 0
+    if not claims and pending_captures == 0 and not cross_actor and actor:
+        scoped_out = count_scoped_out_claims(
+            ledger, query=query, subject=subject, lane=lane, min_strength=min_strength, valid_at=valid_at
+        )
+    hint = recall_hint(len(claims), pending_captures, scoped_out)
 
     return MemoryRecallResponse(
         query=query,
@@ -263,7 +271,9 @@ def api_memory_recall_ack(
         actor = recall_actor_scope(request, requested_actor=payload.actor, cross_actor=payload.cross_actor)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
-    acknowledged_count = ledger.record_claim_access(payload.candidate_ids, now=timestamp, actor=actor)
+    acknowledged_count = ledger.record_claim_access(
+        payload.candidate_ids, now=timestamp, actor=actor, include_unattributed=True
+    )
     return MemoryRecallAckResponse(acknowledged_count=acknowledged_count, timestamp=timestamp)
 
 

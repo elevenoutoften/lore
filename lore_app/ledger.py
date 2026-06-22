@@ -1112,8 +1112,16 @@ class LedgerDB:
         valid_at: str | None = None,
         actor: str | None = None,
         limit: int = 500,
+        include_unattributed: bool = False,
     ) -> list[dict[str, Any]]:
-        """Query active/candidate claims with filters."""
+        """Query active/candidate claims with filters.
+
+        When ``include_unattributed`` is set, an ``actor`` filter also matches
+        legacy/unattributed claims (``actor IS NULL`` or empty). This keeps
+        tenant-scoped recall backward-compatible: claims captured before actor
+        attribution (or by the deterministic no-actor path) remain recallable by
+        their tenant, while named-actor isolation still holds.
+        """
         clauses: list[str] = [
             "candidate_type = 'claim'",
             "status IN ('candidate', 'active')",
@@ -1127,7 +1135,10 @@ class LedgerDB:
             clauses.append("lane = ?")
             params.append(lane)
         if actor:
-            clauses.append("actor = ?")
+            if include_unattributed:
+                clauses.append("(actor = ? OR actor IS NULL OR actor = '')")
+            else:
+                clauses.append("actor = ?")
             params.append(actor)
         if min_strength > 0:
             clauses.append("strength >= ?")
@@ -1197,6 +1208,7 @@ class LedgerDB:
             min_strength=min_strength,
             valid_at=valid_at or now_dt.isoformat(),
             limit=effective_pool,
+            include_unattributed=True,
         )
 
         claim_texts = [_claim_text(row) for row in pool]
@@ -1262,6 +1274,7 @@ class LedgerDB:
                 [str(item["candidate_id"]) for item in top],
                 now=now_dt.isoformat(),
                 actor=actor,
+                include_unattributed=True,
             )
         return top
 
@@ -1272,14 +1285,26 @@ class LedgerDB:
         *,
         now: str | None = None,
         actor: str | None = None,
+        include_unattributed: bool = False,
     ) -> int:
-        """Increment access count and stamp last_accessed_at for recalled claims."""
+        """Increment access count and stamp last_accessed_at for recalled claims.
+
+        When ``include_unattributed`` is set, an ``actor`` filter also matches
+        legacy/unattributed claims (``actor IS NULL`` or empty), so a caller can
+        acknowledge claims that scoped recall surfaced to it under the same
+        backward-compatible rule (see ``get_active_claims``).
+        """
         ids = [cid for cid in dict.fromkeys(candidate_ids) if cid]
         if not ids:
             return 0
         timestamp = now or utc_now()
         placeholders = ", ".join("?" for _ in ids)
-        actor_clause = " AND actor = ?" if actor else ""
+        if actor:
+            actor_clause = (
+                " AND (actor = ? OR actor IS NULL OR actor = '')" if include_unattributed else " AND actor = ?"
+            )
+        else:
+            actor_clause = ""
         params: tuple[Any, ...] = (timestamp, *ids, actor) if actor else (timestamp, *ids)
         with self._lock:
             cursor = self.connection.execute(

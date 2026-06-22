@@ -34,7 +34,7 @@ from ..precedent_search import search_precedents
 from ..procedure_candidate import find_repeated_captures, propose_procedure_candidate
 from ..provenance import get_capture_provenance, get_page_provenance
 from ..rag.hybrid_retrieval import hybrid_retrieve_expanded
-from ..recall import count_pending_captures, recall_hint, weights_for_query
+from ..recall import count_pending_captures, count_scoped_out_claims, recall_hint, weights_for_query
 from ..repository import InvalidPageId, LoreRepository
 from ..route_utils import index_vectors_for_page, recall_actor_scope, stamp_capture_actor, stamp_trace_actor
 from ..schemas import (
@@ -1313,12 +1313,15 @@ def _handle_lore_recall(ctx: McpContext) -> dict[str, Any]:
     has_more = len(rows) > limit
     rows = rows[:limit]
     if record_access and rows:
-        ledger.record_claim_access([str(row["candidate_id"]) for row in rows], actor=actor)
+        ledger.record_claim_access([str(row["candidate_id"]) for row in rows], actor=actor, include_unattributed=True)
     claims = [_recall_claim_payload(row) for row in rows]
     # Self-diagnosing recall, matching the REST surface: a count=0 result carries the
     # pending-consolidation count and a hint so an MCP agent never hits a silent dead end.
     pending_captures = count_pending_captures(ctx.repo, ledger)
-    hint = recall_hint(len(claims), pending_captures)
+    scoped_out = 0
+    if not claims and pending_captures == 0 and not cross_actor and actor:
+        scoped_out = count_scoped_out_claims(ledger, query=query, subject=subject, lane=lane, min_strength=min_strength)
+    hint = recall_hint(len(claims), pending_captures, scoped_out)
     payload = {
         "query": query,
         "count": len(claims),
@@ -1344,7 +1347,9 @@ def _handle_lore_ack_recall(ctx: McpContext) -> dict[str, Any]:
     ledger = require_service(ctx.ledger_db, "ledger database")
     actor = _mcp_actor_scope(ctx, arguments)
     timestamp = utc_now()
-    acknowledged_count = ledger.record_claim_access(candidate_ids, now=timestamp, actor=actor)
+    acknowledged_count = ledger.record_claim_access(
+        candidate_ids, now=timestamp, actor=actor, include_unattributed=True
+    )
     payload = {"acknowledged_count": acknowledged_count, "timestamp": timestamp}
     return tool_result(payload, f"Acknowledged {acknowledged_count} recalled claim(s).")
 

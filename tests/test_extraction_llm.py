@@ -482,7 +482,10 @@ def test_llm_successful_extraction(tmp_path, monkeypatch, fake_llm_client):
     assert claim.predicate == "depends_on"
     assert claim.object == "Auth Service"
     assert claim.source_page_ids == [capture_id]
-    assert claim.actor == "extractor-bot"
+    # Attribution is bound to the capture's server-stamped actor (default "nyx"
+    # from add_capture), NOT the LLM-supplied "extractor-bot". This is what keeps
+    # default actor-scoped recall able to find the capturing agent's own memory.
+    assert claim.actor == "nyx"
     assert claim.lane == "ops"
     assert claim.observed_at == observed_at.isoformat()
     assert claim.model_version == "fake-test-model"
@@ -1038,6 +1041,120 @@ def test_e2e_retry_resolves_deadletter(tmp_path, fake_llm_client, monkeypatch, c
     assert '"retried": 0' in second_output
     assert '"resolved": 0' in second_output
     assert len(ledger.get_candidates(capture_id=capture_id, limit=20)) == 4
+
+
+def test_llm_extracted_claim_actor_is_bound_to_capture_not_model(tmp_path, fake_llm_client):
+    """Regression for the broken capture->recall loop on the recommended config.
+
+    On an api_key instance with an LLM extractor, an extracted claim's actor MUST
+    come from the capture's server-stamped frontmatter actor, not the LLM's
+    content-derived guess (or a missing value). Otherwise default actor-scoped
+    recall returns 0 for the capturing agent and "capture then recall just works"
+    silently breaks.
+    """
+    repo = LoreRepository(tmp_path / "pages")
+    ledger = make_ledger(tmp_path)
+    capture_id = add_capture(
+        repo,
+        "inbox/2026-06-22/actor-binding",
+        title="Actor Binding",
+        summary="Nyx ran the smoke test against Lore.",
+        suggested_target_page="services/lore",
+        actor="dev",  # the authenticated caller, server-stamped onto the capture
+        body="Nyx ran the smoke test against Lore.",
+    )
+    # The model derives a DIFFERENT actor from the content ("Nyx") on one claim and
+    # omits it entirely on another. Both must be overridden with the capture's "dev".
+    llm_client = fake_llm_client(
+        responses={
+            capture_id: {
+                "entities": [
+                    {"subject": "services/lore", "name": "Lore", "entity_type": "service"},
+                ],
+                "claims": [
+                    {
+                        "subject": "services/lore",
+                        "predicate": "verified",
+                        "object": "the capture-recall loop end to end",
+                        "confidence": "high",
+                        "actor": "Nyx",  # content-derived; must be ignored
+                        "source_page_ids": [capture_id],
+                    },
+                    {
+                        "subject": "services/lore",
+                        "predicate": "states",
+                        "object": "the smoke test ran successfully",
+                        "confidence": "high",
+                        # no actor at all; must be backfilled with "dev"
+                        "source_page_ids": [capture_id],
+                    },
+                ],
+                "edges": [],
+                "invalidations": [],
+            }
+        }
+    )
+
+    result = extract_from_captures(
+        repo,
+        capture_ids=[capture_id],
+        dry_run=False,
+        ledger_db=ledger,
+        llm_client=llm_client,
+    )
+
+    assert result.claims, "expected LLM-extracted claims"
+    assert {claim.actor for claim in result.claims} == {"dev"}
+
+    # The capturing agent recalls its OWN freshly captured memory under default
+    # (actor-scoped) recall — the exact path that was returning count:0.
+    scoped = ledger.recall_claims(query="verified capture recall loop", actor="dev", limit=10)
+    assert scoped, "scoped recall must find the caller's own claims"
+
+    # Named-actor isolation still holds: a different actor does not see "dev" claims.
+    other = ledger.recall_claims(query="verified capture recall loop", actor="ghost", limit=10)
+    assert not any(row.get("actor") == "dev" for row in other)
+
+
+def test_scoped_recall_surfaces_legacy_unattributed_claims(tmp_path):
+    """Regression: tenancy scoping must not orphan legacy actor=NULL claims.
+
+    Claims captured before actor attribution (or by the deterministic no-actor
+    path) have actor IS NULL. A scoped recall must still surface them to the
+    tenant, otherwise a routine upgrade makes existing memory unrecallable.
+    """
+    repo = LoreRepository(tmp_path / "pages")
+    ledger = make_ledger(tmp_path)
+    # A legacy/unattributed capture has no `actor` frontmatter key at all, so the
+    # extracted claim's actor is genuinely NULL.
+    capture_id = "inbox/2026-06-22/legacy-null-actor"
+    repo.upsert_page(
+        capture_id,
+        "---\n"
+        "title: Legacy Null Actor\n"
+        "kind: capture\n"
+        "visibility: internal\n"
+        "status: draft\n"
+        "summary: Lore stored this claim before actor attribution existed.\n"
+        "confidence: high\n"
+        "lane: project\n"
+        "suggested_target_page: services/lore\n"
+        "---\n\n"
+        "Lore stored this claim before actor attribution existed.\n",
+    )
+    result = extract_from_captures(
+        repo,
+        capture_ids=[capture_id],
+        dry_run=False,
+        ledger_db=ledger,
+        llm_client=None,  # deterministic path -> claim actor is None
+    )
+    assert result.claims
+    assert all(claim.actor is None for claim in result.claims)
+
+    # A scoped recall by an arbitrary caller still surfaces the unattributed claim.
+    scoped = ledger.recall_claims(query="stored claim actor attribution", actor="dev", limit=10)
+    assert scoped, "legacy actor=NULL claims must remain recallable by the scoped tenant"
 
 
 def test_retry_cli_marks_no_provider_resolution_as_deterministic(tmp_path, monkeypatch, capsys):

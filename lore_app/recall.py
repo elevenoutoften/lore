@@ -183,12 +183,41 @@ def count_pending_captures(repo: LoreRepository, ledger: LedgerDB) -> int:
     )
 
 
-def recall_hint(count: int, pending_captures: int) -> str | None:
+def count_scoped_out_claims(
+    ledger: LedgerDB,
+    *,
+    query: str | None = None,
+    subject: str | None = None,
+    lane: str | None = None,
+    min_strength: float = 0.0,
+    valid_at: str | None = None,
+    limit: int = 5,
+) -> int:
+    """Count matching claims across ALL actors (a cross-actor existence probe).
+
+    Used only to enrich an empty *scoped* recall's hint: if the caller's own
+    (and unattributed) memory yields nothing but the same query matches claims
+    owned by other actors, the feedback rail can say so instead of "no memory".
+    """
+    rows = ledger.recall_claims(
+        query=query,
+        subject=subject,
+        lane=lane,
+        actor=None,
+        min_strength=min_strength,
+        valid_at=valid_at,
+        limit=limit,
+    )
+    return len(rows)
+
+
+def recall_hint(count: int, pending_captures: int, scoped_out: int = 0) -> str | None:
     """A self-diagnosing hint for an empty recall, shared by the REST and MCP surfaces.
 
     A ``count == 0`` recall should never be silent: distinguish "no memory yet, N
-    captures pending consolidation" from "genuinely nothing matches" so an agent
-    knows whether to wait/consolidate or broaden the query.
+    captures pending consolidation" from "memory exists but is owned by another
+    actor" from "genuinely nothing matches" so an agent knows whether to
+    wait/consolidate, widen the actor scope, or broaden the query.
     """
     if count > 0:
         return None
@@ -197,5 +226,11 @@ def recall_hint(count: int, pending_captures: int) -> str | None:
             f"No matching claims yet, but {pending_captures} capture(s) are pending consolidation. "
             "They become recallable once consolidation runs (POST /api/consolidation/run); "
             "with auto-consolidation enabled this usually happens within moments of capture."
+        )
+    if scoped_out > 0:
+        return (
+            f"No matching memory for your actor, but {scoped_out} matching claim(s) exist under other actors. "
+            "Recall is scoped to your own actor by default; an admin key can pass cross_actor=true to read "
+            "across actors, or check that the captures were attributed to the recalling actor."
         )
     return "No matching memory. Write some with POST /api/memory/capture (or broaden the query)."

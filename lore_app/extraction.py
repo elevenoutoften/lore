@@ -116,9 +116,17 @@ def extract_from_captures(
                 capture_edges = llm_result.get("edges", [])
                 capture_invalidations = llm_result.get("invalidations", [])
                 llm_observed_at = datetime.now(UTC).isoformat()
+                # Attribution is provenance, not content. Bind every LLM-extracted
+                # claim's actor to the capture's server-stamped actor (anti-spoof),
+                # never the model's content-derived guess. This mirrors the
+                # deterministic extractor (_extract_capture stamps the same
+                # frontmatter actor) so that default actor-scoped recall can find
+                # freshly captured memory on LLM-configured instances.
+                capture_actor = optional_string(capture.frontmatter.get("actor"))
                 for claim in capture_claims:
                     if not claim.observed_at:
                         claim.observed_at = llm_observed_at
+                    claim.actor = capture_actor
             else:
                 capture_entities, capture_claims, capture_edges, capture_invalidations = _extract_capture(repo, capture)
 
