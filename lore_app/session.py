@@ -14,9 +14,10 @@ import hashlib
 import hmac
 import time
 
+from .constants import VALID_API_KEY_ROLES
+
 SESSION_COOKIE_NAME = "lore_session"
 DEFAULT_TTL_SECONDS = 86400
-_VALID_ROLES = frozenset({"admin", "writer", "reader"})
 
 
 def _b64encode(raw: bytes) -> str:
@@ -67,6 +68,6 @@ def verify_session(secret: str, token: str) -> tuple[str, str] | None:
         return None
     if expiry < int(time.time()):
         return None
-    if role not in _VALID_ROLES or not actor:
+    if role not in VALID_API_KEY_ROLES or not actor:
         return None
     return actor, role

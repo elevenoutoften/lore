@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
 
 from ..config import LoreConfig, merged_llm_config
+from ..constants import VALID_API_KEY_ROLES
 from ..deps import get_api_key_store, get_config, get_settings_store, get_templates
 from ..route_utils import none_mode_local_operator, template_context
 from ..schemas import LlmSettingsResponse, LlmSettingsUpdate
@@ -59,7 +60,7 @@ def require_lore_key(
     if none_mode_local_operator(request):
         return
     state_role = str(getattr(request.state, "lore_role", "") or "").strip()
-    if state_role in {"admin", "writer", "reader"}:
+    if state_role in VALID_API_KEY_ROLES:
         return
 
     token = _extract_bearer_token(authorization)

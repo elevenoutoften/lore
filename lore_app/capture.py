@@ -5,6 +5,7 @@ import re
 from datetime import UTC, date, datetime
 from typing import Any
 
+from .constants import ALLOWED_LANES
 from .frontmatter import frontmatter_scalar
 from .provenance import merge_capture_provenance
 from .repository import InvalidPageId, LoreRepository, infer_kind, normalize_page_id, optional_string, string_list
@@ -30,7 +31,6 @@ SLUG_PATTERN = re.compile(r"[A-Za-z0-9]+")
 PAGE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_/.-]*$")
 CAPTURE_STATUSES = {"draft", "review", "accepted", "rejected", "archived"}
 ALLOWED_NAMESPACES = {"inbox", "notes"}
-ALLOWED_LANES = {"project", "procedural", "ops", "companion", "draft"}
 CAPTURE_INTAKE_SUMMARY = "Rough agent memory capture; not canonical truth."
 
 

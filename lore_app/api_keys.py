@@ -10,9 +10,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from .constants import VALID_API_KEY_ROLES
 from .db_utils import retry_on_locked
-
-VALID_API_KEY_ROLES = {"admin", "writer", "reader"}
 
 
 @dataclass(frozen=True)

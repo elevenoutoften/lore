@@ -13,6 +13,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .constants import API_KEY_ROLES
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="lore-admin", description="Lore operator/admin CLI")
@@ -101,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     p_key_create = key_sub.add_parser("create", help="Create an API key and print its token once")
     p_key_create.add_argument("--name", required=True, help="Human-readable key name")
     p_key_create.add_argument(
-        "--role", default="admin", choices=["admin", "writer", "reader"], help="Key role (default: admin)"
+        "--role", default="admin", choices=list(API_KEY_ROLES), help="Key role (default: admin)"
     )
     p_key_create.add_argument("--description", default="", help="Optional description")
 

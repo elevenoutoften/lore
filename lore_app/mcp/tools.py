@@ -19,6 +19,7 @@ from ..capture import (
 )
 from ..code_ingest.ingest_service import ingest_service_code
 from ..code_ingest.validate import IngestValidationError, validate_service_id, validate_source_dir
+from ..constants import LANES
 from ..context_graph import build_context_graph, explain_context, query_neighbors, query_paths, scope_context_graph
 from ..distillation import distill_daily, get_daily_captures, promote_daily_note
 from ..extraction import retry_deadletter
@@ -149,7 +150,7 @@ TOOLS: list[dict[str, Any]] = [
                 },
                 "lane": {
                     "type": "string",
-                    "enum": ["project", "procedural", "ops", "companion", "draft"],
+                    "enum": list(LANES),
                     "description": "Filter by retrieval lane.",
                 },
                 "actor": {"type": "string", "description": "Filter by producing agent name."},
@@ -233,7 +234,7 @@ TOOLS: list[dict[str, Any]] = [
                 "subject": {"type": "string", "description": "Filter to claims about an exact normalized subject."},
                 "lane": {
                     "type": "string",
-                    "enum": ["project", "procedural", "ops", "companion", "draft"],
+                    "enum": list(LANES),
                     "description": "Filter to a retrieval lane.",
                 },
                 "actor": {"type": "string", "description": "Filter to claims produced by a specific agent."},
@@ -549,7 +550,7 @@ TOOLS: list[dict[str, Any]] = [
                 "provenance": CAPTURE_PROVENANCE_INPUT_SCHEMA,
                 "lane": {
                     "type": "string",
-                    "enum": ["project", "procedural", "ops", "companion", "draft"],
+                    "enum": list(LANES),
                     "description": "Retrieval lane for categorizing the capture.",
                 },
             },
@@ -898,7 +899,7 @@ TOOLS: list[dict[str, Any]] = [
                 "situation_type": {"type": "string", "description": "Situation type filter."},
                 "lane": {
                     "type": "string",
-                    "enum": ["project", "procedural", "ops", "companion", "draft"],
+                    "enum": list(LANES),
                     "description": "Retrieval lane filter.",
                 },
                 "actor": {"type": "string", "description": "Agent name filter."},
