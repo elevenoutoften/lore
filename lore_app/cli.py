@@ -30,7 +30,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p_restore = sub.add_parser("restore", help="Restore vault from a tar.gz backup")
     p_restore.add_argument("--content-dir", default="./data/pages", help="Content directory")
-    p_restore.add_argument("--search-db", default="./data/search.db", help="Search index database")
+    p_restore.add_argument("--search-db", default="./data/db/search.db", help="Search index database")
     p_restore.add_argument("--input", required=True, help="Input tar.gz file")
     p_restore.add_argument("--ledger-db", default="./data/db/ledger.db", help="Claim ledger database")
     p_restore.add_argument("--vector-db", default="./data/db/vectors.db", help="Vector index database")
