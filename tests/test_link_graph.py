@@ -38,7 +38,9 @@ def test_reader_shows_relationship_panel(client):
     assert response.status_code == 200
     assert "Backlinks" in response.text
     assert "Outgoing" in response.text
+    assert "Developer JSON" in response.text
     assert "Links JSON" in response.text
+    assert 'class="reader-api-toggle"' in response.text
     assert "/projects/example-project" in response.text
 
 

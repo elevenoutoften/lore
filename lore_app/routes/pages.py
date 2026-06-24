@@ -53,6 +53,33 @@ if TYPE_CHECKING:
 router = APIRouter()
 
 
+def _reader_home_kind_rank(kind: str) -> tuple[int, str]:
+    priority = {
+        "project": 0,
+        "service": 1,
+        "decision": 2,
+        "runbook": 3,
+        "procedure": 4,
+        "concept": 5,
+        "page": 6,
+    }
+    return priority.get(kind, 99), kind
+
+
+def _reader_home_sections(pages: list[PageSummary]) -> tuple[list[PageSummary], list[PageSummary]]:
+    readable_pages = [page for page in pages if page.kind != "capture"]
+    featured_pages = sorted(
+        readable_pages,
+        key=lambda page: (_reader_home_kind_rank(page.kind), page.title.casefold(), page.id.casefold()),
+    )[:4]
+    recent_pages = sorted(
+        readable_pages,
+        key=lambda page: (page.updated_at, page.title.casefold(), page.id.casefold()),
+        reverse=True,
+    )[:6]
+    return featured_pages, recent_pages
+
+
 @router.get("/", response_class=HTMLResponse)
 def index(
     request: Request,
@@ -64,6 +91,7 @@ def index(
 ):
     pages = repo.list_pages(kind=kind, visibility=visibility, q=q)
     catalog = repo.catalog()
+    featured_pages, recent_pages = _reader_home_sections(pages)
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -72,6 +100,8 @@ def index(
             pages=pages,
             catalog=catalog,
             selected_page=None,
+            featured_pages=featured_pages,
+            recent_pages=recent_pages,
             query=q or "",
             kind=kind or "",
             visibility=visibility or "",

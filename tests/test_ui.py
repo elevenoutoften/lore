@@ -5,9 +5,12 @@ def test_index_renders_page_list(client):
     response = client.get("/")
     assert response.status_code == 200
     assert "Lore" in response.text
+    assert "Featured reading" in response.text
+    assert "Recently updated" in response.text
+    assert "Search Lore" in response.text
     assert "ExampleProject" in response.text
     assert "Workflow Engine" in response.text
-    assert 'href="/api-keys"' in response.text
+    assert "Create an access key" not in response.text
 
 
 def test_api_key_page_renders(client):
@@ -52,6 +55,10 @@ def test_rendered_api_returns_html_without_changing_raw_api(client):
     raw = client.get("/api/pages/projects/example-project").json()
     assert "# ExampleProject" in raw["content"]
     assert "[[Workflow Engine|services/workflow-engine]]" in raw["content"]
+
+    links = client.get("/api/pages/projects/example-project/links").json()
+    assert links["page"]["id"] == "projects/example-project"
+    assert any(edge["target"] == "services/workflow-engine" for edge in links["outgoing"])
 
 
 def test_search_page(client):
@@ -173,11 +180,15 @@ def test_mcp_unmatched_path_returns_json_404(client):
     assert "<html" not in resp.text
 
 
-def test_nav_exposes_operator_pages(client):
-    """The shared nav must make every operator page reachable by a click from /."""
-    expected = ("/", "/graph", "/captures", "/procedures", "/heartbeat", "/lint", "/rag", "/api-keys", "/settings")
+def test_nav_separates_read_and_operate(client):
+    """The shared nav keeps reader entry points distinct from operator surfaces."""
     home = client.get("/").text
-    for href in expected:
+    for href in ("/", "/search", "/graph", "/captures", "/procedures", "/heartbeat", "/lint", "/rag", "/api-keys", "/settings"):
         assert f'href="{href}"' in home, href
-    # The nav is a shared partial, so a deep operator page carries the same links.
-    assert 'href="/captures"' in client.get("/heartbeat").text
+    assert 'aria-label="Read"' in home
+    assert 'aria-label="Operate"' in home
+    assert "Search</a>" in home
+    # The nav is a shared partial, so a deep operator page carries the same grouped links.
+    heartbeat = client.get("/heartbeat").text
+    assert 'aria-label="Read"' in heartbeat
+    assert 'aria-label="Operate"' in heartbeat

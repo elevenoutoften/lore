@@ -459,12 +459,17 @@
           {% endif %}
 
           <div class="reader-tools" aria-label="Page tools">
-            <a href="/api/pages/{{ selected_page.id }}">Raw</a>
-            <a href="/api/pages/{{ selected_page.id }}/rendered">Rendered JSON</a>
-            <a href="/api/pages/{{ selected_page.id }}/links">Links JSON</a>
             {% if rendered_page.missing_links %}
             <span>{{ rendered_page.missing_links | length }} missing link{% if rendered_page.missing_links | length != 1 %}s{% endif %}</span>
             {% endif %}
+            <details class="reader-api-toggle">
+              <summary>Developer JSON</summary>
+              <div class="reader-api-toggle__links">
+                <a href="/api/pages/{{ selected_page.id }}">Raw</a>
+                <a href="/api/pages/{{ selected_page.id }}/rendered">Rendered JSON</a>
+                <a href="/api/pages/{{ selected_page.id }}/links">Links JSON</a>
+              </div>
+            </details>
           </div>
             </div>
           </details>
@@ -611,15 +616,62 @@
           {% endif %}
         </article>
         {% else %}
-        <div class="welcome">
-          <p class="eyebrow">Agent memory</p>
-          <h2>A fast, shared memory backend for agents.</h2>
-          <p>Lore is distributed memory for Hermes, OpenClaw, Codex, and other agents: connect with a token over the HTTP API or MCP to read, write, link, and recall project knowledge. The pages here are that memory, rendered for humans.</p>
-          <p class="welcome-actions">
-            <a href="/api-keys">Create an access key</a>
-            <a href="/settings">Configure the model</a>
-            <a href="/graph">Explore the graph</a>
-          </p>
+        <div class="reader-home">
+          <section class="reader-home__hero">
+            <p class="eyebrow">Read Lore</p>
+            <div class="reader-home__header">
+              <div>
+                <h2>Start with the canon, then branch into context.</h2>
+              </div>
+              <p>Use featured pages to orient yourself, recent updates to catch changes, and Search or Graph when you want a faster jump into the knowledge base.</p>
+            </div>
+            <div class="reader-home__actions">
+              <a href="/search">Search Lore</a>
+              <a href="/graph">Explore the graph</a>
+            </div>
+          </section>
+
+          <div class="reader-home__grid">
+            <section class="reader-home__section" aria-labelledby="reader-home-featured">
+              <div class="list-header">
+                <p id="reader-home-featured">Featured reading</p>
+                <span>{{ featured_pages | length }}</span>
+              </div>
+              <div class="reader-home__list">
+                {% for page in featured_pages %}
+                <a class="reader-home__card" href="/{{ page.id }}">
+                  <span class="reader-home__card-title">{{ page.title }}</span>
+                  <span class="reader-home__card-meta">{{ page.kind }}{% if page.status %} - {{ page.status }}{% endif %}</span>
+                  <span class="reader-home__card-summary">{{ page.summary or page.id }}</span>
+                </a>
+                {% endfor %}
+              </div>
+            </section>
+
+            <section class="reader-home__section" aria-labelledby="reader-home-recent">
+              <div class="list-header">
+                <p id="reader-home-recent">Recently updated</p>
+                <span>{{ recent_pages | length }}</span>
+              </div>
+              <div class="reader-home__list">
+                {% for page in recent_pages %}
+                <a class="reader-home__card" href="/{{ page.id }}">
+                  <span class="reader-home__card-title">{{ page.title }}</span>
+                  <span class="reader-home__card-meta">updated {{ page.updated_at[:10] }} - {{ page.kind }}</span>
+                  <span class="reader-home__card-summary">{{ page.summary or page.id }}</span>
+                </a>
+                {% endfor %}
+              </div>
+            </section>
+          </div>
+
+          <section class="reader-home__section">
+            <div class="list-header">
+              <p>Browse the full wiki</p>
+              <span>{{ page_count }}</span>
+            </div>
+            <p class="reader-home__hint">Use the page catalog on the left to browse every page, or jump straight into Search when you already know the topic.</p>
+          </section>
         </div>
         {% endif %}
       </section>
