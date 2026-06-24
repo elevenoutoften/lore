@@ -38,6 +38,33 @@ def _content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
+def _auto_apply_hint(
+    *,
+    dry_run: bool,
+    max_auto_apply: int,
+    plans_generated: int,
+    auto_applied: int,
+) -> str | None:
+    if dry_run:
+        return (
+            "Dry run only: no plans were applied. Re-run with dry_run=false and max_auto_apply>0 "
+            "to auto-apply bounded safe plans."
+        )
+    if max_auto_apply == 0:
+        if plans_generated > 0:
+            return (
+                "No plans were auto-applied because max_auto_apply=0. Re-run with max_auto_apply>0 "
+                "to auto-apply bounded safe plans."
+            )
+        return (
+            "No plans were auto-applied because max_auto_apply=0. Re-run with max_auto_apply>0 "
+            "if you want future safe plans applied automatically."
+        )
+    if plans_generated > auto_applied and auto_applied == 0:
+        return "No safe plans were auto-applied in this run."
+    return None
+
+
 def run_auto_consolidation(app: Any) -> None:
     """Background, coalesced consolidation triggered off the capture path.
 
@@ -239,6 +266,13 @@ class ConsolidationWorker:
             review_required=max(0, len(plans) - auto_applied),
             errors=errors,
             dry_run=dry_run,
+            max_auto_apply=max_auto_apply,
+            auto_apply_hint=_auto_apply_hint(
+                dry_run=dry_run,
+                max_auto_apply=max_auto_apply,
+                plans_generated=len(plans),
+                auto_applied=auto_applied,
+            ),
             blocked_claims=blocked_claims,
         )
         if not dry_run:

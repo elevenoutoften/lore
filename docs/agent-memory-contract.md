@@ -98,7 +98,9 @@ of extracted claims.
 
 If you disable auto-consolidation (for very high write volume plus a scheduled
 runner), drive it explicitly with `POST /api/consolidation/run` (MCP
-`lore_consolidation_run`). Recall is **self-diagnosing**: a `count: 0` response
+`lore_consolidation_run`). That manual run stays safe by default:
+`dry_run=true` and `max_auto_apply=0`, so argument-less calls preview work and
+do not auto-apply plans. Recall is **self-diagnosing**: a `count: 0` response
 includes `pending_captures` and a `hint` telling you whether memory is genuinely
 absent or just awaiting consolidation.
 
@@ -228,7 +230,7 @@ contradiction-update, and distractor expectations.
 | Operation | HTTP | MCP tool | Python SDK |
 | --- | --- | --- | --- |
 | Capture memory | `POST /api/memory/capture` | `lore_capture` | `MemoryProvider.capture` |
-| Consolidate (auto by default) | `POST /api/consolidation/run` | `lore_consolidation_run` | — |
+| Consolidate (safe preview by default) | `POST /api/consolidation/run` | `lore_consolidation_run` | — |
 | Recall ranked claims | `GET /api/memory/recall` | `lore_recall` | `MemoryProvider.recall` |
 | Search pages | `GET /api/search` | `lore_search` | `LoreClient.search` |
 | Assembled context | `POST /api/rag/retrieve-expanded` | `lore_rag_context_expanded` | — |

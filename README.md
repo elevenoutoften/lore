@@ -200,6 +200,7 @@ Ledger, consolidation, provenance, traces, policies, and precedents:
 - `GET /api/ledger/candidates`
 - `GET /api/consolidation/status`
 - `POST /api/consolidation/run`
+  - Safe defaults: `dry_run=true` and `max_auto_apply=0`. Calling it without arguments previews consolidation work and does not auto-apply plans.
 - `POST /api/consolidation/rollback/{plan_id}`
 - `POST /api/consolidation/plan`
 - `GET /api/consolidation/plans`
@@ -367,6 +368,7 @@ Tools:
 - `lore_retry_extraction_deadletter`
 - `lore_consolidation_status`
 - `lore_consolidation_run`
+  - Safe defaults: `dry_run=true` and `max_auto_apply=0`. Set `dry_run=false` and `max_auto_apply>0` to auto-apply bounded safe plans.
 - `lore_consolidation_rollback`
 - `lore_list_patch_plans`
 - `lore_preview_patch`

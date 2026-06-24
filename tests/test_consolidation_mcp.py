@@ -146,9 +146,12 @@ def test_lore_consolidation_run_dry_run_returns_plans_without_auto_apply(tmp_pat
     assert content["plans_generated"] == 1
     assert content["auto_applied"] == 0
     assert content["dry_run"] is True
+    assert content["max_auto_apply"] == 5
+    assert content["auto_apply_hint"].startswith("Dry run only:")
     assert ctx.repo.read_page("services/lore") is not None
     assert "Lore MCP run creates plans." not in ctx.repo.read_page("services/lore").content
     assert ctx.ledger.list_patch_plans(status="pending") == []
+    assert "Dry run only:" in result["content"][0]["text"]
 
 
 def test_lore_list_patch_plans_returns_plans_after_run(tmp_path, monkeypatch):
@@ -165,6 +168,27 @@ def test_lore_list_patch_plans_returns_plans_after_run(tmp_path, monkeypatch):
     assert content["count"] == 1
     assert content["plans"][0]["target_page_id"] == "services/lore"
     assert "patch plan(s)" in result["content"][0]["text"]
+
+
+def test_lore_consolidation_run_non_dry_run_zero_auto_apply_returns_explicit_hint(tmp_path, monkeypatch):
+    ctx = make_context(tmp_path, monkeypatch)
+    write_page(ctx.repo, "services/lore")
+    add_capture(ctx.repo, "inbox/2026-05-10/no-auto", summary="Lore MCP no-op runs explain why nothing applied.")
+
+    app = create_app(ctx.config, mount_workspaces=False)
+    with TestClient(app) as client:
+        result = result_payload(rpc(client, "lore_consolidation_run", {"dry_run": False, "max_auto_apply": 0}))
+
+    content = result["structuredContent"]
+    assert content["dry_run"] is False
+    assert content["max_auto_apply"] == 0
+    assert content["plans_generated"] == 1
+    assert content["auto_applied"] == 0
+    assert content["auto_apply_hint"] == (
+        "No plans were auto-applied because max_auto_apply=0. Re-run with max_auto_apply>0 "
+        "to auto-apply bounded safe plans."
+    )
+    assert "No plans were auto-applied because max_auto_apply=0." in result["content"][0]["text"]
 
 
 def test_lore_preview_patch_returns_content_and_diff(tmp_path, monkeypatch):

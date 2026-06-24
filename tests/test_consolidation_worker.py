@@ -288,6 +288,23 @@ def test_run_auto_applies_safe_plans(tmp_path, monkeypatch):
     assert run_trace.outcome == f"batch_id={result.batch_id}"
 
 
+def test_run_non_dry_run_with_zero_auto_apply_returns_explicit_hint(tmp_path, monkeypatch):
+    ctx = make_context(tmp_path, monkeypatch)
+    write_page(ctx.repo, "services/lore")
+    add_capture(ctx.repo, "inbox/2026-05-10/no-auto", summary="Lore no-op runs should say why nothing applied.")
+
+    result = ctx.worker.run(dry_run=False, batch_size=10, max_auto_apply=0)
+
+    assert result.dry_run is False
+    assert result.max_auto_apply == 0
+    assert result.plans_generated == 1
+    assert result.auto_applied == 0
+    assert result.auto_apply_hint == (
+        "No plans were auto-applied because max_auto_apply=0. Re-run with max_auto_apply>0 "
+        "to auto-apply bounded safe plans."
+    )
+
+
 def test_auto_apply_creates_trace_with_plan_trace_completed(tmp_path, monkeypatch):
     ctx = make_context(tmp_path, monkeypatch)
     write_page(ctx.repo, "services/lore")
@@ -581,6 +598,29 @@ def test_consolidation_run_api_endpoint(tmp_path, monkeypatch):
     assert payload["captures_processed"] == 1
     assert payload["plans_generated"] == 1
     assert payload["auto_applied"] == 1
+
+
+def test_consolidation_run_api_endpoint_reports_zero_auto_apply_hint(tmp_path, monkeypatch):
+    ctx = make_context(tmp_path, monkeypatch)
+    write_page(ctx.repo, "services/lore")
+    add_capture(ctx.repo, "inbox/2026-05-10/api-no-auto", summary="Lore run endpoint explains zero auto-apply.")
+
+    app = create_app(ctx.config, mount_workspaces=False)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/consolidation/run",
+            json={"dry_run": False, "batch_size": 10, "max_auto_apply": 0},
+        )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["plans_generated"] == 1
+    assert payload["auto_applied"] == 0
+    assert payload["max_auto_apply"] == 0
+    assert payload["auto_apply_hint"] == (
+        "No plans were auto-applied because max_auto_apply=0. Re-run with max_auto_apply>0 "
+        "to auto-apply bounded safe plans."
+    )
 
 
 def test_consolidation_run_api_force_reextracts_processed_captures(tmp_path, monkeypatch):

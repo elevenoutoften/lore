@@ -1272,10 +1272,24 @@ class PatchApplyResult(BaseModel):
 class ConsolidationRunRequest(BaseModel):
     """Request to run the full consolidation worker pipeline."""
 
-    dry_run: bool = True
-    batch_size: int = Field(default=10, ge=1, le=50)
-    max_auto_apply: int = Field(default=0, ge=0, le=100)
-    force_reextract: bool = False
+    dry_run: bool = Field(
+        default=True,
+        description="Preview extraction and planning only. Defaults to true so argument-less runs never auto-apply.",
+    )
+    batch_size: int = Field(default=10, ge=1, le=50, description="Maximum captures to process in this run.")
+    max_auto_apply: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description=(
+            "Maximum safe plans to auto-apply when dry_run=false. Defaults to 0, so explicit non-dry runs stay "
+            "review-only unless the caller opts in."
+        ),
+    )
+    force_reextract: bool = Field(
+        default=False,
+        description="Re-extract already processed captures before planning. Does not override dry_run safety.",
+    )
 
 
 class ConsolidationRunResult(BaseModel):
@@ -1289,6 +1303,11 @@ class ConsolidationRunResult(BaseModel):
     review_required: int
     errors: list[str] = Field(default_factory=list)
     dry_run: bool
+    max_auto_apply: int = 0
+    auto_apply_hint: str | None = Field(
+        default=None,
+        description="Explicit explanation when safe defaults or dry-run mode left plans unapplied.",
+    )
     blocked_claims: list[dict[str, str]] = Field(
         default_factory=list, description="Claims blocked from auto-apply with reason."
     )

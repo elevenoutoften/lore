@@ -42,6 +42,11 @@ class RecordingWorker:
             review_required=0,
             errors=[],
             dry_run=dry_run,
+            max_auto_apply=max_auto_apply,
+            auto_apply_hint=(
+                "Dry run only: no plans were applied. Re-run with dry_run=false and max_auto_apply>0 "
+                "to auto-apply bounded safe plans."
+            ),
         )
 
 
@@ -71,14 +76,19 @@ def test_lore_consolidation_run_tool_uses_safe_defaults_without_arguments():
 
     assert worker.calls == [{"dry_run": True, "batch_size": 10, "max_auto_apply": 0, "force_reextract": False}]
     assert result["structuredContent"]["dry_run"] is True
+    assert result["structuredContent"]["max_auto_apply"] == 0
+    assert "Dry run only" in result["content"][0]["text"]
 
 
 def test_lore_consolidation_run_tool_schema_defaults_are_safe():
     tool = next(tool for tool in TOOLS if tool["name"] == "lore_consolidation_run")
     properties = tool["inputSchema"]["properties"]
 
+    assert "dry_run=true and max_auto_apply=0" in tool["description"]
     assert properties["dry_run"]["default"] is True
+    assert "argument-less runs never auto-apply" in properties["dry_run"]["description"]
     assert properties["max_auto_apply"]["default"] == 0
+    assert "explicit non-dry runs still apply nothing unless you opt in" in properties["max_auto_apply"]["description"]
     assert properties["force_reextract"]["default"] is False
 
 

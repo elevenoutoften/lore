@@ -1081,14 +1081,41 @@ TOOLS: list[dict[str, Any]] = [
         "name": "lore_consolidation_run",
         "annotations": {"readOnlyHint": False, "destructiveHint": True},
         "title": "Run Lore Consolidation",
-        "description": "Run the consolidation pipeline: extract candidates, generate patch plans, and optionally auto-apply safe plans.",
+        "description": (
+            "Run the consolidation pipeline: extract candidates, generate patch plans, and optionally auto-apply "
+            "safe plans. Defaults are safe: dry_run=true and max_auto_apply=0, so calling without arguments previews "
+            "work and applies nothing. Set dry_run=false and max_auto_apply>0 to auto-apply bounded safe plans."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "dry_run": {"type": "boolean", "default": True},
-                "batch_size": {"type": "integer", "default": 10, "minimum": 1, "maximum": 50},
-                "max_auto_apply": {"type": "integer", "default": 0, "minimum": 0, "maximum": 100},
-                "force_reextract": {"type": "boolean", "default": False},
+                "dry_run": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Preview only. Defaults to true so argument-less runs never auto-apply.",
+                },
+                "batch_size": {
+                    "type": "integer",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 50,
+                    "description": "Maximum captures to process in this run.",
+                },
+                "max_auto_apply": {
+                    "type": "integer",
+                    "default": 0,
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": (
+                        "Maximum safe plans to auto-apply when dry_run=false. Defaults to 0, so explicit non-dry "
+                        "runs still apply nothing unless you opt in."
+                    ),
+                },
+                "force_reextract": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Re-extract already processed captures before planning.",
+                },
             },
         },
     },
@@ -2815,14 +2842,20 @@ def summarize_consolidation_status(payload: dict[str, Any]) -> str:
 
 
 def summarize_consolidation_run(payload: dict[str, Any]) -> str:
-    return (
-        f"Consolidation run {payload.get('batch_id')}: "
-        f"{payload.get('captures_processed', 0)} captures, "
-        f"{payload.get('candidates_extracted', 0)} candidates, "
-        f"{payload.get('plans_generated', 0)} plans, "
-        f"{payload.get('auto_applied', 0)} auto-applied, "
-        f"{payload.get('review_required', 0)} requiring audit."
-    )
+    lines = [
+        (
+            f"Consolidation run {payload.get('batch_id')}: "
+            f"{payload.get('captures_processed', 0)} captures, "
+            f"{payload.get('candidates_extracted', 0)} candidates, "
+            f"{payload.get('plans_generated', 0)} plans, "
+            f"{payload.get('auto_applied', 0)} auto-applied, "
+            f"{payload.get('review_required', 0)} requiring audit."
+        )
+    ]
+    hint = payload.get("auto_apply_hint")
+    if hint:
+        lines.append(str(hint))
+    return "\n".join(lines)
 
 
 def summarize_patch_plans(payload: dict[str, Any]) -> str:
