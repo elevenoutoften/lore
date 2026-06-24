@@ -333,12 +333,6 @@ def ego_subgraph(graph: ContextGraph, center_id: str, radius: int = 1) -> Contex
     return ContextGraph(nodes=nodes, edges=edges, stats=stats)
 
 
-def path_between(graph: ContextGraph, source_id: str, target_id: str) -> ContextGraphPathResponse:
-    """Find shortest paths between two nodes in a cached graph."""
-
-    return query_paths(graph, ContextGraphPathQuery(source_id=source_id, target_id=target_id, limit=1))
-
-
 def explain_context(graph: ContextGraph, query: ContextExplainQuery) -> ContextExplainResponse:
     """Explain the context around a node by expanding its neighborhood."""
 

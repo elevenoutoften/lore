@@ -73,10 +73,6 @@ from .settings_store import SettingsStore
 PACKAGE_DIR = Path(__file__).resolve().parent
 
 
-def default_content_dir() -> Path:
-    return LoreConfig().content_dir
-
-
 def rebuild_llm_client(app: FastAPI) -> None:
     """Rebuild app.state.llm_client from merged config and runtime settings."""
 

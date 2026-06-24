@@ -2813,10 +2813,6 @@ def summarize_heartbeat_audit(payload: dict[str, Any]) -> str:
     return f"Heartbeat audit created {len(captures)} capture draft(s)."
 
 
-def dumps_pretty(payload: Any) -> str:
-    return json.dumps(payload, indent=2, sort_keys=True)
-
-
 def summarize_repeated_captures(payload: dict[str, Any]) -> str:
     groups = payload.get("groups") or []
     if not groups:

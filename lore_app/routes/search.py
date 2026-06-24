@@ -24,8 +24,8 @@ if TYPE_CHECKING:
 
     from ..context_graph import ContextGraphCache
     from ..ledger import LedgerDB
-    from ..observability import MetricsCollector
     from ..link_graph import LinkGraphCache
+    from ..observability import MetricsCollector
     from ..rag.vector_store import VectorStore
     from ..repository import LoreRepository
     from ..search_index import LoreSearchIndex

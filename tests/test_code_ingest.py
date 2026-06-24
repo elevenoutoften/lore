@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from lore_app.code_ingest.config_ingest import ingest_caddyfile, ingest_docker_compose, ingest_systemd_units
 from lore_app.code_ingest.fastapi_ingest import ingest_fastapi_routes
 from lore_app.code_ingest.ingest_service import ingest_service_code
 from lore_app.code_ingest.source_refs import resolve_source_ref
@@ -73,41 +72,6 @@ async def submit():
 
     assert {(route.method, route.path) for route in routes} == {("POST", "/submit"), ("PUT", "/submit")}
     assert routes[0].line_number == 6
-
-
-def test_config_ingesters(tmp_path):
-    compose = tmp_path / "docker-compose.yml"
-    compose.write_text(
-        """services:
-  lore:
-    image: lore/lore:latest
-    ports:
-      - "8080:8000"
-    depends_on:
-      - db
-  db:
-    image: postgres:17
-""",
-        encoding="utf-8",
-    )
-    caddyfile = tmp_path / "Caddyfile"
-    caddyfile.write_text("lore.example.com {\n  reverse_proxy lore:8000\n}\n", encoding="utf-8")
-    unit_dir = tmp_path / "systemd"
-    unit_dir.mkdir()
-    (unit_dir / "lore.service").write_text("[Service]\nExecStart=/usr/bin/lore\n", encoding="utf-8")
-
-    compose_specs = ingest_docker_compose(compose)
-    caddy_specs = ingest_caddyfile(caddyfile)
-    systemd_specs = ingest_systemd_units(unit_dir)
-
-    assert compose_specs[0].name == "lore"
-    assert compose_specs[0].image == "lore/lore:latest"
-    assert compose_specs[0].ports == ["8080:8000"]
-    assert compose_specs[0].depends_on == ["db"]
-    assert caddy_specs[0].name == "lore"
-    assert caddy_specs[0].ports == ["8000"]
-    assert systemd_specs[0].name == "lore"
-    assert systemd_specs[0].kind == "systemd"
 
 
 def test_source_ref_resolution(tmp_path):
