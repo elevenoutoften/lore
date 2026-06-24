@@ -107,7 +107,7 @@ def test_python_sdk_has_test_extra():
 
 
 def test_typescript_sdk_readme_imports_match_package_name():
-    """Regression: README imports must match the actual package name."""
+    """Regression: README imports must match the package name or a declared exports subpath."""
     import json
     import re
 
@@ -115,8 +115,17 @@ def test_typescript_sdk_readme_imports_match_package_name():
     pkg_json = json.loads((repo_root / "sdk" / "typescript" / "package.json").read_text())
     pkg_name = pkg_json["name"]
 
+    # Valid specifiers: the bare package name plus every declared subpath export
+    # (e.g. "./embed/lore-embed" -> "axis-lore-sdk/embed/lore-embed").
+    valid_imports = {pkg_name}
+    for subpath in pkg_json.get("exports", {}):
+        if subpath != ".":
+            valid_imports.add(f"{pkg_name}/{subpath.removeprefix('./')}")
+
     readme = (repo_root / "sdk" / "typescript" / "README.md").read_text()
     imports = re.findall(r'from\s+"([^"]+)"', readme)
     sdk_imports = [i for i in imports if not i.startswith(".") and "node:" not in i]
     for imp in sdk_imports:
-        assert imp == pkg_name, f"README imports '{imp}' but package.json names '{pkg_name}'"
+        assert imp in valid_imports, (
+            f"README imports '{imp}' but package.json exposes {sorted(valid_imports)}"
+        )
