@@ -17,7 +17,7 @@ Examples:
 ```bash
 lore capture "Pixl renders text as garbage on Illustrious XL" --lane project --source-task flow_000891
 lore recall "pixl text rendering" --limit 5
-lore ack cand_123 cand_456
+lore ack 7e3c1a90-2b4f-4d8a-9c1e-0f5a6b2d3e41 5a9d2c70-8e1b-4f3a-bb62-1d4e7c9a0f23
 lore search "memory backend"
 lore read services/lore
 lore write notes/agent/demo --file note.md -m "capture follow-up"

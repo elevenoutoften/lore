@@ -88,7 +88,7 @@ Confirm a daily note is ready and mark it canonical.
 A distilled daily note contains:
 
 - **Frontmatter**: title, kind (`daily-note`), visibility, status, summary, tags, `distilled_at` timestamp, actor, and sources listing all capture page IDs.
-- **Body**: An introduction with capture count, followed by each capture as a section with its title, confidence/lane metadata, and full body text.
+- **Body**: A blockquote introduction with the capture count, followed by an **## Episodic Facts** section listing the distilled durable facts as bullets, then a **## Source Captures** section linking back to each capture as a wiki-link (`[[page-id|title]]`).
 
 ## Heartbeat Self-Audit Captures
 

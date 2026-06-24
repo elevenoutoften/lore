@@ -49,4 +49,4 @@ When the LLM extraction path is active, extracted claims record:
 - `model_version`: the actual model string (e.g., `glm-5.1`)
 - `prompt_hash`: SHA-256 of the extraction prompt template (first 16 chars)
 - `token_usage`: `{"prompt": N, "completion": M}` when the provider reports usage
-- `observed_at`: set to the LLM call time (not capture time)
+- `observed_at`: the claim's `observed_at` from the model when supplied; otherwise it falls back to the LLM call time (not capture time)

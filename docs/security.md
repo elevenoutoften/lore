@@ -48,8 +48,14 @@ API key management endpoints:
 
 Those endpoints require an admin API key with role `admin`. Newly generated raw keys are shown once; only their hash and prefix are stored.
 
-The auth middleware allows `/healthz` and `/static` without credentials so
-health checks and static assets keep working.
+The auth middleware allows a fixed set of public paths without credentials so
+health checks, login, and static assets keep working: `/healthz`,
+`/healthz/config`, `/metrics`, `/api/login`, `/api/logout`, and `/static`
+(including `/static/...`). Matching uses exact/segment-boundary checks, never a
+bare prefix, so page ids such as `staticsecret` cannot bypass auth.
+
+Note that `/metrics` is unauthenticated in **every** auth mode. Keep it behind
+your deployment boundary if the metrics surface should not be public.
 
 ## Trusted Headers
 
@@ -141,19 +147,38 @@ arrive at Lore with trusted proxy identity headers.
 Every response includes:
 
 - `X-Content-Type-Options: nosniff`
-- `X-Frame-Options: DENY`
 - `X-XSS-Protection: 1; mode=block`
 - `Referrer-Policy: strict-origin-when-cross-origin`
-- `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'`
+- `X-Frame-Options: DENY` on all responses except `/embed`
+- `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-<random>'`
 
-The CSP allows same-origin scripts and styles plus inline styles/scripts used by
-the current UI templates.
+The CSP allows same-origin scripts and styles plus inline styles. Scripts are
+allowed inline only via a per-request random nonce (`script-src 'self'
+'nonce-<random>'`), not `'unsafe-inline'`; a fresh nonce is generated for each
+response and applied to the UI templates' inline scripts.
+
+The `/embed` widget is meant to load inside an iframe, so it does not send
+`X-Frame-Options: DENY`. Instead it uses CSP `frame-ancestors`: when cross-origin
+embedders are configured it sends `frame-ancestors 'self' <embedders>`, and
+otherwise it sends `X-Frame-Options: SAMEORIGIN` together with `frame-ancestors
+'self'`.
 
 ## Rate Limiting
 
 Lore rate-limits write operations in memory at 300 requests per 60 seconds per
-client key. The client key is the first `X-Forwarded-For` address when trusted
-headers are enabled, or the direct client host.
+client key. The client key is resolved by precedence so that distinct agents get
+independent write budgets rather than sharing one IP-keyed bucket:
+
+1. The resolved actor (`actor:<name>`), once auth has identified the request.
+2. Otherwise the `X-Lore-Agent` header, falling back to `X-Lore-Actor`
+   (`agent:<value>`).
+3. Otherwise a hashed `Authorization: Bearer` token (`token:<sha256-prefix>`),
+   so token auth still gets a per-agent key before the actor is set.
+4. Otherwise the first `X-Forwarded-For` address, but only when
+   `LORE_TRUSTED_HEADERS=true`.
+5. Otherwise the direct client host.
+
+Authenticated agents therefore receive per-actor write budgets.
 
 Rate-limited operations include:
 

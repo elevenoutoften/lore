@@ -6,9 +6,13 @@ the Lore server at `/embed`.
 
 ## Drop-in Script Tag
 
+The Lore server does not ship this bundle, so host it yourself: copy the built
+`lore-embed.js` from the `axis-lore-sdk` package (`dist/esm/embed/lore-embed.js`)
+to a path your own server serves and point the `src` at it.
+
 ```html
 <div id="lore-embed"></div>
-<script src="https://lore.example.com/sdk/embed/lore-embed.js"></script>
+<script src="https://your-app.example.com/assets/lore-embed.js"></script>
 <script>
   LoreEmbed.mount({
     baseUrl: "https://lore.example.com",
@@ -36,7 +40,7 @@ Use a custom container with `container`:
 ## NPM Module Usage
 
 ```ts
-import { mountLoreEmbed } from "lore-sdk/embed/lore-embed";
+import { mountLoreEmbed } from "axis-lore-sdk/embed/lore-embed";
 
 mountLoreEmbed({
   baseUrl: "https://lore.example.com",

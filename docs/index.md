@@ -46,20 +46,20 @@ deployment, and operating patterns. The browser UI is a minimal human surface
 
 - [Python SDK](../sdk/python/README.md): install, connect, and use the Lore
   Python client.
-- [TypeScript SDK](../sdk/typescript/README.md): npm package, embed widget,
-  and TypeScript client.
+- [TypeScript SDK](../sdk/typescript/README.md): npm package and TypeScript
+  client. The browser [embed widget](../sdk/typescript/src/embed) ships
+  alongside it.
 
-## Migration & Release
+## Release
 
-- [Migration Guide](migration-guide.md): moving from GPUBox services/lore to
-  the standalone repo.
 - [Beta Release Checklist](beta-release-checklist.md): pre-release verification
   steps.
 
 ## Roadmap
 
-The [Roadmap](roadmap.md) covers planned phases for memory foundation,
-security hardening, and the beta release milestone.
+The [Roadmap](roadmap.md) records the delivered memory-foundation and
+security-hardening work and the remaining steps toward the beta release
+milestone.
 
 ## Demo Data
 

@@ -25,3 +25,4 @@ Gemma 4 is available via a local endpoint but **must not** be promoted to produc
 - Schema validity: 100%
 - Provenance completeness: >=50% per fixture
 - Hallucination rate: 0 for must_not_contain_entities
+- Missed critical claims: 0 per fixture

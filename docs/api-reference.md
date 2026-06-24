@@ -3,11 +3,16 @@
 Base URL for local examples:
 
 ```bash
-export LORE_URL=http://localhost:8078
+export LORE_URL=http://localhost:8000
 ```
 
 When auth is enabled, add `-H "Authorization: Bearer $LORE_TOKEN"` or use HTTP
 basic auth.
+
+A fixed set of paths is always public and exempt from auth in every mode:
+`/healthz`, `/healthz/config`, `/metrics`, `/api/login`, `/api/logout`, and
+`/static` (plus everything under `/static/`). In particular, `/metrics` is
+unauthenticated in every auth mode.
 
 ## Core
 
@@ -188,7 +193,7 @@ curl -sS "$LORE_URL/api/promotions"
 | `POST` | `/api/extraction/reset` | Reset extraction state. |
 | `POST` | `/api/extraction/deadletters/{deadletter_id}/retry` | Retry one extraction dead-letter and resolve it when candidates are produced. |
 | `GET` | `/api/extraction/batches` | List extraction batches. |
-| `GET` | `/api/extraction/candidates` | List extracted candidates. Query: `status`, `type`, `page_id`. |
+| `GET` | `/api/extraction/candidates` | List extracted candidates. Query: `status`, `type`, `actor`, `cross_actor`, `limit`. |
 | `POST` | `/api/memory/capture` | Lightweight memory capture. Authenticated modes server-stamp actor/agent from the token actor. |
 | `GET` | `/api/memory/recall` | Ranked claim recall. Authenticated modes are scoped to the token actor; admins must set `cross_actor=true` for cross-actor reads. Read-only by default; `record_access=false` unless explicitly set. |
 | `POST` | `/api/memory/recall/ack` | Acknowledge used recall claims. Body: `{candidate_ids}`. |
@@ -272,8 +277,8 @@ curl -sS "$LORE_URL/api/procedures/runbooks/deploy-lore/export"
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/code-references/{code_path}` | Find pages referencing a code path. |
-| `POST` | `/api/code-ingest/{service_id}` | Ingest service code. Query: `source_dir`. |
-| `GET` | `/api/code-ingest/{service_id}/inventory` | Read latest service inventory. |
+| `POST` | `/api/code-ingest/{service_id}` | Ingest service code. Query: `source_dir`. Admin only. |
+| `GET` | `/api/code-ingest/{service_id}/inventory` | Read latest service inventory. Admin only. |
 
 ```bash
 curl -sS "$LORE_URL/api/code-references/lore_app/main.py"
@@ -306,6 +311,10 @@ These return HTML:
 - `GET /captures`
 - `GET /graph`
 - `GET /rag?q=...`
+- `GET /procedures`
+- `GET /heartbeat`
+- `GET /api-keys`
+- `GET /settings`
 - `GET /pages/{page_id}`
 - `GET /{page_id}`
 
@@ -471,5 +480,8 @@ application errors usually use `{"detail":"message"}`.
 
 ## Rate Limiting
 
-Write operations are limited to 300 requests per 60 seconds per client key. The
-client key is the first `X-Forwarded-For` address or the direct client host.
+Write operations are limited to 300 requests per 60 seconds per client key.
+Authenticated agents get per-actor write budgets. The client key is resolved by
+precedence: the resolved request actor, then the `X-Lore-Agent`/`X-Lore-Actor`
+header, then a hashed bearer token, then the first `X-Forwarded-For` address
+(only when `LORE_TRUSTED_HEADERS=true`), then the direct client host.

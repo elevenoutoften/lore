@@ -13,6 +13,24 @@ python -m pip install -e .
 
 You can also copy the `lore_sdk` package into another Python 3.11+ project. The SDK has no third-party dependencies.
 
+## Command-Line Interface
+
+Installing the package also provides a `lore` agent CLI for the memory backend.
+It exposes six verbs — `capture`, `recall`, `ack`, `search`, `read`, `write`
+(plus `whoami`) — built on `MemoryProvider` and `LoreClient`. Pass `--json` on
+any command for structured output. It reads `LORE_BASE_URL` (default
+`https://lore.axis.love`) and `LORE_API_KEY` from the environment.
+
+```sh
+lore capture "Pixl renders text as garbage on Illustrious XL" --lane project
+lore recall "pixl text rendering" --limit 5
+lore ack 1a2b3c4d
+lore search "memory backend"
+lore read services/lore
+lore write runbooks/deploy --file deploy.md -m "update steps"
+lore whoami
+```
+
 ## Basic Usage
 
 ```python

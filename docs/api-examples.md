@@ -10,7 +10,29 @@ curl http://localhost:8078/healthz
 
 ```json
 {
-  "ok": true
+  "ok": true,
+  "metrics": {
+    "request_count": 42,
+    "request_duration_ms": 318.7,
+    "error_count": 0,
+    "client_error_count": 1,
+    "pages_served": 30,
+    "searches": 4,
+    "captures": 2,
+    "mcp_requests": 6,
+    "index_size": 12,
+    "vector_chunks": 0,
+    "vector_indexed_pages": 0,
+    "vector_page_drift": 0,
+    "vector_scope_drift": 0,
+    "vector_pending_reindex": 0,
+    "consolidation_backlog": 0,
+    "extraction_failures": 0,
+    "apply_failures": 0,
+    "recall_requests": 3,
+    "recall_zero_results": 1,
+    "uptime_seconds": 1280
+  }
 }
 ```
 
@@ -260,7 +282,6 @@ curl "http://localhost:8078/api/search?q=workflow-engine"
   ]
 }
 ```
-```
 
 ## `GET /api/catalog`
 
@@ -387,7 +408,7 @@ curl http://localhost:8078/api/captures
   "count": 1,
   "captures": [
     {
-      "id": "inbox/2026-05-01/workflow-engine-queue-note",
+      "id": "notes/codex/2026-05-01/workflow-engine-queue-note",
       "title": "Workflow Engine queue note",
       "kind": "capture",
       "visibility": "internal",
@@ -414,7 +435,7 @@ curl "http://localhost:8078/api/captures?status=all"
   "count": 2,
   "captures": [
     {
-      "id": "inbox/2026-05-01/workflow-engine-queue-note",
+      "id": "notes/codex/2026-05-01/workflow-engine-queue-note",
       "title": "Workflow Engine queue note",
       "kind": "capture",
       "visibility": "internal",
@@ -439,3 +460,4 @@ curl "http://localhost:8078/api/captures?status=all"
     }
   ]
 }
+```

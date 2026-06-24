@@ -62,7 +62,7 @@ verified against the release candidate build, not only local development code.
 - [ ] `/healthz` returns `ok` plus runtime metrics needed by deployment health
   checks.
 - [ ] Structured request logs are emitted as JSON and include method, path,
-  status, latency, and request identifier.
+  status, latency, and actor.
 - [ ] Audit log records page writes with actor, action, page ID, workspace, and
   timestamp.
 - [ ] Page history returns chronological entries for create, update, promote, and
@@ -102,15 +102,15 @@ verified against the release candidate build, not only local development code.
 
   ```bash
   docker run -d -p 8100:8000 \
-    -v lore-pages:/tmp/pages \
-    -v lore-db:/tmp/db \
+    -v lore-pages:/data/pages \
+    -v lore-db:/data/db \
     -e LORE_AUTH_MODE=bearer \
     -e LORE_AUTH_SECRET=change-me-in-production \
-    -e LORE_CONTENT_DIR=/tmp/pages \
-    -e LORE_SEARCH_DB=/tmp/db/search.db \
-    -e LORE_VECTOR_DB=/tmp/db/vectors.db \
-    -e LORE_LEDGER_DB=/tmp/db/ledger.db \
-    -e LORE_API_KEYS_DB=/tmp/db/api_keys.db \
+    -e LORE_CONTENT_DIR=/data/pages \
+    -e LORE_SEARCH_DB=/data/db/search.db \
+    -e LORE_VECTOR_DB=/data/db/vectors.db \
+    -e LORE_LEDGER_DB=/data/db/ledger.db \
+    -e LORE_API_KEYS_DB=/data/db/api_keys.db \
     lore:release
   ```
 
@@ -123,8 +123,8 @@ verified against the release candidate build, not only local development code.
 
 - [ ] Systemd service starts, restarts on failure, and responds through the
   configured port.
-- [ ] Backup CLI exports content, search database, vector database, and audit
-  state.
+- [ ] Backup CLI snapshots content plus the ledger, settings, and API keys
+  databases; the search and vector indexes are rebuilt on restore.
 - [ ] Restore CLI recreates a working instance from a backup on a clean data
   directory.
 - [ ] Sample vault initializes correctly and exposes the expected index,

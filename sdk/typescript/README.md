@@ -93,6 +93,26 @@ await client.createCapture({
 });
 ```
 
+## Embed Widget
+
+`axis-lore-sdk/embed/lore-embed` is a separate browser entry point that mounts a
+Lore page, search, or capture view into another HTML page via an iframe loaded
+from the Lore server's `/embed` route.
+
+```typescript
+import { mountLoreEmbed } from "axis-lore-sdk/embed/lore-embed";
+
+mountLoreEmbed({
+  baseUrl: "https://lore.example",
+  mode: "page",
+  pageId: "projects/example-project",
+  container: "#lore-embed",
+});
+```
+
+See [`src/embed/README.md`](src/embed/README.md) for the drop-in `<script>` tag,
+config options, and auth strategies.
+
 ## Auth
 
 Pass a bearer token when your Lore server requires authentication:

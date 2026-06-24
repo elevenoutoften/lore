@@ -105,9 +105,12 @@ includes `pending_captures` and a `hint` telling you whether memory is genuinely
 absent or just awaiting consolidation.
 
 On a default install with no LLM key (`LORE_LLM_PROVIDER=none`), extraction is
-deterministic: it emits coarse `predicate=states` claims keyed off the capture
-text rather than fine-grained structured facts. Recall still works; configure an
-LLM provider (see [llm-provider-config.md](llm-provider-config.md)) for richer
+deterministic: it emits coarse claims keyed off the capture text rather than
+fine-grained structured facts. The predicate is inferred heuristically from the
+text — one of a small fixed set (`is`, `has`, `uses`, `requires`, `depends_on`,
+`supports`, `prevents`, `stores`, `routes`, `runs`), falling back to `describes`
+when nothing matches. Recall still works; configure an LLM provider (see
+[llm-provider-config.md](llm-provider-config.md)) for richer
 subject/predicate/object extraction.
 
 ## Recall: ranked read
@@ -125,11 +128,16 @@ an agent can see *why* a claim surfaced.
 | **recency** | Exponential freshness from the claim's update time. Half-life 30 days. | `updated_at` |
 | **salience** | How often a caller has explicitly acknowledged using the claim, log-scaled and saturating. | `access_count` |
 | **relevance** | Lexical overlap between the query and the claim text. Only mixed in when a query is supplied. | query vs. subject/predicate/object |
+| **semantic_similarity** | Embedding cosine similarity over the leading candidate pool. Only contributes when a query is supplied *and* a dense store is configured. | query vs. claim embeddings |
 
-Default weights are `strength 0.45, recency 0.25, salience 0.15, relevance 0.15`.
-When no query is supplied, the relevance weight is redistributed across the other
-three signals (so the weights always sum to 1). The exact weights used for a request
-are returned in the response `weights` field.
+The base weights are `strength 0.45, recency 0.25, salience 0.15, relevance 0.05,
+semantic_similarity 0.10`, but the effective weights are conditional on the
+request. `semantic_similarity` only carries weight when a query is supplied *and*
+a dense store is configured; otherwise its `0.10` collapses into `relevance`, so
+`relevance` becomes `0.15`. When no query is supplied at all, the relevance weight
+is then redistributed across the remaining signals. The weights always sum to 1,
+and the exact weights used for a request are returned in the response `weights`
+field.
 
 Recalling a claim is read-only by default: repeated `GET /api/memory/recall`
 requests do not increment `access_count`, stamp `last_accessed_at`, change recency,
@@ -161,7 +169,7 @@ curl -sS "https://lore.example/api/memory/recall?query=memory+backend&limit=5" \
       "access_count": 3,
       "age_days": 1.2,
       "recall_score": 0.71,
-      "recall_signals": {"total": 0.71, "strength": 0.55, "recency": 0.97, "salience": 0.46, "relevance": 1.0}
+      "recall_signals": {"total": 0.71, "strength": 0.55, "recency": 0.97, "salience": 0.46, "relevance": 1.0, "semantic_similarity": 0.0}
     }
   ]
 }
@@ -174,11 +182,14 @@ actors they must explicitly set `cross_actor=true`. With `cross_actor=true`, an
 admin may either omit `actor` to query all actors or set `actor` to target one
 actor.
 
-Filters: `subject`, `lane`, `actor`, `min_strength`, `valid_at`, `limit`,
-`cross_actor`.
+REST filters (`GET /api/memory/recall`): `subject`, `lane`, `actor`,
+`min_strength`, `valid_at`, `limit`, `record_access`, `cross_actor`.
 
-MCP tool: `lore_recall` (same parameters and ranking, including
-`cross_actor`). Python SDK: `MemoryProvider.recall(query=..., lane=..., actor=...)`.
+MCP tool: `lore_recall` — same ranking, but the parameter set differs slightly.
+It accepts `offset` for pagination instead of REST's `valid_at` temporal filter;
+otherwise it shares `query`, `subject`, `lane`, `actor`, `min_strength`, `limit`,
+`record_access`, and `cross_actor`. Python SDK:
+`MemoryProvider.recall(query=..., lane=..., actor=...)`.
 
 To acknowledge use:
 

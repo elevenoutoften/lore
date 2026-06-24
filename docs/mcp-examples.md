@@ -25,15 +25,16 @@ Response:
     "protocolVersion": "2025-11-25",
     "capabilities": {
       "tools": {"listChanged": false},
-      "resources": {"subscribe": false, "listChanged": false}
+      "resources": {"subscribe": false, "listChanged": false},
+      "prompts": {"listChanged": false}
     },
     "serverInfo": {
       "name": "lore",
       "version": "0.3.0b1"
-    }
+    },
+    "instructions": "tools/list advertises Lore's six core tools only. Call the well-known lore_overview tool via tools/call to load the complete runtime tool index and advanced schemas on demand."
   }
 }
-```
 ```
 
 ## `ping`
@@ -72,6 +73,12 @@ Request:
 }
 ```
 
+`tools/list` advertises only the six core tools. Each entry carries its
+`description`, an `inputSchema` with per-field descriptions stripped, and
+read/write `annotations`. The remaining tools (~53 at last count) are not
+listed here; discover and call them via the well-known `lore_overview` tool
+(`tools/call`), which returns the full runtime tool index on demand.
+
 Response:
 
 ```json
@@ -80,15 +87,112 @@ Response:
   "id": 3,
   "result": {
     "tools": [
-      {"name": "lore_list_pages", "title": "List Lore Pages"},
-      {"name": "lore_read_page", "title": "Read Lore Page"},
-      {"name": "lore_search", "title": "Search Lore"},
-      {"name": "lore_link_graph", "title": "Lore Link Graph"},
-      {"name": "lore_page_links", "title": "Lore Page Links"},
-      {"name": "lore_lint", "title": "Lint Lore"},
-      {"name": "lore_capture", "title": "Capture Lore Memory"},
-      {"name": "lore_list_captures", "title": "List Lore Captures"},
-      {"name": "lore_upsert_page", "title": "Upsert Lore Page"}
+      {
+        "name": "lore_capture",
+        "description": "Canonical durable agent-memory write. Creates a reviewable draft intake artifact, then runs the shared indexing and consolidation loop. Actor identity is always derived from the authenticated caller.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "observation": {"type": "string"},
+            "title": {"type": "string"},
+            "namespace": {"type": "string", "enum": ["inbox", "notes"], "default": "inbox"},
+            "agent": {"type": "string"},
+            "capture_date": {"type": "string"},
+            "source_task": {"type": "string"},
+            "task_id": {"type": "string"},
+            "decision_id": {"type": "string"},
+            "trace_id": {"type": "string"},
+            "tool_calls": {"type": "array", "items": {"type": "object"}},
+            "constraints": {"type": "array", "items": {"type": "string"}},
+            "policies_applied": {"type": "array", "items": {"type": "string"}},
+            "related_pages": {"type": "array", "items": {"type": "string"}},
+            "confidence": {"type": "string"},
+            "epistemic_status": {"type": "string", "enum": ["operator_declared", "retrieved", "inferred", "assumption"]},
+            "suggested_target_page": {"type": "string"},
+            "provenance": {"type": "object"},
+            "lane": {"type": "string", "enum": ["project", "procedural", "ops", "companion", "draft"]}
+          },
+          "required": ["observation"]
+        },
+        "annotations": {"readOnlyHint": false, "destructiveHint": true}
+      },
+      {
+        "name": "lore_recall",
+        "description": "Recency- and salience-weighted recall over the durable claim ledger. Ranks active memory by strength (reinforce/decay), recency, recall frequency, and -- when a query is given -- lexical relevance. Returns each claim's score breakdown.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {"type": "string"},
+            "subject": {"type": "string"},
+            "lane": {"type": "string", "enum": ["project", "procedural", "ops", "companion", "draft"]},
+            "actor": {"type": "string"},
+            "min_strength": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.0},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 20},
+            "offset": {"type": "integer", "minimum": 0, "default": 0},
+            "record_access": {"type": "boolean", "default": false},
+            "cross_actor": {"type": "boolean", "default": false}
+          }
+        },
+        "annotations": {"readOnlyHint": true, "destructiveHint": false}
+      },
+      {
+        "name": "lore_ack_recall",
+        "description": "Explicitly acknowledge that recalled claims were used, incrementing access_count and last_accessed_at for salience without affecting recency or decay age.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "candidate_ids": {"type": "array", "items": {"type": "string"}},
+            "actor": {"type": "string"},
+            "cross_actor": {"type": "boolean", "default": false}
+          },
+          "required": ["candidate_ids"]
+        },
+        "annotations": {"readOnlyHint": false, "destructiveHint": true}
+      },
+      {
+        "name": "lore_search",
+        "description": "Search Lore pages. Returns ranked results with snippets when FTS is available.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {"type": "string"},
+            "kind": {"type": "string"},
+            "visibility": {"type": "string"},
+            "status": {"type": "string"},
+            "namespace": {"type": "string"},
+            "lane": {"type": "string", "enum": ["project", "procedural", "ops", "companion", "draft"]},
+            "actor": {"type": "string"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 20}
+          },
+          "required": ["query"]
+        },
+        "annotations": {"readOnlyHint": true, "destructiveHint": false}
+      },
+      {
+        "name": "lore_read_page",
+        "description": "Read a Markdown page from Lore.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "page_id": {"type": "string"}
+          },
+          "required": ["page_id"]
+        },
+        "annotations": {"readOnlyHint": true, "destructiveHint": false}
+      },
+      {
+        "name": "lore_upsert_page",
+        "description": "Create or replace a Markdown page in Lore.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "page_id": {"type": "string"},
+            "content": {"type": "string"}
+          },
+          "required": ["page_id", "content"]
+        },
+        "annotations": {"readOnlyHint": false, "destructiveHint": true}
+      }
     ]
   }
 }

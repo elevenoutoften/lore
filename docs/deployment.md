@@ -31,10 +31,13 @@ docker run -d --name lore \
   lore-app
 ```
 
-> **Insecure Bind Guard**: When running with `LORE_AUTH_MODE=none`, the container
-> refuses to start if bound to a non-loopback address like `0.0.0.0` (the default).
-> To run without auth, either set `LORE_HOST=127.0.0.1` or acknowledge the risk
-> with `LORE_ALLOW_INSECURE_BIND=true`. See [security.md](security.md) for details.
+> **Insecure Bind Guard**: When running with `LORE_AUTH_MODE=none`, the app
+> refuses to start unless it considers itself loopback-bound. `LORE_HOST` only
+> feeds this startup guard — the served bind is effectively `uvicorn --host 0.0.0.0`
+> (hardcoded in the `Dockerfile` and systemd unit), so to actually restrict the
+> bind you must change that `--host` value. To run without auth, either set
+> `LORE_HOST=127.0.0.1` so the guard treats the process as loopback, or acknowledge
+> the risk with `LORE_ALLOW_INSECURE_BIND=true`. See [security.md](security.md) for details.
 
 Verify:
 
@@ -171,5 +174,10 @@ server {
 }
 ```
 
-Keep `X-Forwarded-For` intact if you want application rate limits to key on the
-original client address.
+Application rate limits resolve a client key in this order: the resolved actor
+(authenticated agents get per-actor write budgets), then the `X-Lore-Agent` /
+`X-Lore-Actor` header, then a hash of the bearer token, then the first
+`X-Forwarded-For` address (only when `LORE_TRUSTED_HEADERS=true`), and finally the
+direct client host. Set `LORE_TRUSTED_HEADERS=true` and keep `X-Forwarded-For`
+intact behind a trusted proxy if you want anonymous traffic to key on the original
+client address.

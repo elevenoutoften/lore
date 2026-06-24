@@ -109,6 +109,7 @@ human workflows; others are more like developer/debug pages.
 | Heartbeat review | `/heartbeat` | Review stale pages, contradictions, low-confidence pages, expired facts, procedure issues, and memory health counts. |
 | Procedure candidates | `/procedures` | See repeated capture patterns that may become reusable procedures. |
 | API keys | `/api-keys` | Create, view, and revoke Lore API keys for agents and services. |
+| Settings | `/settings` | Configure the LLM provider/model used for extraction, with masked secrets and hot reload. |
 | RAG debug | `/rag?q=...` | Test retrieval results with scores and source badges. This is mainly developer-facing. |
 | Embed widget | `/embed?...` | Render a page, search view, or capture list inside another app. |
 | Raw APIs | `/api/*`, `/mcp` | Agent, integration, and developer surfaces. These should not dominate the main human navigation. |
@@ -342,11 +343,12 @@ The repo roadmap names three broad milestones:
 - Beta release milestone: documented workflows, release checks, memory, and
   security in place.
 
-Flow board snapshot for project `lore`:
+Flow board snapshot for project `lore`, as of 2026-06-25 (a point-in-time
+count, not a perpetually current figure):
 
-- 78 total tasks.
-- 69 done.
-- 9 todo.
+- 136 total tasks.
+- 135 done.
+- 1 backlog.
 
 Active/planned Flow items that may affect UI design:
 

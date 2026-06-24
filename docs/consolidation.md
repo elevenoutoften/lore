@@ -65,7 +65,7 @@ Example:
   "plans_by_status": {
     "draft": 0,
     "pending": 1,
-    "review": 0,
+    "needs_manual_review": 0,
     "applied": 3,
     "rejected": 0
   },

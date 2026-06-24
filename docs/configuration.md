@@ -86,11 +86,12 @@ Lore reads configuration from environment variables through
 Inspect active configuration:
 
 ```bash
-curl -sS -H "Authorization: Bearer $LORE_ADMIN_TOKEN" http://localhost:8078/api/config
+curl -sS -H "Authorization: Bearer $LORE_API_KEY" http://localhost:8078/api/config
 lore-admin info
 ```
 
-`GET /api/config` is admin-gated when auth is enabled.
+`GET /api/config` is admin-gated: it requires a Lore admin API key (or a trusted
+admin session). When auth is disabled, the local operator is treated as admin.
 
 ## Auth Modes
 
@@ -147,7 +148,8 @@ export LORE_WORKSPACES='{
   "team-a": {
     "content_dir": "/srv/lore/team-a/pages",
     "search_db": "/srv/lore/team-a/search.db",
-    "vector_db": "/srv/lore/team-a/vectors.db"
+    "vector_db": "/srv/lore/team-a/vectors.db",
+    "ledger_db": "/srv/lore/team-a/ledger.db"
   },
   "team-b": {
     "content_dir": "/srv/lore/team-b/pages"

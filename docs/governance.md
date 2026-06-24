@@ -8,6 +8,7 @@ Lore distinguishes **how knowledge was obtained** from **how certain it is**.
 | `retrieved` | Fetched from an external source or document | API docs, runbook, RFC |
 | `inferred` | Deduced from other known facts | "Service X depends on Y" from dependency graph |
 | `assumption` | LLM assumption without direct evidence | "This config is probably default" |
+| `hearsay` | System-emitted (e.g. heartbeat) observation, not agent-chosen | Heartbeat capture summarizing recent activity |
 
 ### When agents choose labels
 

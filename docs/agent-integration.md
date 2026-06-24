@@ -68,7 +68,9 @@ Setup:
 
 Recommended workflow:
 - Use `resources/list` and `resources/read` for known pages.
-- Use `tools/list` to discover search, graph, capture, and RAG tools.
+- `tools/list` advertises only the six core tools (`lore_capture`, `lore_recall`,
+  `lore_ack_recall`, `lore_search`, `lore_read_page`, `lore_upsert_page`). Call
+  `lore_overview` to load the full tool index, including the graph and RAG tools.
 - Capture only evidence-backed observations, including source file paths.
 
 ```bash

@@ -46,6 +46,7 @@ Trace entries include `policy_refs` in the format `{policy_id}:pass` or `{policy
 | Gate | Description |
 |---|---|
 | `auto-apply` | Controls whether a patch can be applied automatically |
+| `review-required` | Routes any matched page kind or operation to review (always fails so its `effect_fail` fires) |
 | `protected-surface` | Blocks auto-apply on protected page kinds (decision, runbook) |
 | `contradiction-review` | Requires review when contradicting claims are detected |
 | `risk-assessment` | Escalates risk level for dangerous page kind + operation combinations |

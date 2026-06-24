@@ -313,7 +313,10 @@ security hardening, and beta release.
 - `resources/templates/list`
 - `prompts/list`
 
-Tools:
+`tools/list` advertises only the six core tools by default (`lore_capture`,
+`lore_recall`, `lore_ack_recall`, `lore_search`, `lore_read_page`,
+`lore_upsert_page`). The remaining tools are discoverable via `lore_overview`
+and callable through `tools/call`. The full registry:
 
 - `lore_overview`
 - `lore_list_pages`
