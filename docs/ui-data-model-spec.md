@@ -368,11 +368,12 @@ Computed on the **context graph** (scoped by actor); advisory, never canonical. 
 
 ## 6. Design precedents from other memory systems
 
-**References, not requirements** — how comparable systems present the same surfaces, so the design team has a menu of proven approaches rather than this document's opinions. Drawn from a source-level comparison of OpenPaw, mem0, and KuzuDB/KuzuMemory (their licenses vary and several lack a committed LICENSE file — these are design references, not code to copy).
+**References, not requirements** — how comparable systems present the same surfaces, so the design team has a menu of proven approaches rather than this document's opinions. Drawn from a source-level comparison of OpenPaw, mem0, KuzuDB/KuzuMemory, and Honcho (licenses vary — Apache-2.0, AGPL-3.0, and MIT-with-no-committed-LICENSE-file — these are design references, not code to copy).
 
 ### 6.1 List / memory surface
 - **mem0** — a Next.js dashboard presenting memories as a **filterable list/table** with metadata, faceted by `user / agent / run`. No graph. Closest precedent for a faceted Lore page browser (Lore facets: `kind`, `visibility`, `lane`, `tags`).
 - **KuzuMemory** — no browser list at all; memory surfaces only as MCP tool output inside the IDE. A precedent for a "no human list" stance if the audience is purely agents.
+- **Honcho** — **no human UI at all**: REST API + Python/TS SDKs only (its hosted dashboard is billing-only). A SOTA system that ships zero reader/list surface — a strong data point for keeping the human UI minimal.
 - **Lore today** — page browser + sidebar list.
 
 ### 6.2 Article / detail surface
@@ -387,10 +388,14 @@ Computed on the **context graph** (scoped by actor); advisory, never canonical. 
 - **OpenPaw** (`web/graph.html`) — interactive node graph with **click-to-detail** and **type filtering** (person / project / place / org / concept). The closest proven model for Lore's context graph (12 node types) with per-type filters + a selection panel.
 - **KuzuDB** — graph-DB browser UIs (Vela browser; the **Bighorn** fork) and React hooks in the TS port; a heavier, Cypher-results-on-a-canvas / query-driven explorer.
 - **mem0** — no graph viz at all (entity list only) — a reminder that a graph UI is optional, not mandatory.
+- **Honcho** — no graph visualization either (peer-collection model, not a graph engine).
 - **Lore today** — vis-network link graph (the laggy one from UAT). Redesign target is the richer context graph (§5); OpenPaw's click-to-detail + type-filter is the nearest reference.
 
 ### 6.5 Distinct to Lore (no precedent to copy)
 Lore's **capture-review queue**, **knowledge-quality lint dashboard**, and **policy/governance** views have no analog in the other systems — they're agent-ops, not reader surfaces. The owner wants the human UI minimal, so treat these as a separate "operate" console, kept out of the reader redesign.
+
+### 6.6 The minimal-/no-UI stance
+The owner's goal is a *minimal* human UI, and the field strongly supports that: **Honcho** (SOTA) ships **no human UI** (API/SDK/MCP only), **mem0's** is an admin/management dashboard, **KuzuMemory** has none. The implication: Lore's human surface can be just the **reader wiki + graph** (the genuinely human-facing parts), with capture/lint/policy/RAG either demoted to a separate agent-ops console or dropped from the human UI entirely. Honcho also *replaces* a UI with a **prompt-ready context API** (`session.context().to_openai()` / `.to_anthropic()`) and a natural-language **chat** endpoint — i.e. the way a human or agent "reads" memory can be an API that returns formatted context, not a screen. That's a backend idea, but it directly informs how thin the UI can be.
 
 ---
 
