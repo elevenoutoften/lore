@@ -4,6 +4,8 @@
 
 This document is the **data contract** for the team designing Lore's human-facing wiki and knowledge-graph UI from scratch. It specifies exactly what data each screen can draw on — every field, its type, where it comes from, and which features that data can support — so the design team can lay out every screen without reading the backend code. It deliberately does **not** propose any visual design: layout, typography, color, iconography, and interaction patterns are entirely the design team's to own. Where this document says "supports a badge" or "supports an excerpt," read it as "the data exists to power that affordance if you choose to design one." Where it says data is **not** available, treat that as a hard constraint.
 
+**On opinionatedness:** the field tables and "not available" notes are hard facts. Anything framed as an *option*, *implication*, or *precedent* — including §6, which collects how other memory systems (OpenPaw, mem0, KuzuDB) present these same surfaces — is a menu, not a mandate. The design team owns every visual and interaction choice.
+
 ---
 
 ## 2. Wiki — list & home surface
@@ -59,19 +61,16 @@ The home surface is built from the full page list with **captures removed first*
 
 The two sections draw from the same list and **can overlap** (a page can be both Featured and Recent).
 
-### 2.4 Design call-out: readable card vs bare link
+### 2.4 Readable card vs bare link — and how others do it
 
-The product owner's guidance: the **Recently-updated list reads as noise to humans** — it is a recency-ordered list of ids with no inherent narrative, so a bare link list there feels like log output. **Featured is the genuinely readable surface.** The data backs this up — both sections expose identical fields, so the *difference is purely curation*, and any "readable card" treatment depends on which fields are populated, not on which section you're in.
+One data point from UAT: the current **Recently-updated list reads as noise** (a recency-ordered list of ids/timestamps with no narrative), while **Featured reads better**. The *why* is useful in data terms — both sections expose **identical fields**, so this is not a data limitation; it's a function of which fields a row actually *uses*. A row that surfaces only `id` + `updated_at` + `size` reads like a log line; a row that leads with `title` + `summary` + kind/status badges reads like content. `summary` is the load-bearing field for readability (and is nullable — design an empty/fallback state for stubs).
 
-**Fields that make a card genuinely readable** (present on every summary):
-- `title` — the heading.
-- `summary` — the one-line human blurb. **This is the load-bearing field for readability.** A card without `summary` collapses to a bare link; with it, it reads as content. Note `summary` is nullable — design an empty/fallback state for rows where it's absent (e.g. stubs).
-- `kind`, `visibility`, `status`, `tags` — supporting badges/chips that give a card context at a glance.
-- `epistemic_status` — an optional trust signal.
+The treatment is therefore **open, not decided**. Approaches the data supports, with precedents:
+- **Rich cards** — `title` + `summary` + `kind`/`status`/`tags` badges + optional `epistemic_status` trust signal. Works for any surface, recency or curated.
+- **Faceted list/table** — mem0's dashboard presents memories as a filterable list (by user/agent/run); Lore's equivalent facets are `kind`, `visibility`, `lane`, `tags` (values from the catalog endpoint). A recency list stops being noise once it's filterable.
+- **Lead with curation, de-emphasize recency** — surface Featured and treat recency as a minor "latest activity" strip, or drop it.
 
-**Fields that only support a bare link / metadata footnote:** `id`, `updated_at`, `size`. On their own these produce a filename-and-timestamp row — the "noise" the owner is describing.
-
-**Implication for the design team:** a card surface (Featured) should lead with `title` + `summary` + kind/status badges; a timestamp-led list (Recently-updated) has the data to be upgraded into the same readable card shape — the only thing missing in a bare link list is the *use* of `summary`/`kind`, not the data itself.
+The hard facts here are only *which fields exist* (§2.2) and that both sections draw from the same data. Which treatment to use is the design team's call — see §6 for how other systems handle it.
 
 ---
 
@@ -220,7 +219,7 @@ Lore has **two graphs**. Design for the richer one.
 | **Link Graph** ("enriched") | Page-to-page wikilinks + source refs. Pages only. The current UI renders only this. | `/api/links`, `/api/graph/*` |
 | **Context Graph** | Full multi-type knowledge graph: pages, captures, claims, traces, plans, policies, actors, tools, tasks, sources. Built and queryable, **not yet visualized.** | `/api/context-graph*`, `/api/graph/analytics` |
 
-**Recommendation embedded in the data:** the new UI should target the **Context Graph** — it is the full knowledge model; the link graph is a strict subset (pages + wikilinks).
+**The richer option:** the **Context Graph** is the full knowledge model (12 node types); the link graph is a strict subset (pages + wikilinks). Other systems split here too — OpenPaw and KuzuDB visualize a typed graph, while mem0 ships no graph at all. If Lore keeps a graph UI, the context graph is the more capable target; whether to ship one (and how heavy) is a design call (see §6.4).
 
 ### 5.1 Nodes
 
@@ -367,7 +366,35 @@ Computed on the **context graph** (scoped by actor); advisory, never canonical. 
 
 ---
 
-## 6. Sample payload shapes
+## 6. Design precedents from other memory systems
+
+**References, not requirements** — how comparable systems present the same surfaces, so the design team has a menu of proven approaches rather than this document's opinions. Drawn from a source-level comparison of OpenPaw, mem0, and KuzuDB/KuzuMemory (their licenses vary and several lack a committed LICENSE file — these are design references, not code to copy).
+
+### 6.1 List / memory surface
+- **mem0** — a Next.js dashboard presenting memories as a **filterable list/table** with metadata, faceted by `user / agent / run`. No graph. Closest precedent for a faceted Lore page browser (Lore facets: `kind`, `visibility`, `lane`, `tags`).
+- **KuzuMemory** — no browser list at all; memory surfaces only as MCP tool output inside the IDE. A precedent for a "no human list" stance if the audience is purely agents.
+- **Lore today** — page browser + sidebar list.
+
+### 6.2 Article / detail surface
+- **OpenPaw** — a **node detail panel** (properties, aliases, tags) on selection. Precedent for Lore's per-page/per-node detail and the provenance disclosure (§3.5).
+- **mem0** — a flat memory entry with metadata; no rich article view.
+- **Lore** is unusually rich here (rendered Markdown + TOC + backlinks + provenance) — closest to a wiki, with no competitor analog. This surface is more greenfield than borrowed.
+
+### 6.3 Search
+- None of the three ship a notable end-user search UX: **mem0** is filter-driven (not query-driven), **KuzuMemory** is regex/MCP, **OpenPaw** is graph-first. Lore's search redesign has **few precedents to borrow** — design it from the data (§4.3: live, in-place, faceted; no excerpt field).
+
+### 6.4 Graph visualization
+- **OpenPaw** (`web/graph.html`) — interactive node graph with **click-to-detail** and **type filtering** (person / project / place / org / concept). The closest proven model for Lore's context graph (12 node types) with per-type filters + a selection panel.
+- **KuzuDB** — graph-DB browser UIs (Vela browser; the **Bighorn** fork) and React hooks in the TS port; a heavier, Cypher-results-on-a-canvas / query-driven explorer.
+- **mem0** — no graph viz at all (entity list only) — a reminder that a graph UI is optional, not mandatory.
+- **Lore today** — vis-network link graph (the laggy one from UAT). Redesign target is the richer context graph (§5); OpenPaw's click-to-detail + type-filter is the nearest reference.
+
+### 6.5 Distinct to Lore (no precedent to copy)
+Lore's **capture-review queue**, **knowledge-quality lint dashboard**, and **policy/governance** views have no analog in the other systems — they're agent-ops, not reader surfaces. The owner wants the human UI minimal, so treat these as a separate "operate" console, kept out of the reader redesign.
+
+---
+
+## 7. Sample payload shapes
 
 Schematic — field names from code, values illustrative. Optional/nullable fields may be absent or `null`.
 
