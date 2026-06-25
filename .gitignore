@@ -38,12 +38,15 @@ data/
 # Codex specs
 .codex-task*
 
+# Node (TypeScript SDK)
+node_modules/
+
 # uv
 uv.lock
 
 # Test artifacts
 .pytest_cache/
-.pytest-tmp/
+.pytest-tmp*/
 .coverage
 .coverage.*
 htmlcov/
