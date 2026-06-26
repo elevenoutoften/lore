@@ -412,6 +412,75 @@ def test_memory_recall_ack_endpoint_writes_access(client):
 # ─── MCP surface ────────────────────────────────────────────────────────────
 
 
+def test_memory_context_endpoint_returns_bounded_deterministic_markdown(client):
+    _reinforce(client, "services/lore", "is", "an agent memory backend")
+    _reinforce(client, "services/pixl", "uses", "ComfyUI on the GPU box")
+    before = client.get("/api/ledger/claims").json()["claims"][0]
+
+    params = {
+        "query": "memory backend",
+        "limit": 5,
+        "max_chars": 360,
+        "max_tokens": 70,
+        "include_rag": False,
+    }
+    first = client.get("/api/memory/context", params=params)
+    second = client.get("/api/memory/context", params=params)
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    body = first.json()
+    assert body["context"] == second.json()["context"]
+    assert body["citations"] == second.json()["citations"]
+    assert body["char_count"] == len(body["context"]) <= 360
+    assert body["token_count"] <= 70
+    assert "[claim:" in body["context"]
+    assert body["citations"][0]["kind"] == "claim"
+    assert body["citations"][0]["ref"].startswith("claim:")
+    assert body["recall"]["count"] >= 2
+    assert body["rag"] is None
+
+    after = client.get("/api/ledger/claims").json()["claims"][0]
+    assert after["candidate_id"] == before["candidate_id"]
+    assert after["access_count"] == before["access_count"] == 0
+    assert after["last_accessed_at"] == before["last_accessed_at"] is None
+
+
+def test_memory_context_endpoint_formats_rag_page_citations(client):
+    repo = client.app.state.repository
+    repo.upsert_page(
+        "services/context-source",
+        """---
+title: Context Source
+kind: service
+visibility: internal
+---
+
+# Context Source
+
+Prompt context needle lives in this source page.
+""",
+    )
+    client.post("/api/search/reindex")
+
+    resp = client.get(
+        "/api/memory/context",
+        params={
+            "query": "prompt context needle",
+            "include_recall": False,
+            "include_rag": True,
+            "limit": 5,
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert "[page:services/context-source]" in body["context"]
+    assert any(citation["ref"] == "page:services/context-source" for citation in body["citations"])
+    assert body["recall"] is None
+    assert body["rag"]["total"] >= 1
+
+
 def _mcp_call(client, name: str, arguments: dict) -> dict:
     resp = client.post(
         "/mcp",
@@ -483,6 +552,43 @@ def test_sdk_memory_provider_recall_parses_claims(monkeypatch):
 
 
 # ─── Self-completing loop + self-diagnosing recall ──────────────────────────
+
+
+def test_sdk_memory_provider_context_and_provider_shapes(monkeypatch):
+    sdk_path = Path(__file__).resolve().parents[1] / "sdk" / "python"
+    if str(sdk_path) not in sys.path:
+        sys.path.insert(0, str(sdk_path))
+    from lore_sdk.memory_provider import MemoryProvider
+
+    provider = MemoryProvider(base_url="http://lore.test", api_key="k")
+    captured_paths: list[str] = []
+
+    def fake_request(method, path, data=None):
+        captured_paths.append(path)
+        return {
+            "context": "## Lore Memory Context\n- [claim:c1] services/lore is memory.",
+            "citations": [{"ref": "claim:c1", "kind": "claim", "id": "c1"}],
+            "token_count": 8,
+            "char_count": 64,
+            "max_tokens": 80,
+            "max_chars": 500,
+            "truncated": False,
+        }
+
+    monkeypatch.setattr(provider, "_request", fake_request)
+
+    context = provider.context("memory backend", max_tokens=80, max_chars=500, include_rag=False)
+    openai = provider.to_openai("memory backend", max_tokens=80, max_chars=500)
+    anthropic = provider.to_anthropic("memory backend", max_tokens=80, max_chars=500)
+
+    assert context["context"].startswith("## Lore Memory Context")
+    assert captured_paths[0].startswith("/api/memory/context?")
+    assert "query=memory+backend" in captured_paths[0]
+    assert "max_tokens=80" in captured_paths[0]
+    assert "max_chars=500" in captured_paths[0]
+    assert "include_rag=false" in captured_paths[0]
+    assert openai == [{"role": "system", "content": context["context"]}]
+    assert anthropic == [{"type": "text", "text": context["context"]}]
 
 
 def test_sdk_memory_provider_acknowledge_recall_posts_candidate_ids(monkeypatch):

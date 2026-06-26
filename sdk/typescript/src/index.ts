@@ -92,6 +92,39 @@ export interface MemoryRecallResponse {
   hint: string | null;
 }
 
+export interface MemoryContextOptions extends MemoryRecallOptions {
+  maxTokens?: number;
+  maxChars?: number;
+  includeRecall?: boolean;
+  includeRag?: boolean;
+  ragExpandHops?: number;
+}
+
+export interface MemoryContextCitation {
+  ref: string;
+  kind: string;
+  id: string;
+  source_page_ids: string[];
+  source_capture_ids: string[];
+}
+
+export interface MemoryContextResponse {
+  query: string | null;
+  context: string;
+  citations: MemoryContextCitation[];
+  token_count: number;
+  char_count: number;
+  max_tokens: number;
+  max_chars: number;
+  truncated: boolean;
+  latency_ms: number;
+  recall: MemoryRecallResponse | null;
+  rag: JsonObject | null;
+}
+
+export type OpenAIContextMessage = { role: "system"; content: string };
+export type AnthropicContextBlock = { type: "text"; text: string };
+
 export interface MemoryRecallAckOptions {
   /** Admin-only actor target; requires crossActor. */
   actor?: string;
@@ -468,6 +501,43 @@ export class MemoryProvider extends LoreClient {
         cross_actor: options.crossActor || undefined,
       },
     }) as Promise<MemoryRecallResponse>;
+  }
+
+  context(query?: string, options: MemoryContextOptions = {}): Promise<MemoryContextResponse> {
+    return this.request("GET", "/api/memory/context", {
+      params: {
+        query,
+        subject: options.subject,
+        lane: options.lane,
+        actor: options.actor,
+        min_strength: options.minStrength || undefined,
+        limit: options.limit ?? 10,
+        max_tokens: options.maxTokens ?? 900,
+        max_chars: options.maxChars ?? 4000,
+        include_recall: options.includeRecall ?? true,
+        include_rag: options.includeRag ?? true,
+        rag_expand_hops: options.ragExpandHops ?? 1,
+        cross_actor: options.crossActor || undefined,
+      },
+    }) as Promise<MemoryContextResponse>;
+  }
+
+  async to_openai(query?: string, options: MemoryContextOptions = {}): Promise<OpenAIContextMessage[]> {
+    const response = await this.context(query, options);
+    return [{ role: "system", content: response.context }];
+  }
+
+  async to_anthropic(query?: string, options: MemoryContextOptions = {}): Promise<AnthropicContextBlock[]> {
+    const response = await this.context(query, options);
+    return [{ type: "text", text: response.context }];
+  }
+
+  toOpenAI(query?: string, options: MemoryContextOptions = {}): Promise<OpenAIContextMessage[]> {
+    return this.to_openai(query, options);
+  }
+
+  toAnthropic(query?: string, options: MemoryContextOptions = {}): Promise<AnthropicContextBlock[]> {
+    return this.to_anthropic(query, options);
   }
 
   acknowledgeRecall(

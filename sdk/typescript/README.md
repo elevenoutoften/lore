@@ -59,12 +59,19 @@ const usedIds = recalled.claims.map((claim) => claim.candidate_id);
 if (usedIds.length > 0) {
   await memory.acknowledgeRecall(usedIds);
 }
+
+const context = await memory.context("staging deployment", { maxTokens: 900, maxChars: 4000 });
+const openaiMessages = await memory.to_openai("staging deployment");
+const anthropicBlocks = await memory.to_anthropic("staging deployment");
 ```
 
 `recall()` returns just the typed claims array. `recallResponse()` also returns
 the count, ranking weights, pending-capture count, and diagnostic hint. Authorized
 admin callers can request an explicit cross-actor read with
 `recallResponse(query, { crossActor: true })`.
+`context()` returns bounded markdown with inline `[claim:...]` and `[page:...]`
+citations. `to_openai()` and `to_anthropic()` wrap the same markdown for
+provider inputs; `toOpenAI()` and `toAnthropic()` are camelCase aliases.
 
 ## Writes
 

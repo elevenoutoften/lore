@@ -51,6 +51,42 @@ curl http://localhost:8078/api/version
 }
 ```
 
+## `GET /api/memory/context`
+
+```bash
+curl "http://localhost:8078/api/memory/context?query=memory+backend&limit=5&max_tokens=900&max_chars=4000"
+```
+
+```json
+{
+  "query": "memory backend",
+  "context": "## Lore Memory Context\nQuery: memory backend\n\n### Claims\n- [claim:c1] services/lore is an agent memory backend (score 0.910; strength 0.800; pages services/lore)\n",
+  "citations": [
+    {
+      "ref": "claim:c1",
+      "kind": "claim",
+      "id": "c1",
+      "source_page_ids": ["services/lore"],
+      "source_capture_ids": []
+    }
+  ],
+  "token_count": 19,
+  "char_count": 152,
+  "max_tokens": 900,
+  "max_chars": 4000,
+  "truncated": false
+}
+```
+
+```python
+from lore_sdk.memory_provider import MemoryProvider
+
+provider = MemoryProvider(base_url="http://localhost:8078")
+context = provider.context("memory backend", max_tokens=900, max_chars=4000)
+openai_messages = provider.to_openai("memory backend")
+anthropic_blocks = provider.to_anthropic("memory backend")
+```
+
 ## `GET /api/pages`
 
 ```bash

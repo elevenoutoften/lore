@@ -906,6 +906,32 @@ class MemoryRecallResponse(BaseModel):
     hint: str | None = None
 
 
+class MemoryContextCitation(BaseModel):
+    """A citation reference included in a prompt-ready memory context block."""
+
+    ref: str = Field(description="Inline citation reference, for example claim:c1 or page:services/lore.")
+    kind: str = Field(description="Citation kind, currently claim or page.")
+    id: str = Field(description="Canonical claim or page identifier.")
+    source_page_ids: list[str] = Field(default_factory=list)
+    source_capture_ids: list[str] = Field(default_factory=list)
+
+
+class MemoryContextResponse(BaseModel):
+    """Prompt-ready memory context assembled deterministically from recall and RAG."""
+
+    query: str | None = None
+    context: str = Field(description="Bounded markdown context block with inline citations.")
+    citations: list[MemoryContextCitation] = Field(default_factory=list)
+    token_count: int = Field(description="Deterministic whitespace-token estimate for the context block.")
+    char_count: int
+    max_tokens: int
+    max_chars: int
+    truncated: bool = False
+    latency_ms: float = 0.0
+    recall: MemoryRecallResponse | None = None
+    rag: RagExpandedResponse | None = None
+
+
 class MemoryRecallAckRequest(BaseModel):
     """Explicit acknowledgement that returned recall claims were used."""
 

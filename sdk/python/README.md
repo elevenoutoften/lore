@@ -103,6 +103,11 @@ for claim in claims:
 
 # If these claims informed an answer/action, explicitly acknowledge use.
 memory.acknowledge_recall([claim["candidate_id"] for claim in claims])
+
+# Or ask Lore for a prompt-ready markdown context block with citations.
+context = memory.context("illustrious text rendering", lane="project", max_tokens=900, max_chars=4000)
+openai_messages = memory.to_openai("illustrious text rendering", lane="project")
+anthropic_blocks = memory.to_anthropic("illustrious text rendering", lane="project")
 ```
 
 Each recalled claim includes a `recall_score` and a `recall_signals` breakdown
@@ -111,6 +116,9 @@ default; `acknowledge_recall` is the explicit salience boost path. On
 authenticated servers, capture actor/agent is stamped from the token actor and
 recall is scoped to that actor by default. Admin tokens can pass
 `cross_actor=True` to explicitly recall across actors.
+`context()` is also read-only and returns bounded markdown with `[claim:...]`
+and `[page:...]` citations; `to_openai()` and `to_anthropic()` wrap that markdown
+for provider inputs.
 
 ## Trace-Linked Capture
 

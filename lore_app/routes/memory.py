@@ -20,19 +20,28 @@ from ..deps import (
     get_vector_store,
 )
 from ..heartbeat import heartbeat_review
+from ..memory_context import build_memory_context
 from ..post_capture import run_post_capture_side_effects
 from ..recall import count_pending_captures, count_scoped_out_claims, recall_hint, weights_for_query
 from ..repository import InvalidPageId, LoreRepository
-from ..route_utils import recall_actor_scope, record_audit, stamp_capture_actor, validate_content
+from ..route_utils import (
+    enrich_expanded_results,
+    recall_actor_scope,
+    record_audit,
+    stamp_capture_actor,
+    validate_content,
+)
 from ..schemas import (
     CaptureRequest,
     MemoryCaptureRequest,
     MemoryCaptureResponse,
+    MemoryContextResponse,
     MemoryHealthResponse,
     MemoryRecallAckRequest,
     MemoryRecallAckResponse,
     MemoryRecallClaim,
     MemoryRecallResponse,
+    RagExpandedResponse,
 )
 
 if TYPE_CHECKING:
@@ -262,6 +271,122 @@ def api_memory_recall(
         claims=claims,
         pending_captures=pending_captures,
         hint=hint,
+    )
+
+
+@router.get("/api/memory/context", response_model=MemoryContextResponse)
+def api_memory_context(
+    request: Request,
+    query: str | None = Query(
+        default=None, description="Optional natural-language query to assemble prompt-ready context for."
+    ),
+    subject: str | None = Query(default=None, description="Filter recall claims to an exact normalized subject."),
+    lane: str | None = Query(default=None, description="Filter recall and RAG to a retrieval lane."),
+    actor: str | None = Query(default=None, description="Filter to claims/content produced by a specific agent."),
+    min_strength: float = Query(default=0.0, ge=0.0, le=1.0, description="Minimum ledger strength to consider."),
+    valid_at: str | None = Query(default=None, description="Only claims valid at this ISO timestamp."),
+    limit: int = Query(default=10, ge=1, le=50, description="Max recall claims and RAG page results to consider."),
+    max_tokens: int = Query(
+        default=900,
+        ge=32,
+        le=8000,
+        description="Deterministic whitespace-token budget for the returned markdown block.",
+    ),
+    max_chars: int = Query(default=4000, ge=128, le=50000, description="Character budget for the markdown block."),
+    include_recall: bool = Query(default=True, description="Include ranked durable-memory claims."),
+    include_rag: bool = Query(default=True, description="Include hybrid RAG page hits when a query is present."),
+    rag_expand_hops: int = Query(default=1, ge=0, le=4, description="Context-graph expansion hops for RAG hits."),
+    cross_actor: bool = Query(
+        default=False,
+        description="Admin-only: explicitly allow recall/RAG outside the authenticated actor scope.",
+    ),
+    ledger: LedgerDB = Depends(get_ledger_db),
+    repo: LoreRepository = Depends(get_repo),
+    search_idx: LoreSearchIndex = Depends(get_search_index),
+    vector_store: VectorStore = Depends(get_vector_store),
+    context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
+    metrics: MetricsCollector = Depends(get_metrics),
+) -> MemoryContextResponse:
+    """Assemble a deterministic, bounded markdown context block for prompts."""
+    start = time.perf_counter()
+    try:
+        scoped_actor = recall_actor_scope(request, requested_actor=actor, cross_actor=cross_actor)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    claims: list[MemoryRecallClaim] = []
+    recall_response: MemoryRecallResponse | None = None
+    if include_recall:
+        rows = ledger.recall_claims(
+            query=query,
+            subject=subject,
+            lane=lane,
+            actor=scoped_actor,
+            min_strength=min_strength,
+            valid_at=valid_at,
+            limit=limit,
+            record_access=False,
+        )
+        claims = [_recall_row_to_claim(row) for row in rows]
+        metrics.increment_recall_requests()
+        if not claims:
+            metrics.increment_recall_zero_results()
+        pending_captures = count_pending_captures(repo, ledger)
+        scoped_out = 0
+        if not claims and pending_captures == 0 and not cross_actor and scoped_actor:
+            scoped_out = count_scoped_out_claims(
+                ledger, query=query, subject=subject, lane=lane, min_strength=min_strength, valid_at=valid_at
+            )
+        recall_response = MemoryRecallResponse(
+            query=query,
+            count=len(claims),
+            latency_ms=0.0,
+            weights=weights_for_query(
+                query,
+                semantic_available=bool(query and query.strip()) and ledger.semantic_recall_enabled,
+            ),
+            claims=claims,
+            pending_captures=pending_captures,
+            hint=recall_hint(len(claims), pending_captures, scoped_out),
+        )
+
+    rag_response: RagExpandedResponse | None = None
+    if include_rag and query and query.strip():
+        from ..rag.hybrid_retrieval import hybrid_retrieve_expanded
+
+        raw_rag = hybrid_retrieve_expanded(
+            query.strip(),
+            search_idx,
+            vector_store,
+            context_graph_cache.get(repo, ledger),
+            ledger,
+            limit=limit,
+            expand_hops=rag_expand_hops,
+            include_claims=True,
+            include_traces=False,
+            include_decisions=True,
+            lane=lane,
+            actor=scoped_actor,
+            claim_actor=scoped_actor,
+        )
+        rag_response = RagExpandedResponse.model_validate(
+            enrich_expanded_results(repo, raw_rag, ledger, actor=scoped_actor)
+        )
+
+    context_payload = build_memory_context(
+        query=query,
+        claims=claims,
+        rag_results=rag_response.results if rag_response is not None else [],
+        max_tokens=max_tokens,
+        max_chars=max_chars,
+    )
+    latency_ms = (time.perf_counter() - start) * 1000.0
+    return MemoryContextResponse(
+        query=query,
+        latency_ms=round(latency_ms, 3),
+        recall=recall_response,
+        rag=rag_response,
+        **context_payload,
     )
 
 

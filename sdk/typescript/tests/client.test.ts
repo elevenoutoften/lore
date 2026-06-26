@@ -155,6 +155,41 @@ test("MemoryProvider recallResponse preserves the diagnostic envelope", async ()
   );
 });
 
+test("MemoryProvider context returns bounded prompt-ready markdown", async () => {
+  mockFetch(200, {
+    query: "deployment",
+    context: "## Lore Memory Context\n- [claim:c1] Deployment uses the blue lane.",
+    citations: [{ ref: "claim:c1", kind: "claim", id: "c1", source_page_ids: [], source_capture_ids: [] }],
+    token_count: 10,
+    char_count: 72,
+    max_tokens: 80,
+    max_chars: 500,
+    truncated: false,
+    latency_ms: 0.4,
+    recall: null,
+    rag: null,
+  });
+  const memory = new MemoryProvider({ baseUrl: "https://lore.example.test" });
+
+  const response = await memory.context("deployment", {
+    limit: 3,
+    maxTokens: 80,
+    maxChars: 500,
+    includeRag: false,
+    ragExpandHops: 0,
+  });
+  const openai = await memory.to_openai("deployment", { maxTokens: 80, maxChars: 500 });
+  const anthropic = await memory.to_anthropic("deployment", { maxTokens: 80, maxChars: 500 });
+
+  assert.match(response.context, /\[claim:c1\]/);
+  assert.equal(
+    calls[0].url,
+    "https://lore.example.test/api/memory/context?query=deployment&limit=3&max_tokens=80&max_chars=500&include_recall=true&include_rag=false&rag_expand_hops=0",
+  );
+  assert.deepEqual(openai, [{ role: "system", content: response.context }]);
+  assert.deepEqual(anthropic, [{ type: "text", text: response.context }]);
+});
+
 test("MemoryProvider acknowledgeRecall supports explicit authorized cross-actor scope", async () => {
   mockFetch(200, { acknowledged_count: 2, timestamp: "2026-06-22T00:00:00Z" });
   const memory = new MemoryProvider({ baseUrl: "https://lore.example.test", authToken: "admin-token" });

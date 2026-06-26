@@ -191,6 +191,33 @@ otherwise it shares `query`, `subject`, `lane`, `actor`, `min_strength`, `limit`
 `record_access`, and `cross_actor`. Python SDK:
 `MemoryProvider.recall(query=..., lane=..., actor=...)`.
 
+## Prompt-ready context
+
+`GET /api/memory/context` is the read-only prompt assembly surface. It runs the
+same scoped recall query, optionally adds hybrid RAG page hits, and formats the
+result as compact markdown with inline `[claim:...]` and `[page:...]` citations.
+It does not call an LLM. The returned `token_count` is Lore's deterministic
+whitespace-token estimate, and the `context` string is bounded by both
+`max_tokens` and `max_chars`.
+
+```bash
+curl -sS "https://lore.example/api/memory/context?query=memory+backend&limit=5&max_tokens=900&max_chars=4000" \
+  -H "Authorization: Bearer $LORE_API_KEY"
+```
+
+Python SDK:
+`MemoryProvider.context(query=...)`, `MemoryProvider.to_openai(query=...)`, and
+`MemoryProvider.to_anthropic(query=...)`.
+
+```python
+from lore_sdk.memory_provider import MemoryProvider
+
+provider = MemoryProvider(base_url="https://lore.example", api_key="...")
+context = provider.context("memory backend", max_tokens=900, max_chars=4000)
+openai_messages = provider.to_openai("memory backend")
+anthropic_blocks = provider.to_anthropic("memory backend")
+```
+
 To acknowledge use:
 
 ```bash
@@ -211,6 +238,9 @@ MCP tool: `lore_ack_recall`. Python SDK:
 - **`/api/rag/retrieve-expanded`** — hybrid retrieval with multi-hop context-graph
   expansion, relevance paths, and supporting/contradicting claims. Use when an agent
   needs assembled context with explanations rather than ranked facts.
+- **`/api/memory/context`** - deterministic markdown prompt context assembled
+  from recall claims plus optional RAG page hits, with inline citations and
+  caller-provided token/character bounds.
 
 ## Lifecycle: reinforce, supersede, decay
 
@@ -243,6 +273,7 @@ contradiction-update, and distractor expectations.
 | Capture memory | `POST /api/memory/capture` | `lore_capture` | `MemoryProvider.capture` |
 | Consolidate (safe preview by default) | `POST /api/consolidation/run` | `lore_consolidation_run` | — |
 | Recall ranked claims | `GET /api/memory/recall` | `lore_recall` | `MemoryProvider.recall` |
+| Prompt-ready context | `GET /api/memory/context` | - | `MemoryProvider.context` |
 | Search pages | `GET /api/search` | `lore_search` | `LoreClient.search` |
 | Assembled context | `POST /api/rag/retrieve-expanded` | `lore_rag_context_expanded` | — |
 | Memory health | `GET /api/memory/health` | `lore_heartbeat_review` | — |

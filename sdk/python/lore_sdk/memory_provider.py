@@ -206,6 +206,61 @@ class MemoryProvider:
         result = self._send_with_retry("GET", path)
         return result if isinstance(result, dict) else {}
 
+    def context(
+        self,
+        query: str | None = None,
+        *,
+        subject: str | None = None,
+        lane: str | None = None,
+        actor: str | None = None,
+        min_strength: float = 0.0,
+        limit: int = 10,
+        max_tokens: int = 900,
+        max_chars: int = 4000,
+        include_recall: bool = True,
+        include_rag: bool = True,
+        rag_expand_hops: int = 1,
+        cross_actor: bool = False,
+    ) -> dict[str, Any]:
+        """Return a deterministic prompt-ready memory context block.
+
+        The server assembles recall claims and optional RAG page hits into
+        bounded markdown with inline citations. No LLM call is made.
+        """
+        params: dict[str, str] = {
+            "limit": str(int(limit)),
+            "max_tokens": str(int(max_tokens)),
+            "max_chars": str(int(max_chars)),
+            "include_recall": "true" if include_recall else "false",
+            "include_rag": "true" if include_rag else "false",
+            "rag_expand_hops": str(int(rag_expand_hops)),
+        }
+        if query:
+            params["query"] = query
+        if subject:
+            params["subject"] = subject
+        if lane:
+            params["lane"] = lane
+        if actor:
+            params["actor"] = actor
+        if min_strength:
+            params["min_strength"] = str(float(min_strength))
+        if cross_actor:
+            params["cross_actor"] = "true"
+        path = "/api/memory/context?" + urllib.parse.urlencode(params)
+        result = self._send_with_retry("GET", path)
+        return result if isinstance(result, dict) else {}
+
+    def to_openai(self, query: str | None = None, **options: Any) -> list[dict[str, str]]:
+        """Return the context block as an OpenAI-ready system message."""
+        response = self.context(query, **options)
+        return [{"role": "system", "content": str(response.get("context") or "")}]
+
+    def to_anthropic(self, query: str | None = None, **options: Any) -> list[dict[str, str]]:
+        """Return the context block as an Anthropic-ready text content block."""
+        response = self.context(query, **options)
+        return [{"type": "text", "text": str(response.get("context") or "")}]
+
     def acknowledge_recall(self, candidate_ids: list[str]) -> dict[str, Any]:
         """Acknowledge recalled claims that were used, boosting salience."""
         result = self._post_with_retry("/api/memory/recall/ack", {"candidate_ids": candidate_ids})

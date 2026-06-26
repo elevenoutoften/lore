@@ -197,6 +197,7 @@ curl -sS "$LORE_URL/api/promotions"
 | `GET` | `/api/extraction/candidates` | List extracted candidates. Query: `status`, `type`, `actor`, `cross_actor`, `limit`. |
 | `POST` | `/api/memory/capture` | Lightweight memory capture. Authenticated modes server-stamp actor/agent from the token actor. |
 | `GET` | `/api/memory/recall` | Ranked claim recall. Authenticated modes are scoped to the token actor; admins must set `cross_actor=true` for cross-actor reads. Read-only by default; `record_access=false` unless explicitly set. |
+| `GET` | `/api/memory/context` | Deterministic prompt-ready markdown context assembled from recall claims and optional RAG page hits. Query: `query`, `limit`, `max_tokens`, `max_chars`, `include_recall`, `include_rag`, `rag_expand_hops`, `cross_actor`. |
 | `POST` | `/api/memory/recall/ack` | Acknowledge used recall claims. Body: `{candidate_ids}`. |
 | `GET` | `/api/memory/health` | Memory subsystem health counts. |
 
