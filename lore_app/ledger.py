@@ -34,6 +34,8 @@ from .schemas import (
 )
 
 CONFIDENCE_ORDER = {"unknown": 0, "low": 1, "medium": 2, "high": 3}
+DEFAULT_CLAIM_DECAY_FLOOR = 0.01
+PINNED_CLAIM_DECAY_FLOOR = 0.2
 MAX_SEMANTIC_CLAIMS_PER_RECALL = 50
 SEED_POLICIES = [
     PolicyRule(
@@ -185,6 +187,7 @@ class LedgerDB:
             ("prompt_hash", "TEXT DEFAULT NULL"),
             ("token_usage", "TEXT DEFAULT NULL"),
             ("last_decayed_at", "TEXT DEFAULT NULL"),
+            ("decay_floor", "REAL DEFAULT NULL"),
         ],
         "patch_plans": [
             ("batch_id", "TEXT DEFAULT NULL"),
@@ -287,6 +290,7 @@ class LedgerDB:
                 valid_from TEXT,
                 valid_until TEXT,
                 strength REAL DEFAULT 0.5,
+                decay_floor REAL DEFAULT NULL,
                 access_count INTEGER DEFAULT 0,
                 last_accessed_at TEXT,
                 last_decayed_at TEXT,
@@ -643,7 +647,7 @@ class LedgerDB:
             # Check for existing compatible claim
             existing = self.connection.execute(
                 """
-                SELECT candidate_id, strength, confidence, epistemic_status, source_capture_ids,
+                SELECT candidate_id, strength, decay_floor, confidence, epistemic_status, source_capture_ids,
                        source_page_ids, valid_from, valid_until
                 FROM extraction_candidates
                 WHERE dedupe_hash = ? AND candidate_type = 'claim'
@@ -678,6 +682,9 @@ class LedgerDB:
                 best_epistemic_status = metadata.get("epistemic_status") or (
                     str(existing["epistemic_status"]) if existing["epistemic_status"] else None
                 )
+                new_decay_floor = _claim_decay_floor(best_confidence, best_epistemic_status)
+                existing_decay_floor = _coerce_decay_floor(existing["decay_floor"])
+                best_decay_floor = _max_optional_float(existing_decay_floor, new_decay_floor)
 
                 # Keep more specific temporal bounds
                 existing_valid_from = (
@@ -692,6 +699,7 @@ class LedgerDB:
                     UPDATE extraction_candidates
                     SET strength = ?, confidence = ?, epistemic_status = ?, source_capture_ids = ?,
                         source_page_ids = ?, valid_from = ?, valid_until = ?,
+                        decay_floor = ?,
                         target_section = COALESCE(?, target_section),
                         model_version = COALESCE(?, model_version),
                         prompt_hash = COALESCE(?, prompt_hash),
@@ -707,6 +715,7 @@ class LedgerDB:
                         json.dumps(merged_pages),
                         existing_valid_from,
                         existing_valid_until,
+                        best_decay_floor,
                         metadata.get("target_section"),
                         metadata.get("model_version"),
                         metadata.get("prompt_hash"),
@@ -761,9 +770,9 @@ class LedgerDB:
                     candidate_id, batch_id, candidate_type, status, confidence, epistemic_status,
                     actor, lane, content_json, dedupe_hash, source_capture_ids,
                     source_page_ids, target_section, observed_at, valid_from, valid_until,
-                    strength, normalized_subject, normalized_predicate, normalized_object,
+                    strength, decay_floor, normalized_subject, normalized_predicate, normalized_object,
                     model_version, prompt_hash, token_usage, created_at, updated_at
-                ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     candidate_id,
@@ -782,6 +791,7 @@ class LedgerDB:
                     metadata.get("valid_from"),
                     metadata.get("valid_until"),
                     metadata.get("strength", 0.5),
+                    metadata.get("decay_floor"),
                     normalized_subject,
                     normalized_predicate,
                     normalized_object,
@@ -963,7 +973,16 @@ class LedgerDB:
         now_dt = now or datetime.now(UTC)
         cutoff = (now_dt - timedelta(days=floor_days)).isoformat()
         actor_clause = " AND actor = ?" if actor else ""
-        params: tuple[Any, ...] = (cutoff, actor) if actor else (cutoff,)
+        params: tuple[Any, ...] = (
+            DEFAULT_CLAIM_DECAY_FLOOR,
+            DEFAULT_CLAIM_DECAY_FLOOR,
+            cutoff,
+            actor,
+        ) if actor else (
+            DEFAULT_CLAIM_DECAY_FLOOR,
+            DEFAULT_CLAIM_DECAY_FLOOR,
+            cutoff,
+        )
         with self._lock:
             rows = self.connection.execute(
                 f"""
@@ -971,6 +990,11 @@ class LedgerDB:
                 WHERE candidate_type = 'claim'
                   AND status IN ('candidate', 'active')
                   AND strength <= 0.01
+                  AND COALESCE(decay_floor, ?) <= ?
+                  AND NOT (
+                      epistemic_status = 'operator_declared'
+                      AND confidence = 'high'
+                  )
                   AND last_decayed_at IS NOT NULL
                   AND datetime(last_decayed_at) <= datetime(?)
                   {actor_clause}
@@ -1052,7 +1076,7 @@ class LedgerDB:
             params: tuple[Any, ...] = (actor,) if actor else ()
             rows = self.connection.execute(
                 f"""
-                SELECT candidate_id, strength, last_decayed_at,
+                SELECT candidate_id, strength, decay_floor, confidence, epistemic_status, last_decayed_at,
                        COALESCE(last_decayed_at, created_at) AS decay_anchor
                 FROM extraction_candidates
                 WHERE status IN ('candidate', 'active')
@@ -1077,18 +1101,26 @@ class LedgerDB:
                 days = days_since_access if days_since_access is not None else max(0, (now - accessed).days)
 
                 old_strength = float(row["strength"])
-                new_strength = max(0.01, old_strength * (0.995**days))
-                last_decayed_at = (
-                    str(row["last_decayed_at"]) if old_strength <= 0.01 and row["last_decayed_at"] else now.isoformat()
+                stored_decay_floor = _coerce_decay_floor(row["decay_floor"])
+                trusted_decay_floor = _claim_decay_floor(row["confidence"], row["epistemic_status"])
+                decay_floor = max(
+                    DEFAULT_CLAIM_DECAY_FLOOR,
+                    stored_decay_floor or 0.0,
+                    trusted_decay_floor or 0.0,
                 )
+                new_strength = max(decay_floor, old_strength * (0.995**days))
+                last_decayed_at = (
+                    str(row["last_decayed_at"]) if old_strength <= decay_floor and row["last_decayed_at"] else now.isoformat()
+                )
+                stored_floor = decay_floor if decay_floor > DEFAULT_CLAIM_DECAY_FLOOR else None
 
                 self.connection.execute(
                     """
                     UPDATE extraction_candidates
-                    SET strength = ?, last_decayed_at = ?
+                    SET strength = ?, last_decayed_at = ?, decay_floor = ?
                     WHERE candidate_id = ?
                     """,
-                    (new_strength, last_decayed_at, str(row["candidate_id"])),
+                    (new_strength, last_decayed_at, stored_floor, str(row["candidate_id"])),
                 )
                 decayed_count += 1
                 min_strength = min(min_strength, new_strength)
@@ -2017,6 +2049,7 @@ def _candidate_hash(candidate_type: str, candidate: Any, source_page_ids: list[s
 
 def _candidate_metadata(candidate: Any) -> dict[str, Any]:
     if isinstance(candidate, ExtractedClaim):
+        decay_floor = _claim_decay_floor(candidate.confidence, candidate.epistemic_status)
         return {
             "confidence": candidate.confidence,
             "epistemic_status": candidate.epistemic_status,
@@ -2029,10 +2062,36 @@ def _candidate_metadata(candidate: Any) -> dict[str, Any]:
             "model_version": candidate.model_version,
             "prompt_hash": candidate.prompt_hash,
             "token_usage": candidate.token_usage,
+            "decay_floor": decay_floor,
         }
     if isinstance(candidate, ExtractedEdge):
         return {"strength": candidate.strength}
     return {}
+
+
+def _claim_decay_floor(confidence: Any, epistemic_status: Any) -> float | None:
+    if str(confidence or "").casefold() != "high":
+        return None
+    if str(epistemic_status or "").casefold() != "operator_declared":
+        return None
+    return PINNED_CLAIM_DECAY_FLOOR
+
+
+def _coerce_decay_floor(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        floor = float(value)
+    except (TypeError, ValueError):
+        return None
+    if floor <= DEFAULT_CLAIM_DECAY_FLOOR:
+        return None
+    return min(floor, 1.0)
+
+
+def _max_optional_float(*values: float | None) -> float | None:
+    present = [value for value in values if value is not None]
+    return max(present) if present else None
 
 
 def _age_in_days(anchor: Any, now_dt: datetime) -> float:

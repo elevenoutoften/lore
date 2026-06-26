@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 
-from lore_app.ledger import LedgerDB
+from lore_app.ledger import PINNED_CLAIM_DECAY_FLOOR, LedgerDB
 from lore_app.schemas import ExtractedClaim, ExtractionResult
 
 
@@ -100,6 +101,83 @@ def test_apply_decay_preserves_floor_onset_for_forget_window(tmp_path):
     ledger.apply_decay(days_since_access=10)
 
     assert ledger.get_active_claims()[0]["last_decayed_at"] == floor_onset
+
+
+def test_operator_declared_high_confidence_claim_survives_decay_archive_and_recall(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    claim = ExtractedClaim(
+        subject="identity/operator",
+        predicate="declared",
+        object="Pinned operator-declared facts must stay recallable.",
+        confidence="high",
+        epistemic_status="operator_declared",
+    )
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-pinned-floor",
+            processed_at="2026-01-01T00:00:00+00:00",
+            source_capture_ids=["inbox/2026-01-01/pinned-floor"],
+            claims=[claim],
+            entities=[],
+            edges=[],
+            invalidations=[],
+        )
+    )
+    candidate_id = ledger.get_active_claims()[0]["candidate_id"]
+
+    result = ledger.apply_decay(days_since_access=10_000)
+
+    assert result.decayed_count == 1
+    [row] = ledger.get_active_claims()
+    assert row["candidate_id"] == candidate_id
+    assert row["decay_floor"] == PINNED_CLAIM_DECAY_FLOOR
+    assert row["strength"] == PINNED_CLAIM_DECAY_FLOOR
+
+    future = datetime.now(UTC) + timedelta(days=31)
+    assert ledger.archive_floored_claims(30, now=future) == []
+    recalled = ledger.recall_claims(
+        query="operator-declared facts",
+        min_strength=PINNED_CLAIM_DECAY_FLOOR,
+        limit=5,
+    )
+    assert [claim["candidate_id"] for claim in recalled] == [candidate_id]
+
+
+def test_unpinned_claim_still_decays_to_default_floor_and_archives(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    claim = ExtractedClaim(
+        subject="services/lore",
+        predicate="forgets",
+        object="Ordinary claims still archive at the floor.",
+        confidence="low",
+    )
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-unpinned-floor",
+            processed_at="2026-01-01T00:00:00+00:00",
+            source_capture_ids=["inbox/2026-01-01/unpinned-floor"],
+            claims=[claim],
+            entities=[],
+            edges=[],
+            invalidations=[],
+        )
+    )
+    candidate_id = ledger.get_active_claims()[0]["candidate_id"]
+
+    ledger.apply_decay(days_since_access=10_000)
+
+    [row] = ledger.get_active_claims()
+    assert row["candidate_id"] == candidate_id
+    assert row["decay_floor"] is None
+    assert row["strength"] == 0.01
+
+    future = datetime.now(UTC) + timedelta(days=31)
+    assert ledger.archive_floored_claims(30, now=future) == [candidate_id]
+    assert ledger.recall_claims(query="ordinary claims", limit=5) == []
+    [archived] = ledger.get_candidates(candidate_type="claim")
+    assert archived["status"] == "archived"
 
 
 def test_deadletter_store_list_and_resolve(tmp_path):
