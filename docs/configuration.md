@@ -28,7 +28,7 @@ Lore reads configuration from environment variables through
 | `LORE_PORT` | `8000` | Port used by service launchers. |
 | `LORE_AUTH_MODE` | `none` | Auth mode: `none`, `bearer`, `basic`, or `api_key`. |
 | `LORE_AUTH_SECRET` | empty | Bearer token or `username:password` value for basic auth. |
-| `LORE_METRICS_PUBLIC` | `false` | Expose `/metrics` without auth. By default, `/metrics` requires the configured auth mode. |
+| `LORE_METRICS_PUBLIC` | `false` | Expose `/metrics` without auth. By default, `/metrics` requires the configured auth mode and includes extraction-token gauges such as the total, last-batch, and recent-average rollups. |
 | `LORE_SESSION_SECRET` | empty | Browser-session signing secret. When unset, Lore falls back to `LORE_AUTH_SECRET`, then a per-process random secret. |
 | `LORE_ALLOW_INSECURE_BIND` | `false` | Acknowledge the risk of binding `auth_mode=none` to a non-loopback host. |
 | `LORE_BRAND_TITLE` | `LORE` | Header brand label. |

@@ -13,7 +13,11 @@ A fixed set of paths is always public and exempt from auth in every mode:
 `/healthz`, `/healthz/config`, `/api/login`, `/api/logout`, and `/static`
 (plus everything under `/static/`). `/metrics` follows the configured auth mode
 by default; set `LORE_METRICS_PUBLIC=true` to intentionally expose it without
-credentials for a protected scraper.
+credentials for a protected scraper. `/healthz`, `/metrics`, and
+`/api/memory/health` expose `extraction_tokens_total`,
+`extraction_tokens_last_batch`, and `extraction_tokens_recent_average`, where
+the recent average is computed across the latest extraction batches with
+recorded token usage.
 
 ## Core
 
@@ -199,7 +203,7 @@ curl -sS "$LORE_URL/api/promotions"
 | `GET` | `/api/memory/recall` | Ranked claim recall. Authenticated modes are scoped to the token actor; admins must set `cross_actor=true` for cross-actor reads. Read-only by default; `record_access=false` unless explicitly set. |
 | `GET` | `/api/memory/context` | Deterministic prompt-ready markdown context assembled from recall claims and optional RAG page hits. Query: `query`, `limit`, `max_tokens`, `max_chars`, `include_recall`, `include_rag`, `rag_expand_hops`, `cross_actor`. |
 | `POST` | `/api/memory/recall/ack` | Acknowledge used recall claims. Body: `{candidate_ids}`. |
-| `GET` | `/api/memory/health` | Memory subsystem health counts. |
+| `GET` | `/api/memory/health` | Memory subsystem health counts plus extraction-token totals, last-batch tokens, and the recent batch average. |
 
 ```bash
 curl -sS -X POST "$LORE_URL/api/memory/capture" \

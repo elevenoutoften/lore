@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from lore_app.config import LoreConfig
@@ -21,6 +24,65 @@ def make_client(tmp_path) -> TestClient:
     return TestClient(create_app(config))
 
 
+def make_auto_consolidating_client(tmp_path) -> TestClient:
+    content_dir = tmp_path / "pages"
+    content_dir.mkdir()
+    config = LoreConfig()
+    config.content_dir = content_dir
+    config.search_db = tmp_path / "search.db"
+    config.ledger_db = tmp_path / "ledger.db"
+    config.vector_db = tmp_path / "vectors.db"
+    config.api_keys_db = tmp_path / "api_keys.db"
+    config.settings_db = tmp_path / "settings.db"
+    config.trusted_headers = True
+    config.auto_consolidate = True
+    app = create_app(config)
+    app.state.llm_client = FakeTokenUsageLlmClient(prompt_tokens=23, completion_tokens=11)
+    return TestClient(app)
+
+
+class FakeTokenUsageLlmClient:
+    def __init__(self, *, prompt_tokens: int, completion_tokens: int, model: str = "fake-token-usage-model") -> None:
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+        self.model = model
+        self.primary = SimpleNamespace(config=SimpleNamespace(model=model))
+
+    def extract_json(self, *, system_prompt: str, user_prompt: str) -> dict[str, object]:
+        del system_prompt
+        page_match = re.search(r"^Page ID: (.+)$", user_prompt, re.MULTILINE)
+        suggested_match = re.search(r"^Suggested target page: (.*)$", user_prompt, re.MULTILINE)
+        page_id = page_match.group(1).strip() if page_match else "inbox/test"
+        subject = suggested_match.group(1).strip() if suggested_match else ""
+        if not subject:
+            subject = "services/token-observability"
+        return {
+            "entities": [{"subject": subject, "name": "Token Observability", "entity_type": "service"}],
+            "claims": [
+                {
+                    "subject": subject,
+                    "predicate": "records",
+                    "object": "LLM extraction token usage",
+                    "confidence": "high",
+                    "section": "Summary",
+                    "source_page_ids": [page_id],
+                }
+            ],
+            "edges": [],
+            "invalidations": [],
+            "_lore_meta": {
+                "model": self.model,
+                "usage": {
+                    "prompt_tokens": self.prompt_tokens,
+                    "completion_tokens": self.completion_tokens,
+                },
+            },
+        }
+
+    def close(self) -> None:
+        return None
+
+
 def test_memory_health_empty_state(tmp_path):
     with make_client(tmp_path) as client:
         response = client.get("/api/memory/health")
@@ -32,6 +94,9 @@ def test_memory_health_empty_state(tmp_path):
     assert payload["rejected_plans"] == 0
     assert payload["failed_runs"] == 0
     assert payload["last_consolidation"] is None
+    assert payload["extraction_tokens_total"] == 0
+    assert payload["extraction_tokens_last_batch"] == 0
+    assert payload["extraction_tokens_recent_average"] == 0.0
     assert payload["stale_pages"] == 0
     assert payload["contradictions"] == 0
     assert payload["low_confidence"] == 0
@@ -123,3 +188,41 @@ def test_memory_health_review_required_counts_needs_manual_review(tmp_path):
     # The human-review queue ('needs_manual_review') must be reflected; pre-fix
     # this read 0 because review_required summed the dead 'review' status.
     assert response.json()["review_required"] >= 1
+
+
+def test_memory_health_and_metrics_expose_llm_extraction_tokens_after_consolidation(tmp_path):
+    with make_auto_consolidating_client(tmp_path) as client:
+        captured = client.post(
+            "/api/memory/capture",
+            json={
+                "text": "Lore now records extraction-token observability after consolidation.",
+                "agent_name": "tester",
+                "metadata": {
+                    "title": "Token Observability",
+                    "capture_date": "2026-05-26",
+                    "suggested_target_page": "services/token-observability",
+                },
+            },
+        )
+        assert captured.status_code == 201, captured.text
+
+        status = client.get("/api/consolidation/status")
+        assert status.status_code == 200, status.text
+        assert status.json()["total_extracted"] >= 1
+
+        health = client.get("/api/memory/health")
+        assert health.status_code == 200, health.text
+        payload = health.json()
+        assert payload["extraction_tokens_total"] == 34
+        assert payload["extraction_tokens_last_batch"] == 34
+        assert payload["extraction_tokens_recent_average"] == 34.0
+
+        healthz_metrics = client.get("/healthz").json()["metrics"]
+        assert healthz_metrics["extraction_tokens_total"] == 34
+        assert healthz_metrics["extraction_tokens_last_batch"] == 34
+        assert healthz_metrics["extraction_tokens_recent_average"] == 34.0
+
+        metrics_text = client.get("/metrics").text
+        assert "\nlore_extraction_tokens_total 34\n" in metrics_text
+        assert "\nlore_extraction_tokens_last_batch 34\n" in metrics_text
+        assert "\nlore_extraction_tokens_recent_average 34.0\n" in metrics_text

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
+
+from lore_app.ledger import LedgerDB
+from lore_app.schemas import ExtractedClaim, ExtractionResult
 
 
 def test_healthz_returns_metrics(client):
@@ -37,9 +41,74 @@ def test_metrics_endpoint_prometheus_text(client):
         "lore_recall_requests",
         "lore_recall_zero_results",
         "lore_client_error_count",
+        "lore_extraction_tokens_total",
+        "lore_extraction_tokens_last_batch",
+        "lore_extraction_tokens_recent_average",
     ):
         assert f"# TYPE {name} " in body
         assert f"\n{name} " in body
+
+
+def test_ledger_rolls_up_extraction_tokens_by_batch(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-1",
+            processed_at=datetime(2026, 5, 1, tzinfo=UTC).isoformat(),
+            source_capture_ids=["capture-1", "capture-2"],
+            claims=[
+                ExtractedClaim(
+                    subject="services/lore",
+                    predicate="uses",
+                    object="Auth",
+                    confidence="high",
+                    source_page_ids=["capture-1"],
+                    token_usage={"prompt": 10, "completion": 5},
+                ),
+                ExtractedClaim(
+                    subject="services/lore",
+                    predicate="records",
+                    object="Metrics",
+                    confidence="high",
+                    source_page_ids=["capture-1"],
+                    token_usage={"prompt": 10, "completion": 5},
+                ),
+                ExtractedClaim(
+                    subject="services/lore",
+                    predicate="stores",
+                    object="Claims",
+                    confidence="high",
+                    source_page_ids=["capture-2"],
+                    token_usage={"prompt": 8, "completion": 4},
+                ),
+            ],
+        )
+    )
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-2",
+            processed_at=datetime(2026, 5, 2, tzinfo=UTC).isoformat(),
+            source_capture_ids=["capture-3"],
+            claims=[
+                ExtractedClaim(
+                    subject="services/lore",
+                    predicate="captures",
+                    object="Token usage",
+                    confidence="high",
+                    source_page_ids=["capture-3"],
+                    token_usage={"prompt": 6, "completion": 3},
+                )
+            ],
+        )
+    )
+
+    rollup = ledger.get_extraction_token_usage_rollup()
+
+    assert rollup["extraction_tokens_total"] == 36
+    assert rollup["extraction_tokens_last_batch"] == 9
+    assert rollup["extraction_tokens_recent_average"] == 18.0
 
 
 def test_recall_increments_recall_metrics(client):

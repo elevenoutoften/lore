@@ -174,6 +174,9 @@ class LedgerDB:
             ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
             ("last_retry_at", "TEXT DEFAULT NULL"),
         ],
+        "extraction_batches": [
+            ("total_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        ],
         "extraction_candidates": [
             ("normalized_subject", "TEXT DEFAULT NULL"),
             ("normalized_predicate", "TEXT DEFAULT NULL"),
@@ -269,6 +272,7 @@ class LedgerDB:
                 total_claims INTEGER NOT NULL,
                 total_edges INTEGER NOT NULL,
                 total_invalidations INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL DEFAULT 0,
                 dry_run BOOLEAN NOT NULL DEFAULT 0
             );
 
@@ -522,13 +526,14 @@ class LedgerDB:
         from .extraction import compute_extraction_hash
 
         now = utc_now()
+        batch_total_tokens = _batch_total_tokens(result)
         with self._lock:
             self.connection.execute(
                 """
                 INSERT OR REPLACE INTO extraction_batches (
                     batch_id, created_at, total_captures, total_entities,
-                    total_claims, total_edges, total_invalidations, dry_run
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                    total_claims, total_edges, total_invalidations, total_tokens, dry_run
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
                 """,
                 (
                     result.batch_id,
@@ -538,6 +543,7 @@ class LedgerDB:
                     len(result.claims),
                     len(result.edges),
                     len(result.invalidations),
+                    batch_total_tokens,
                 ),
             )
             for candidate_type, candidate in self._iter_candidates(result):
@@ -1699,6 +1705,32 @@ class LedgerDB:
         ).fetchall()
         return {str(row["status"]): int(row["count"]) for row in rows}
 
+    def get_extraction_token_usage_rollup(self, recent_batch_limit: int = 10) -> dict[str, int | float]:
+        safe_limit = max(1, min(recent_batch_limit, 100))
+        total_row = self.connection.execute(
+            """
+            SELECT COALESCE(SUM(total_tokens), 0) AS total_tokens
+            FROM extraction_batches
+            """
+        ).fetchone()
+        recent_rows = self.connection.execute(
+            """
+            SELECT total_tokens
+            FROM extraction_batches
+            WHERE total_tokens > 0
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        ).fetchall()
+        recent_totals = [int(row["total_tokens"]) for row in recent_rows if row["total_tokens"] is not None]
+        recent_average = round(sum(recent_totals) / len(recent_totals), 2) if recent_totals else 0.0
+        return {
+            "extraction_tokens_total": int(total_row["total_tokens"]) if total_row is not None else 0,
+            "extraction_tokens_last_batch": recent_totals[0] if recent_totals else 0,
+            "extraction_tokens_recent_average": recent_average,
+        }
+
     def get_batch(self, batch_id: str) -> dict[str, Any] | None:
         row = self.connection.execute(
             "SELECT * FROM extraction_batches WHERE batch_id = ?",
@@ -2035,6 +2067,35 @@ class LedgerDB:
             yield "edge", edge
         for invalidation in result.invalidations:
             yield "invalidation", invalidation
+
+
+def _batch_total_tokens(result: ExtractionResult) -> int:
+    """Return the total LLM extraction tokens spent for one batch."""
+
+    usage_by_source: dict[tuple[str, ...], int] = {}
+    for claim in result.claims:
+        total_tokens = _token_usage_total(claim.token_usage)
+        if total_tokens <= 0:
+            continue
+        source_key = tuple(sorted(dict.fromkeys(claim.source_page_ids)))
+        if not source_key:
+            source_key = (claim.subject, claim.predicate, claim.object)
+        prior_total = usage_by_source.get(source_key, 0)
+        if total_tokens > prior_total:
+            usage_by_source[source_key] = total_tokens
+    return sum(usage_by_source.values())
+
+
+def _token_usage_total(token_usage: Any) -> int:
+    if not isinstance(token_usage, dict):
+        return 0
+    prompt_tokens = token_usage.get("prompt", 0)
+    completion_tokens = token_usage.get("completion", 0)
+    try:
+        total = int(prompt_tokens) + int(completion_tokens)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, total)
 
 
 def _candidate_hash(candidate_type: str, candidate: Any, source_page_ids: list[str], compute_hash) -> str:

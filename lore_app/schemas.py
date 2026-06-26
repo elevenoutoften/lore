@@ -862,6 +862,9 @@ class MemoryHealthResponse(BaseModel):
     failed_runs: int = 0
     last_consolidation: str | None = None
     last_maintenance_at: str | None = None
+    extraction_tokens_total: int = 0
+    extraction_tokens_last_batch: int = 0
+    extraction_tokens_recent_average: float = 0.0
     stale_pages: int = 0
     contradictions: int = 0
     low_confidence: int = 0

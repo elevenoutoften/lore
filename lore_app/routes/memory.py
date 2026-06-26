@@ -168,6 +168,7 @@ def api_memory_health(
     failed_runs = len(stuck_runs)
     if str(last_run.get("status") or "") in {"completed_with_errors", "failed"}:
         failed_runs += 1
+    token_rollup = ledger.get_extraction_token_usage_rollup()
 
     return MemoryHealthResponse(
         pending_captures=pending_captures,
@@ -176,6 +177,9 @@ def api_memory_health(
         failed_runs=failed_runs,
         last_consolidation=last_run.get("completed_at") or last_run.get("started_at"),
         last_maintenance_at=getattr(request.app.state, "last_maintenance_at", None),
+        extraction_tokens_total=int(token_rollup["extraction_tokens_total"]),
+        extraction_tokens_last_batch=int(token_rollup["extraction_tokens_last_batch"]),
+        extraction_tokens_recent_average=float(token_rollup["extraction_tokens_recent_average"]),
         stale_pages=heartbeat.stale_pages.count,
         contradictions=heartbeat.contradictions.count,
         low_confidence=heartbeat.low_confidence.count,
