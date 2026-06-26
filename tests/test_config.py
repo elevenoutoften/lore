@@ -21,6 +21,7 @@ def test_config_defaults(monkeypatch):
         "LORE_PORT",
         "LORE_AUTH_MODE",
         "LORE_AUTH_SECRET",
+        "LORE_METRICS_PUBLIC",
         "LORE_BRAND_TITLE",
         "LORE_BRAND_URL",
         "LORE_FAVICON_URL",
@@ -42,6 +43,7 @@ def test_config_defaults(monkeypatch):
     # tripping the insecure-bind guard.
     assert config.host == "127.0.0.1"
     assert config.auth_mode == "none"
+    assert config.metrics_public is False
     assert config.brand_title == "LORE"
     assert config.write_rate_limit == 300
     assert config.write_rate_window_seconds == 60
@@ -62,6 +64,7 @@ def test_config_env_overrides(monkeypatch, tmp_path):
     monkeypatch.setenv("LORE_API_KEYS_DB", str(tmp_path / "api_keys.db"))
     monkeypatch.setenv("LORE_PORT", "9000")
     monkeypatch.setenv("LORE_AUTH_MODE", "bearer")
+    monkeypatch.setenv("LORE_METRICS_PUBLIC", "true")
     monkeypatch.setenv("LORE_BRAND_TITLE", "TEAM")
     monkeypatch.setenv("LORE_WRITE_RATE_LIMIT", "12")
     monkeypatch.setenv("LORE_WRITE_RATE_WINDOW_SECONDS", "34")
@@ -76,6 +79,7 @@ def test_config_env_overrides(monkeypatch, tmp_path):
     assert payload["api_keys_db"] == str(tmp_path / "api_keys.db")
     assert payload["port"] == 9000
     assert payload["auth_mode"] == "bearer"
+    assert payload["metrics_public"] is True
     assert payload["brand_title"] == "TEAM"
     assert payload["write_rate_limit"] == 12
     assert payload["write_rate_window_seconds"] == 34

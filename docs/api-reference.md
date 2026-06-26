@@ -10,9 +10,10 @@ When auth is enabled, add `-H "Authorization: Bearer $LORE_TOKEN"` or use HTTP
 basic auth.
 
 A fixed set of paths is always public and exempt from auth in every mode:
-`/healthz`, `/healthz/config`, `/metrics`, `/api/login`, `/api/logout`, and
-`/static` (plus everything under `/static/`). In particular, `/metrics` is
-unauthenticated in every auth mode.
+`/healthz`, `/healthz/config`, `/api/login`, `/api/logout`, and `/static`
+(plus everything under `/static/`). `/metrics` follows the configured auth mode
+by default; set `LORE_METRICS_PUBLIC=true` to intentionally expose it without
+credentials for a protected scraper.
 
 ## Core
 

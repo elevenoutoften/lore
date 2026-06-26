@@ -50,6 +50,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         trusted_proxy_cidrs: list[str] | None = None,
         trusted_proxy_secret: str = "",
         session_secret: str = "",
+        metrics_public: bool = False,
     ) -> None:
         if mode in ("bearer", "basic") and (not secret or not secret.strip()):
             raise ValueError(
@@ -63,6 +64,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self.trusted_proxy_auth = trusted_proxy_auth
         self.trusted_proxy_secret = trusted_proxy_secret
         self.session_secret = session_secret
+        self.metrics_public = metrics_public
         explicit_cidrs = [cidr for cidr in (trusted_proxy_cidrs or []) if cidr.strip()]
         # Backward-compatible secure default: if proxy auth is on but the operator
         # configured no explicit origin proof, trust the loopback/private ranges a
@@ -84,8 +86,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 # Skip malformed CIDRs rather than failing startup.
                 continue
 
-    @staticmethod
-    def _is_public_path(path: str) -> bool:
+    def _is_public_path(self, path: str) -> bool:
         """Public, unauthenticated paths.
 
         Uses exact/segment-boundary matching, never a bare prefix: a substring
@@ -93,8 +94,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         (served by the catch-all reader route) bypass auth entirely.
         """
         return (
-            path in ("/healthz", "/healthz/config", "/metrics", "/api/login", "/api/logout", "/static")
+            path in ("/healthz", "/healthz/config", "/api/login", "/api/logout", "/static")
             or path.startswith("/static/")
+            or (self.metrics_public and path == "/metrics")
         )
 
     async def dispatch(self, request: Request, call_next: Any) -> Response:

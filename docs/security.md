@@ -50,12 +50,14 @@ Those endpoints require an admin API key with role `admin`. Newly generated raw 
 
 The auth middleware allows a fixed set of public paths without credentials so
 health checks, login, and static assets keep working: `/healthz`,
-`/healthz/config`, `/metrics`, `/api/login`, `/api/logout`, and `/static`
+`/healthz/config`, `/api/login`, `/api/logout`, and `/static`
 (including `/static/...`). Matching uses exact/segment-boundary checks, never a
 bare prefix, so page ids such as `staticsecret` cannot bypass auth.
 
-Note that `/metrics` is unauthenticated in **every** auth mode. Keep it behind
-your deployment boundary if the metrics surface should not be public.
+`/metrics` follows the configured auth mode by default. Set
+`LORE_METRICS_PUBLIC=true` only when an external deployment boundary already
+protects the metrics surface or Prometheus scraping intentionally requires
+unauthenticated access.
 
 ## Trusted Headers
 

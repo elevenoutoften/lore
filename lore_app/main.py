@@ -411,6 +411,7 @@ def create_app(
             trusted_proxy_cidrs=lore_config.trusted_proxy_cidrs,
             trusted_proxy_secret=lore_config.trusted_proxy_secret,
             session_secret=session_secret,
+            metrics_public=lore_config.metrics_public,
         )
 
     @app.middleware("http")

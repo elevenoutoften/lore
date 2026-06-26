@@ -99,6 +99,7 @@ class LoreConfig:
         self.port: int = int(os.environ.get("LORE_PORT", "8000"))
         self.auth_mode: str = os.environ.get("LORE_AUTH_MODE", "none")
         self.auth_secret: str = os.environ.get("LORE_AUTH_SECRET", "")
+        self.metrics_public: bool = os.environ.get("LORE_METRICS_PUBLIC", "").lower() in ("true", "1", "yes", "on")
         # Signing secret for browser session cookies. Falls back to auth_secret,
         # then a per-process random secret (cookies reset on restart) so the
         # browser session works without an extra hard config requirement.
@@ -195,6 +196,7 @@ class LoreConfig:
             "host": self.host,
             "port": self.port,
             "auth_mode": self.auth_mode,
+            "metrics_public": self.metrics_public,
             "brand_title": self.brand_title,
             "write_rate_limit": self.write_rate_limit,
             "write_rate_window_seconds": self.write_rate_window_seconds,

@@ -223,6 +223,60 @@ def test_lore_api_key_auth_protects_api(content_dir, search_db, tmp_path):
     assert authorized.status_code == 200
 
 
+def _metrics_auth_headers(config: LoreConfig, mode: str) -> dict[str, str]:
+    if mode == "bearer":
+        return {"Authorization": f"Bearer {config.auth_secret}"}
+    if mode == "basic":
+        credential = base64.b64encode(config.auth_secret.encode("utf-8")).decode("ascii")
+        return {"Authorization": f"Basic {credential}"}
+    store = LoreApiKeyStore(config.api_keys_db)
+    store.initialize()
+    _, api_key = store.create_key(name="metrics-reader", role="reader")
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+@pytest.mark.parametrize(
+    ("mode", "secret"),
+    [
+        ("bearer", "secret-token"),
+        ("basic", "user:pass"),
+        ("api_key", ""),
+    ],
+)
+def test_metrics_requires_auth_by_default(content_dir, search_db, tmp_path, mode, secret):
+    config = make_config(content_dir, search_db, tmp_path, mode, secret)
+    headers = _metrics_auth_headers(config, mode)
+    app = create_app(config)
+
+    with TestClient(app) as client:
+        unauthorized = client.get("/metrics")
+        authorized = client.get("/metrics", headers=headers)
+
+    assert unauthorized.status_code == 401
+    assert authorized.status_code == 200
+    assert "lore_recall_requests" in authorized.text
+
+
+@pytest.mark.parametrize(
+    ("mode", "secret"),
+    [
+        ("bearer", "secret-token"),
+        ("basic", "user:pass"),
+        ("api_key", ""),
+    ],
+)
+def test_metrics_public_flag_allows_unauthenticated_metrics(content_dir, search_db, tmp_path, mode, secret):
+    config = make_config(content_dir, search_db, tmp_path, mode, secret)
+    config.metrics_public = True
+    app = create_app(config)
+
+    with TestClient(app) as client:
+        response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert "lore_recall_requests" in response.text
+
+
 def test_api_key_auth_works_without_secret(content_dir, search_db, tmp_path):
     """API key auth must work without a bearer/basic secret."""
     config = make_config(content_dir, search_db, tmp_path, "api_key", "")
