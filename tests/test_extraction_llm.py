@@ -580,6 +580,62 @@ def test_llm_error_fallback_preserves_provenance(tmp_path, fake_llm_client):
     assert claim.token_usage is None
 
 
+def test_llm_prompt_anchors_relative_dates_to_capture_observed_at(tmp_path):
+    repo = LoreRepository(tmp_path / "pages")
+    capture_id = add_capture(
+        repo,
+        "inbox/2026-05-26/relative-dates",
+        title="Relative Dates",
+        summary="Lore updated billing yesterday and started the rollout last week.",
+        suggested_target_page="services/lore",
+        observed_at="2026-05-26T15:00:00+00:00",
+        body=(
+            "Yesterday Lore switched to the new billing flow. "
+            "The rollout started last week."
+        ),
+    )
+    capture = repo.read_page(capture_id)
+    assert capture is not None
+    llm_client = SequencedLlmClient(
+        responses=[
+            {
+                "entities": [],
+                "claims": [
+                    {
+                        "subject": "services/lore",
+                        "predicate": "uses",
+                        "object": "the new billing flow",
+                        "confidence": "high",
+                        "source_page_ids": [capture_id],
+                        "observed_at": "2026-05-25T00:00:00+00:00",
+                        "valid_from": "2026-05-19",
+                        "valid_until": "2026-05-31",
+                    }
+                ],
+                "edges": [],
+                "invalidations": [],
+            }
+        ],
+        model="relative-date-model",
+    )
+
+    result = llm_extractor_module.llm_extract_capture(capture, llm_client)
+
+    assert len(llm_client.prompts) == 1
+    prompt = llm_client.prompts[0]
+    assert "Capture observed_at: 2026-05-26T15:00:00+00:00" in prompt
+    assert "Resolve relative temporal references against the capture observed_at above" in prompt
+    assert "Yesterday Lore switched to the new billing flow." in prompt
+    assert "The rollout started last week." in prompt
+    assert len(result["claims"]) == 1
+    claim = result["claims"][0]
+    assert claim.observed_at == "2026-05-25T00:00:00+00:00"
+    assert claim.valid_from == "2026-05-19"
+    assert claim.valid_until == "2026-05-31"
+    assert claim.model_version == "relative-date-model"
+    assert claim.prompt_hash is not None
+
+
 def test_schema_invalid_records_deadletter_on_deterministic_success(tmp_path, fake_llm_client):
     repo = LoreRepository(tmp_path / "pages")
     ledger = make_ledger(tmp_path)

@@ -30,7 +30,8 @@ Each entity has: subject (page ID like "services/api"), name (human-readable lab
 Each claim has: subject (page ID), predicate, object, confidence (high/medium/low), source_page_ids (list), observed_at, valid_from, valid_until, actor, section (the ## heading where this claim was found, e.g. "Summary" or "Architecture" -- include the heading text without the ## prefix).
 Each edge has: source (page ID), target (page ID), edge_type (mentions/depends_on/contradicts/supports/supersedes).
 Each invalidation has: target_claim (page ID or claim text), reason, source_page_ids.
-Only extract what is explicitly stated. Do not infer unstated relationships."""
+Only extract what is explicitly stated. Do not infer unstated relationships.
+Use the provided capture observation timestamp as the anchor for relative temporal expressions like "yesterday" and "last week". Resolve observed_at, valid_from, and valid_until to absolute ISO 8601 dates or timestamps when the source text provides them. If the source text does not provide a date, leave the field empty instead of inventing one."""
 EXTRACTION_PROMPT_HASH = hashlib.sha256(EXTRACTION_SYSTEM_PROMPT.encode()).hexdigest()[:16]
 
 
@@ -47,6 +48,7 @@ def llm_extract_capture(
     kind = frontmatter.get("kind", "page")
     tags = string_list(frontmatter.get("tags"))
     suggested_target = frontmatter.get("suggested_target_page") or ""
+    capture_observed_at = _clean_string(frontmatter.get("observed_at")) or "unknown"
 
     user_prompt = (
         f"Page ID: {page_id}\n"
@@ -54,6 +56,9 @@ def llm_extract_capture(
         f"Kind: {kind}\n"
         f"Suggested target page: {suggested_target}\n"
         f"Tags: {', '.join(tags)}\n\n"
+        f"Capture observed_at: {capture_observed_at}\n"
+        "Resolve relative temporal references against the capture observed_at above and return "
+        "absolute ISO 8601 values for observed_at, valid_from, and valid_until when the document states them.\n\n"
         f"{body}"
     )
 
