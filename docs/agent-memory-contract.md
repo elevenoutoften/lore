@@ -250,8 +250,13 @@ The ledger is maintained over time:
   strengthens the existing row instead of duplicating it.
 - **Supersede** (`POST /api/ledger/supersede`) — a new claim invalidates an old one.
 - **Decay** (`POST /api/ledger/decay`) — time-based strength decay (`strength *=
-  0.995^days`, floored at `0.01`). Run on a schedule so stale memory fades and recall
-  naturally prefers fresh, corroborated facts.
+  0.995^days`). Ordinary claims floor at
+  `DEFAULT_CLAIM_DECAY_FLOOR`/`0.01` and can be auto-archived after
+  `LORE_CLAIM_FORGET_AFTER_FLOOR_DAYS` at that floor. Operator-declared,
+  high-confidence claims keep
+  `PINNED_CLAIM_DECAY_FLOOR`/`0.2` instead and are exempt from that forget sweep, so
+  recall can keep a durable operator-pinned baseline while still preferring fresher,
+  corroborated facts.
 
 ## Performance expectations
 
@@ -264,7 +269,8 @@ floors on a labelled corpus so ranking quality is held, not just functionality.
 [`eval/test_hybrid_recall_eval.py`](../eval/test_hybrid_recall_eval.py) adds a
 LOCOMO-shaped multi-session no-regression gate over `/api/rag/retrieve` plus
 `recall_claims`, with explicit paraphrase, graph-expansion,
-contradiction-update, and distractor expectations.
+contradiction-update, distractor, abstention/no-false-recall, lane and actor
+scope-isolation, and recency-discrimination expectations.
 
 ## Surface summary
 

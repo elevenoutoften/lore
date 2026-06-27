@@ -997,6 +997,7 @@ class LedgerDB:
                   AND status IN ('candidate', 'active')
                   AND strength <= 0.01
                   AND COALESCE(decay_floor, ?) <= ?
+                  -- Keep pinned operator/high rows out of the forget sweep, including legacy NULL decay_floor rows.
                   AND NOT (
                       epistemic_status = 'operator_declared'
                       AND confidence = 'high'

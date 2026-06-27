@@ -187,6 +187,13 @@ def first_expected_claim_rank(results: list[dict[str, Any]], expected_candidate_
     return None
 
 
+def claim_rank(results: list[dict[str, Any]], candidate_id: str) -> int | None:
+    for index, row in enumerate(results, start=1):
+        if str(row.get("candidate_id") or "") == candidate_id:
+            return index
+    return None
+
+
 def count_expected_claim_hits(results: list[dict[str, Any]], expected_candidate_ids: list[str], k: int = 3) -> int:
     expected = set(expected_candidate_ids)
     return sum(1 for row in results[:k] if str(row.get("candidate_id") or "") in expected)
@@ -325,6 +332,7 @@ def test_recall_claims_eval_gate(hybrid_eval_runtime: dict[str, Any]) -> None:
     reciprocal_ranks: list[float] = []
     precision_sum = 0.0
     forbidden_claim_failures: list[str] = []
+    recency_failures: list[str] = []
 
     print("\nRecall eval:")
     for entry in queries:
@@ -362,6 +370,17 @@ def test_recall_claims_eval_gate(hybrid_eval_runtime: dict[str, Any]) -> None:
                     f"{entry['id']} expected superseded claim {forbidden_id} to stay out of the top 3"
                 )
 
+        if entry["case_type"] == "recency-discrimination":
+            newer_id = claim_id_map["claim-memory-audit-slot-new"]
+            older_id = claim_id_map["claim-memory-audit-slot-old"]
+            newer_rank = claim_rank(results, newer_id)
+            older_rank = claim_rank(results, older_id)
+            if newer_rank is None or older_rank is None or not newer_rank < older_rank:
+                recency_failures.append(
+                    f"{entry['id']} expected newer claim {newer_id} to outrank older claim {older_id}; "
+                    f"got newer_rank={newer_rank}, older_rank={older_rank}"
+                )
+
         reciprocal_ranks.append(1.0 / rank if rank else 0.0)
         precision_sum += hits / min(3, len(expected_candidate_ids))
         if rank is not None and rank <= 3:
@@ -383,3 +402,4 @@ def test_recall_claims_eval_gate(hybrid_eval_runtime: dict[str, Any]) -> None:
     assert mrr >= floors["mrr"], f"recall MRR too low: {mrr:.3f}"
     assert precision_at_3 >= floors["precision_at_3"], f"recall precision@3 too low: {precision_at_3:.3f}"
     assert not forbidden_claim_failures, "\n".join(forbidden_claim_failures)
+    assert not recency_failures, "\n".join(recency_failures)
