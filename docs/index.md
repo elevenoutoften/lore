@@ -15,6 +15,8 @@ deployment, and operating patterns. The browser UI is a minimal human surface
   agent memory, and use the Python and TypeScript SDKs.
 - [Configuration](configuration.md): environment variables, auth modes,
   workspaces, and backup/restore commands.
+- [Concurrency Model](concurrency.md): SQLite/WAL writer behavior, benchmark
+  harness, safe-writer ceiling, and Postgres/Kuzu upgrade triggers.
 - [API Reference](api-reference.md): REST endpoints, schemas, errors, and rate
   limits.
 - [MCP Examples](mcp-examples.md): JSON-RPC examples for MCP clients.

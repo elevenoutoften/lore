@@ -23,6 +23,8 @@ Lore already documents the core operator and agent workflows:
   automated knowledge maintenance.
 - [Distillation](distillation.md) for the session-to-daily-note workflow.
 - [Security](security.md) and [Deployment](deployment.md) for runtime controls.
+- [Concurrency Model](concurrency.md) for the SQLite/WAL write model, measured
+  10-writer ceiling, and Postgres/Kuzu upgrade triggers.
 
 These guides describe the current product surface and own the behavior the
 phases below delivered.
@@ -85,6 +87,10 @@ implementation today:
   quality against fixed fixtures.
 - Slimming the product surface (API, MCP, and UI) around the core memory
   contract.
+- Optional Kuzu/graph-backend and PostgreSQL storage/index spikes remain gated
+  by the measured findings in [Concurrency Model](concurrency.md): Kuzu waits
+  for graph rebuild pressure, and PostgreSQL waits for hosted multi-tenant or
+  multi-process writer requirements.
 
 ## Beta Release Milestone
 

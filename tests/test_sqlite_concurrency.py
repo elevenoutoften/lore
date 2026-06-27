@@ -4,6 +4,7 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fastapi.testclient import TestClient
+from scripts.write_concurrency_benchmark import run_write_concurrency_harness
 
 from lore_app.api_keys import LoreApiKeyStore
 from lore_app.config import LoreConfig
@@ -55,6 +56,21 @@ def test_concurrent_ledger_writes(client):
 
     assert not errors, f"OperationalError(s): {errors}"
     assert len(ledger.get_candidates(candidate_type="claim", limit=100)) >= 50
+
+
+def test_ten_writer_ledger_and_search_write_harness_reports_metrics_without_data_loss(tmp_path):
+    metrics = run_write_concurrency_harness(tmp_path, writes=40, max_workers=10)
+
+    assert metrics.requested_writes == 40
+    assert metrics.max_workers == 10
+    assert metrics.success_count == 40
+    assert metrics.failure_count == 0
+    assert metrics.failures == []
+    assert metrics.ledger_candidates >= 40
+    assert metrics.search_hits >= 40
+    assert metrics.markdown_pages == 40
+    assert metrics.p50_ms > 0
+    assert metrics.p99_ms >= metrics.p50_ms
 
 
 def test_concurrent_api_key_writes(client):
