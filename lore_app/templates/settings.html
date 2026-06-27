@@ -353,6 +353,77 @@
           </form>
         </article>
       </section>
+
+      <section class="settings-header" aria-labelledby="maintenance-title">
+        <div>
+          <p class="eyebrow">Runtime Configuration</p>
+          <div class="settings-title">
+            <h2 id="maintenance-title">Background Maintenance</h2>
+            <span class="settings-state" data-maint-state>
+              <span class="settings-state-dot" aria-hidden="true"></span>
+              <span data-maint-state-label>Loading</span>
+            </span>
+          </div>
+          <p>
+            Periodic ledger decay, heartbeat self-audit captures, and daily distillation. Toggle the scheduler at
+            runtime — changes take effect immediately, no redeploy.
+          </p>
+        </div>
+      </section>
+
+      <section class="settings-grid">
+        <article class="settings-panel">
+          <h3>Current Status</h3>
+          <dl class="settings-summary" data-maint-summary>
+            <div class="settings-field">
+              <dt>Enabled</dt>
+              <dd data-maint-field="enabled">Loading...</dd>
+            </div>
+            <div class="settings-field">
+              <dt>Scheduler</dt>
+              <dd data-maint-field="running">Loading...</dd>
+            </div>
+            <div class="settings-field">
+              <dt>Interval</dt>
+              <dd data-maint-field="interval_seconds">Loading...</dd>
+            </div>
+            <div class="settings-field">
+              <dt>Last Run</dt>
+              <dd data-maint-field="last_maintenance_at">Loading...</dd>
+            </div>
+            <div class="settings-field">
+              <dt>Source</dt>
+              <dd data-maint-field="enabled_source">Loading...</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="settings-panel">
+          <h3>Edit Maintenance</h3>
+          <form data-maint-form>
+            <div class="settings-form-grid">
+              <label>
+                <span>Enabled</span>
+                <input name="enabled" type="checkbox" style="width: auto; justify-self: start;">
+              </label>
+              <label>
+                <span>Interval (seconds)</span>
+                <input name="interval_seconds" type="number" min="60" step="1" inputmode="numeric" placeholder="86400">
+              </label>
+            </div>
+
+            <div class="settings-actions">
+              <button type="submit">Save</button>
+              <button type="button" data-maint-runnow>Run now</button>
+              <button type="button" data-maint-reset>Reset to Defaults</button>
+            </div>
+          </form>
+          <p class="settings-hint">
+            "Run now" dispatches a single maintenance pass in the background, then this panel refreshes when it
+            finishes. Use it to confirm the scheduler works without waiting for the interval.
+          </p>
+        </article>
+      </section>
     </main>
   </div>
 
@@ -590,6 +661,144 @@
         element.textContent = "Unavailable";
       }
       showStatus(error.message || "Failed to load settings.", "error");
+    });
+
+    // --- Background maintenance (reuses authHeaders/showStatus/parseError above) ---
+    const maintApiPath = "/api/settings/maintenance";
+    const maintStateEl = document.querySelector("[data-maint-state]");
+    const maintStateLabelEl = document.querySelector("[data-maint-state-label]");
+    const maintForm = document.querySelector("[data-maint-form]");
+    const maintRunNowBtn = maintForm.querySelector("[data-maint-runnow]");
+    const maintResetBtn = maintForm.querySelector("[data-maint-reset]");
+    const maintFields = new Map(
+      Array.from(document.querySelectorAll("[data-maint-field]")).map((el) => [el.dataset.maintField, el])
+    );
+    let maintSettings = null;
+
+    function formatInterval(seconds) {
+      const n = Number(seconds);
+      if (seconds === null || seconds === undefined || Number.isNaN(n)) {
+        return "Not set";
+      }
+      if (n % 86400 === 0) {
+        return `${n} s (${n / 86400} d)`;
+      }
+      if (n % 3600 === 0) {
+        return `${n} s (${n / 3600} h)`;
+      }
+      return `${n} s`;
+    }
+
+    function renderMaintenance(data) {
+      maintSettings = data;
+      const running = Boolean(data.running);
+      maintStateEl.classList.toggle("is-configured", running);
+      maintStateLabelEl.textContent = running ? "Running" : data.enabled ? "Enabled (idle)" : "Off";
+      maintFields.get("enabled").textContent = data.enabled ? "Yes" : "No";
+      maintFields.get("running").textContent = running ? "Running" : "Stopped";
+      maintFields.get("interval_seconds").textContent = formatInterval(data.interval_seconds);
+      maintFields.get("last_maintenance_at").textContent = data.last_maintenance_at || "Never";
+      maintFields.get("enabled_source").textContent =
+        data.enabled_source === "settings" ? "Saved override" : "Environment default";
+      maintForm.elements.enabled.checked = Boolean(data.enabled);
+      maintForm.elements.interval_seconds.value = data.interval_seconds ?? "";
+    }
+
+    async function loadMaintenance() {
+      const response = await fetch(maintApiPath, { headers: authHeaders() });
+      if (!response.ok) {
+        throw new Error(await parseError(response));
+      }
+      renderMaintenance(await response.json());
+    }
+
+    maintForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const payload = {};
+        const nextEnabled = maintForm.elements.enabled.checked;
+        if (!maintSettings || nextEnabled !== Boolean(maintSettings.enabled)) {
+          payload.enabled = nextEnabled;
+        }
+        const rawInterval = maintForm.elements.interval_seconds.value.trim();
+        if (rawInterval) {
+          const nextInterval = Number.parseInt(rawInterval, 10);
+          if (!Number.isNaN(nextInterval) && (!maintSettings || nextInterval !== maintSettings.interval_seconds)) {
+            payload.interval_seconds = nextInterval;
+          }
+        }
+        if (!Object.keys(payload).length) {
+          showStatus("No maintenance changes to save.", "success");
+          return;
+        }
+        const response = await fetch(maintApiPath, {
+          method: "PUT",
+          headers: authHeaders(true),
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          throw new Error(await parseError(response));
+        }
+        renderMaintenance(await response.json());
+        showStatus("Maintenance settings saved.", "success");
+      } catch (error) {
+        showStatus(error.message || "Failed to save maintenance settings.", "error");
+      }
+    });
+
+    maintResetBtn.addEventListener("click", async () => {
+      try {
+        const response = await fetch(maintApiPath, { method: "DELETE", headers: authHeaders() });
+        if (!response.ok) {
+          throw new Error(await parseError(response));
+        }
+        renderMaintenance(await response.json());
+        showStatus("Maintenance settings reset to environment defaults.", "success");
+      } catch (error) {
+        showStatus(error.message || "Failed to reset maintenance settings.", "error");
+      }
+    });
+
+    maintRunNowBtn.addEventListener("click", async () => {
+      const before = maintSettings ? maintSettings.last_maintenance_at : null;
+      maintRunNowBtn.disabled = true;
+      try {
+        const response = await fetch(`${maintApiPath}/run-now`, { method: "POST", headers: authHeaders() });
+        if (!response.ok) {
+          throw new Error(await parseError(response));
+        }
+        showStatus("Maintenance pass started...", "success");
+        let advanced = false;
+        for (let attempt = 0; attempt < 20; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          const poll = await fetch(maintApiPath, { headers: authHeaders() });
+          if (!poll.ok) {
+            continue;
+          }
+          const data = await poll.json();
+          renderMaintenance(data);
+          if (data.last_maintenance_at && data.last_maintenance_at !== before) {
+            advanced = true;
+            showStatus(`Maintenance completed at ${data.last_maintenance_at}.`, "success");
+            break;
+          }
+        }
+        if (!advanced) {
+          showStatus("Maintenance is still running; refresh later to see the result.", "success");
+        }
+      } catch (error) {
+        showStatus(error.message || "Failed to run maintenance.", "error");
+      } finally {
+        maintRunNowBtn.disabled = false;
+      }
+    });
+
+    loadMaintenance().catch((error) => {
+      maintStateLabelEl.textContent = "Unavailable";
+      for (const element of maintFields.values()) {
+        element.textContent = "Unavailable";
+      }
+      showStatus(error.message || "Failed to load maintenance settings.", "error");
     });
   </script>
 </body>

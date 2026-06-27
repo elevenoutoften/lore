@@ -38,6 +38,16 @@ SECRET_SETTINGS_KEYS = {
     SETTINGS_LLM_ESCALATION_API_KEY,
 }
 
+SETTINGS_MAINTENANCE_ENABLED = "maintenance_enabled"
+SETTINGS_MAINTENANCE_INTERVAL_SECONDS = "maintenance_interval_seconds"
+
+# Background-maintenance scheduler controls. Non-secret, so they surface in
+# get_all()/get_all_masked() in plaintext (they are not sensitive).
+MAINTENANCE_SETTINGS_KEYS = (
+    SETTINGS_MAINTENANCE_ENABLED,
+    SETTINGS_MAINTENANCE_INTERVAL_SECONDS,
+)
+
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat()

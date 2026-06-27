@@ -11,10 +11,10 @@ Lore configuration is **layered**, and only two of the three layers are human-fa
 | Layer | Where it lives | Who sets it | Surface | In a browser UI? |
 |---|---|---|---|---|
 | **1. Deploy/operator config** | `LORE_*` environment variables (`config.py`) | Operator at deploy time | env file / systemd / Docker `-e` | **No** — never in the UI |
-| **2. Runtime model settings** | `SettingsStore` SQLite (`runtime_settings` table) | Human (admin) at runtime | **`/settings` page** + `/api/settings/llm` | **Yes** |
+| **2. Runtime model & maintenance settings** | `SettingsStore` SQLite (`runtime_settings` table) | Human (admin) at runtime | **`/settings` page** + `/api/settings/llm`, `/api/settings/maintenance` | **Yes** |
 | **3. API keys** | API-keys SQLite DB | Human (admin) at runtime | **`/api-keys` page** + `/api/api-keys` | **Yes** |
 
-Key relationship: **Layer 2 overrides Layer 1 for the LLM provider.** `merged_llm_config(config, settings_store)` merges the runtime `/settings` values *on top of* the `LORE_LLM_*` env defaults — so the UI is the live override, env is the fallback (`routes/settings.py:137-154`).
+Key relationship: **Layer 2 overrides Layer 1 for the LLM provider.** `merged_llm_config(config, settings_store)` merges the runtime `/settings` values *on top of* the `LORE_LLM_*` env defaults — so the UI is the live override, env is the fallback (`routes/settings.py:137-154`). The same pattern now governs the **background maintenance scheduler**: `merged_maintenance_config(config, settings_store)` overlays `/api/settings/maintenance` on the `LORE_MAINTENANCE_*` env defaults (L-CFG-02, see §2.6).
 
 Agents do **not** set configuration. They may *read* the (masked) model settings with any valid key (`GET /api/settings/llm`), and they *use* API keys — but creating keys and changing the model are admin/human actions. So the human settings surface is exactly **two pages**.
 
@@ -85,6 +85,27 @@ Secrets are **never returned** — only a `*_configured` boolean and a masked `*
 ### 2.5 The form, in data terms
 A model-settings form maps 1:1 to `LlmSettingsUpdate` (provider, model, embedding model, base URL, primary key, escalation model, escalation key, max_tokens, temperature, timeout, max_retries), pre-filled from `LlmSettingsResponse` with the two key fields shown as masked write-only inputs. Save = `PUT`; Reset = `DELETE`.
 
+### 2.6 Companion panel — Background maintenance (same `/settings` page)
+
+The in-process maintenance scheduler (ledger decay + heartbeat self-audit captures + daily distillation) is **also a Layer-2 runtime setting**, rendered as a second panel on the same page. Landed as L-CFG-02. Before this it was env-only (`LORE_MAINTENANCE_ENABLED`), which forced an env edit + redeploy to turn on; now an admin toggles it live.
+
+| Method / path | Auth | Purpose |
+|---|---|---|
+| `GET /api/settings/maintenance` | **any valid Lore key** (`require_lore_key`) | Read effective scheduler state |
+| `PUT /api/settings/maintenance` | **admin only** (`require_lore_key_admin`) | Partial update; restarts the scheduler thread |
+| `DELETE /api/settings/maintenance` | **admin only** | Clear overrides → revert to env defaults |
+| `POST /api/settings/maintenance/run-now` | **admin only** | Dispatch one pass now (background); returns `202` |
+
+**Read model — `MaintenanceSettingsResponse`:** `enabled` (bool, merged effective), `interval_seconds` (int, merged effective), `running` (bool — whether the scheduler thread is alive), `last_maintenance_at` (str|None — ISO timestamp of the last completed pass, also on `/api/memory/health`), `enabled_source` (`"settings"` if a stored override is in effect, else `"environment"` — lets the UI show whether Reset will change behavior).
+
+**Write model — `MaintenanceSettingsUpdate`** (partial): `enabled` (bool|None), `interval_seconds` (int|None, **≥60** — the floor keeps `enabled` the real on/off switch; `0` would silently no-op the scheduler).
+
+**Behavior the design team inherits:**
+- **Hot reload, no restart.** `PUT`/`DELETE` call `restart_maintenance_scheduler(app)`, which swaps the background thread; its handle lives on `app.state` so the toggle takes effect without a process restart.
+- **Run now is async.** It dispatches `run_maintenance_tick` on a one-shot background thread and returns `202` immediately (a first tick can back-distill many days and exceed an edge-proxy timeout if run inline). The UI polls `GET /api/settings/maintenance` until `last_maintenance_at` advances.
+- **Reset to defaults** = `DELETE` (clears the two stored rows; env/code defaults take over), same idiom as model settings.
+- A **status indicator** is supportable from `running` + `enabled` + `last_maintenance_at` (e.g. "running / enabled but idle / off").
+
 ---
 
 ## 3. Human surface B — API keys (`/api-keys`)
@@ -136,11 +157,13 @@ Everything below is **Layer 1** — set via `LORE_*` environment variables at de
 | Auth & secrets | `AUTH_MODE`, `AUTH_SECRET`, `SESSION_SECRET`, `ALLOW_INSECURE_BIND`, `METRICS_PUBLIC` |
 | Branding | `BRAND_TITLE`, `BRAND_URL`, `FAVICON_URL`, `APP_NAME` |
 | Rate limiting | `WRITE_RATE_LIMIT`, `WRITE_RATE_WINDOW_SECONDS` |
-| Memory lifecycle | `AUTO_CONSOLIDATE`, `CLAIM_FORGET_AFTER_FLOOR_DAYS`, `VECTOR_RECONCILE_INTERVAL_SECONDS`, `MAINTENANCE_ENABLED`, `MAINTENANCE_INTERVAL_SECONDS`, `AUDIT_RETENTION_DAYS` |
+| Memory lifecycle | `AUTO_CONSOLIDATE`, `CLAIM_FORGET_AFTER_FLOOR_DAYS`, `VECTOR_RECONCILE_INTERVAL_SECONDS`, `MAINTENANCE_ENABLED`†, `MAINTENANCE_INTERVAL_SECONDS`†, `AUDIT_RETENTION_DAYS` |
 | Security / proxy | `TRUSTED_HEADERS`, `TRUSTED_PROXY_AUTH`, `TRUSTED_PROXY_CIDRS`, `TRUSTED_PROXY_SECRET`, `CSP_POLICY`, `EMBED_FRAME_ANCESTORS` |
 | Code ingest | `CODE_INGEST_ROOTS`, `CODE_INGEST_MAX_FILES`, `CODE_INGEST_MAX_DEPTH`, `CODE_INGEST_MAX_TOTAL_BYTES` |
 | LLM **defaults** (overridden by `/settings`) | `LLM_PROVIDER`, `LLM_MODEL`, `LLM_EMBEDDING_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MAX_TOKENS`, `LLM_TEMPERATURE`, `LLM_TIMEOUT`, `LLM_MAX_RETRIES`, `LLM_ESCALATION_MODEL`, `LLM_ESCALATION_API_KEY` |
 | Multi-workspace | `WORKSPACES` |
+
+† `MAINTENANCE_ENABLED` and `MAINTENANCE_INTERVAL_SECONDS` are Layer-1 **defaults** that are now overridable at runtime via `/settings` (`/api/settings/maintenance`); see §2.6.
 
 A small slice of operator setup has a **CLI**, not a UI: `lore-admin` (key bootstrap before a server is up, backup/restore, consolidate). That is intentionally out of the browser surface.
 
@@ -152,6 +175,8 @@ A small slice of operator setup has a **CLI**, not a UI: `lore-admin` (key boots
 |---|---|---|---|---|---|
 | `GET /api/settings/llm` (masked) | ✅ | ✅ | ✅ | ✅ | ✅ (read) |
 | `PUT`/`DELETE /api/settings/llm` | ❌ | ❌ | ✅ | ✅ | ❌ (read-only) |
+| `GET /api/settings/maintenance` | ✅ | ✅ | ✅ | ✅ | ✅ (read) |
+| `PUT`/`DELETE` + run-now `/api/settings/maintenance` | ❌ | ❌ | ✅ | ✅ | ❌ (read-only) |
 | List / create / revoke API keys | ❌ | ❌ | ✅ | ✅ | ❌ |
 | `POST /api/login` (paste key) | n/a (public) | — | — | — | — |
 

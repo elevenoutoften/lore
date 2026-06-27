@@ -96,6 +96,29 @@ class LlmSettingsResponse(BaseModel):
     max_retries: int
 
 
+class MaintenanceSettingsUpdate(BaseModel):
+    enabled: bool | None = None
+    # Floor the interval so `enabled` is the real on/off switch: 0 would otherwise
+    # silently no-op the scheduler (see _start_maintenance_scheduler).
+    interval_seconds: int | None = Field(default=None, ge=60)
+
+
+class MaintenanceSettingsResponse(BaseModel):
+    enabled: bool
+    interval_seconds: int
+    running: bool
+    last_maintenance_at: str | None = None
+    # "settings" when a stored override is in effect, else "environment"; lets the UI
+    # show whether Reset-to-default will change behavior.
+    enabled_source: str
+
+
+class MaintenanceRunNowResponse(MaintenanceSettingsResponse):
+    # A maintenance pass was dispatched on a background thread; poll the GET endpoint
+    # (or /api/memory/health) until last_maintenance_at advances.
+    started: bool = True
+
+
 class FrontmatterKindSpec(BaseModel):
     kind: str
     required: list[str]

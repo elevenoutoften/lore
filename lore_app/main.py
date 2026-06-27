@@ -16,7 +16,7 @@ from fastapi.templating import Jinja2Templates
 from .api_keys import LoreApiKeyStore
 from .audit import AuditLog
 from .auth import AuthMiddleware
-from .config import VALID_AUTH_MODES, LoreConfig, merged_llm_config
+from .config import VALID_AUTH_MODES, LoreConfig, merged_llm_config, merged_maintenance_config
 from .consolidation_worker import ConsolidationWorker
 from .context_graph import ContextGraphCache
 from .heartbeat import emit_heartbeat_captures
@@ -192,6 +192,46 @@ def _start_maintenance_scheduler(
     return thread
 
 
+def restart_maintenance_scheduler(app: FastAPI) -> None:
+    """(Re)start the maintenance scheduler from merged config + runtime settings.
+
+    The hot-reload hook behind PUT/DELETE /api/settings/maintenance: it swaps the
+    background thread so a runtime toggle takes effect without a process restart.
+
+    Lock ordering is deliberate. ``run_maintenance_tick`` holds
+    ``auto_consolidate_lock`` for the whole tick (distillation can take minutes), so we
+    only do the O(1) handle swap under ``_maintenance_lock`` and then join the retired
+    thread *after* releasing it. Joining a mid-tick thread while holding
+    ``_maintenance_lock`` would stall the settings request. The two locks are never
+    nested, so they cannot deadlock.
+    """
+    if not hasattr(app.state, "_maintenance_lock"):
+        app.state._maintenance_lock = threading.Lock()
+
+    old_thread: threading.Thread | None
+    with app.state._maintenance_lock:
+        old_stop = getattr(app.state, "maintenance_stop_event", None)
+        old_thread = getattr(app.state, "maintenance_thread", None)
+        if old_stop is not None:
+            old_stop.set()
+
+        enabled, interval_seconds = merged_maintenance_config(app.state.config, app.state.settings_store)
+        stop_event = threading.Event()
+        thread = _start_maintenance_scheduler(
+            app=app,
+            interval_seconds=interval_seconds,
+            enabled=enabled,
+            stop_event=stop_event,
+        )
+        app.state.maintenance_stop_event = stop_event if thread is not None else None
+        app.state.maintenance_thread = thread
+
+    # Best-effort reaping of the retired thread, outside the lock (see docstring). A
+    # daemon thread that is mid-tick will exit at the next stop-event check anyway.
+    if old_thread is not None and old_thread.is_alive():
+        old_thread.join(timeout=5)
+
+
 def create_app(
     config: LoreConfig | None = None,
     mount_workspaces: bool = True,
@@ -303,18 +343,17 @@ def create_app(
             interval_seconds=lore_config.vector_reconcile_interval_seconds,
             stop_event=stop_reconcile,
         )
-        stop_maintenance = threading.Event()
-        maintenance_thread = _start_maintenance_scheduler(
-            app=app,
-            interval_seconds=lore_config.maintenance_interval_seconds,
-            enabled=lore_config.maintenance_enabled,
-            stop_event=stop_maintenance,
-        )
+        # Start the maintenance scheduler via the runtime hook so its thread handle
+        # lives on app.state and the /settings toggle can stop/replace it later.
+        restart_maintenance_scheduler(app)
         yield
         stop_reconcile.set()
         if reconcile_thread is not None:
             reconcile_thread.join(timeout=2)
-        stop_maintenance.set()
+        stop_maintenance = getattr(app.state, "maintenance_stop_event", None)
+        maintenance_thread = getattr(app.state, "maintenance_thread", None)
+        if stop_maintenance is not None:
+            stop_maintenance.set()
         if maintenance_thread is not None:
             maintenance_thread.join(timeout=2)
         search_idx.close()
@@ -360,6 +399,11 @@ def create_app(
     app.state.auto_consolidate_lock = threading.Lock()
     app.state.auto_consolidate_rerun = False
     app.state.last_maintenance_at = None
+    # Maintenance scheduler handles, managed by restart_maintenance_scheduler() so the
+    # /settings toggle can start/stop the thread at runtime (see L-CFG-01 precedent).
+    app.state._maintenance_lock = threading.Lock()
+    app.state.maintenance_stop_event = None
+    app.state.maintenance_thread = None
     app.state.metrics = metrics
     app.state.templates = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
     app.state.code_inventories = {}

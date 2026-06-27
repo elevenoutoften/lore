@@ -22,6 +22,8 @@ from .settings_store import (
     SETTINGS_LLM_PROVIDER,
     SETTINGS_LLM_TEMPERATURE,
     SETTINGS_LLM_TIMEOUT_SECONDS,
+    SETTINGS_MAINTENANCE_ENABLED,
+    SETTINGS_MAINTENANCE_INTERVAL_SECONDS,
     SettingsStore,
 )
 
@@ -295,3 +297,29 @@ def merged_llm_config(config: LoreConfig, settings_store: SettingsStore) -> LLMP
         escalation_model=escalation_model or None,
         escalation_api_key=escalation_api_key or None,
     )
+
+
+def merged_maintenance_config(config: LoreConfig, settings_store: SettingsStore) -> tuple[bool, int]:
+    """Resolve (enabled, interval_seconds) with runtime settings overriding env config.
+
+    The enabled flag uses an explicit None-check rather than ``or`` because a stored
+    "false" is a valid override that must win over a truthy env default. The interval
+    parse is defensive so a corrupt stored row degrades to the env default instead of
+    raising (which would 500 the settings GET).
+    """
+
+    enabled_setting = settings_store.get(SETTINGS_MAINTENANCE_ENABLED)
+    if enabled_setting is None:
+        enabled = config.maintenance_enabled
+    else:
+        enabled = enabled_setting.strip().lower() in ("true", "1", "yes", "on")
+
+    interval_setting = settings_store.get(SETTINGS_MAINTENANCE_INTERVAL_SECONDS)
+    interval = config.maintenance_interval_seconds
+    if interval_setting is not None:
+        try:
+            interval = int(interval_setting)
+        except (TypeError, ValueError):
+            interval = config.maintenance_interval_seconds
+
+    return enabled, interval

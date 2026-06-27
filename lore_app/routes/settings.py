@@ -2,18 +2,26 @@ from __future__ import annotations
 
 # ruff: noqa: B008
 import logging
+import threading
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
 
-from ..config import LoreConfig, merged_llm_config
+from ..config import LoreConfig, merged_llm_config, merged_maintenance_config
 from ..constants import VALID_API_KEY_ROLES
 from ..deps import get_api_key_store, get_config, get_settings_store, get_templates
 from ..route_utils import none_mode_local_operator, template_context
-from ..schemas import LlmSettingsResponse, LlmSettingsUpdate
+from ..schemas import (
+    LlmSettingsResponse,
+    LlmSettingsUpdate,
+    MaintenanceRunNowResponse,
+    MaintenanceSettingsResponse,
+    MaintenanceSettingsUpdate,
+)
 from ..settings_store import (
     LLM_SETTINGS_KEYS,
+    MAINTENANCE_SETTINGS_KEYS,
     SECRET_SETTINGS_KEYS,
     SETTINGS_LLM_API_KEY,
     SETTINGS_LLM_BASE_URL,
@@ -26,6 +34,8 @@ from ..settings_store import (
     SETTINGS_LLM_PROVIDER,
     SETTINGS_LLM_TEMPERATURE,
     SETTINGS_LLM_TIMEOUT_SECONDS,
+    SETTINGS_MAINTENANCE_ENABLED,
+    SETTINGS_MAINTENANCE_INTERVAL_SECONDS,
     SettingsStore,
     mask_secret,
 )
@@ -151,4 +161,85 @@ def _llm_settings_response(config: LoreConfig, settings_store: SettingsStore) ->
         temperature=provider_config.temperature,
         timeout_seconds=provider_config.timeout_seconds,
         max_retries=provider_config.max_retries,
+    )
+
+
+@settings_router.get("/api/settings/maintenance", response_model=MaintenanceSettingsResponse)
+def api_get_maintenance_settings(
+    request: Request,
+    _key: None = Depends(require_lore_key),
+    settings_store: SettingsStore = Depends(get_settings_store),
+) -> MaintenanceSettingsResponse:
+    return _maintenance_settings_response(request.app, settings_store)
+
+
+@settings_router.put("/api/settings/maintenance", response_model=MaintenanceSettingsResponse)
+def api_update_maintenance_settings(
+    payload: MaintenanceSettingsUpdate,
+    request: Request,
+    _admin: None = Depends(require_lore_key_admin),
+    settings_store: SettingsStore = Depends(get_settings_store),
+) -> MaintenanceSettingsResponse:
+    if payload.enabled is not None:
+        settings_store.set(SETTINGS_MAINTENANCE_ENABLED, "true" if payload.enabled else "false")
+    if payload.interval_seconds is not None:
+        settings_store.set(SETTINGS_MAINTENANCE_INTERVAL_SECONDS, str(payload.interval_seconds))
+
+    logger.info("Maintenance settings updated")
+    from ..main import restart_maintenance_scheduler
+
+    restart_maintenance_scheduler(request.app)
+    return _maintenance_settings_response(request.app, settings_store)
+
+
+@settings_router.delete("/api/settings/maintenance", response_model=MaintenanceSettingsResponse)
+def api_delete_maintenance_settings(
+    request: Request,
+    _admin: None = Depends(require_lore_key_admin),
+    settings_store: SettingsStore = Depends(get_settings_store),
+) -> MaintenanceSettingsResponse:
+    for key in MAINTENANCE_SETTINGS_KEYS:
+        settings_store.delete(key)
+
+    logger.info("Maintenance settings cleared")
+    from ..main import restart_maintenance_scheduler
+
+    restart_maintenance_scheduler(request.app)
+    return _maintenance_settings_response(request.app, settings_store)
+
+
+@settings_router.post(
+    "/api/settings/maintenance/run-now",
+    response_model=MaintenanceRunNowResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def api_run_maintenance_now(
+    request: Request,
+    _admin: None = Depends(require_lore_key_admin),
+    settings_store: SettingsStore = Depends(get_settings_store),
+) -> MaintenanceRunNowResponse:
+    # Dispatch one pass on a background thread and return immediately. A first tick can
+    # back-distill many days, which would exceed the edge proxy timeout if run inline;
+    # run_maintenance_tick serializes on auto_consolidate_lock, so a concurrent
+    # scheduled tick or a second run-now cannot double-run.
+    from ..main import run_maintenance_tick
+
+    app = request.app
+    threading.Thread(
+        target=run_maintenance_tick, args=(app,), name="lore-maintenance-run-now", daemon=True
+    ).start()
+    logger.info("Maintenance run-now dispatched")
+    base = _maintenance_settings_response(app, settings_store)
+    return MaintenanceRunNowResponse(**base.model_dump(), started=True)
+
+
+def _maintenance_settings_response(app, settings_store: SettingsStore) -> MaintenanceSettingsResponse:
+    enabled, interval_seconds = merged_maintenance_config(app.state.config, settings_store)
+    thread = getattr(app.state, "maintenance_thread", None)
+    return MaintenanceSettingsResponse(
+        enabled=enabled,
+        interval_seconds=interval_seconds,
+        running=bool(thread is not None and thread.is_alive()),
+        last_maintenance_at=getattr(app.state, "last_maintenance_at", None),
+        enabled_source="settings" if settings_store.get(SETTINGS_MAINTENANCE_ENABLED) is not None else "environment",
     )

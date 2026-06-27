@@ -50,8 +50,8 @@ Lore reads configuration from environment variables through
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `LORE_MAINTENANCE_ENABLED` | `false` | Enable the in-process maintenance scheduler. |
-| `LORE_MAINTENANCE_INTERVAL_SECONDS` | `86400` | Maintenance scheduler interval in seconds. |
+| `LORE_MAINTENANCE_ENABLED` | `false` | Default enable state for the in-process maintenance scheduler (ledger decay + heartbeat captures + daily distillation). Overridable at runtime from the `/settings` page or `PUT /api/settings/maintenance` — no redeploy. |
+| `LORE_MAINTENANCE_INTERVAL_SECONDS` | `86400` | Default maintenance scheduler interval in seconds. Also overridable at runtime via `/settings`. |
 | `LORE_TRUSTED_HEADERS` | `false` | Trust reverse proxy headers for rate limiting and audit actor attribution. |
 | `LORE_TRUSTED_PROXY_AUTH` | `false` | Allow trusted proxy identity headers to authenticate browser sessions. |
 | `LORE_TRUSTED_PROXY_CIDRS` | empty | Space/comma-separated CIDR allowlist of proxy source IPs allowed to supply trusted identity headers. |

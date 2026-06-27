@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import time
 
-from lore_app.config import LoreConfig, merged_llm_config
+from lore_app.config import LoreConfig, merged_llm_config, merged_maintenance_config
 from lore_app.llm_provider import FallbackLLMClient
 from lore_app.settings_store import (
     SETTINGS_LLM_API_KEY,
     SETTINGS_LLM_BASE_URL,
     SETTINGS_LLM_MAX_TOKENS,
     SETTINGS_LLM_MODEL,
+    SETTINGS_MAINTENANCE_ENABLED,
+    SETTINGS_MAINTENANCE_INTERVAL_SECONDS,
     SettingsStore,
     mask_secret,
 )
@@ -261,3 +264,130 @@ def test_delete_reverts_to_env_and_clears_store(client):
     assert payload["api_key_configured"] is False
     assert client.app.state.settings_store.get(SETTINGS_LLM_MODEL) is None
     assert client.app.state.settings_store.get(SETTINGS_LLM_BASE_URL) is None
+
+
+# --- Maintenance settings -------------------------------------------------------
+
+
+def test_merged_maintenance_config_env_fallback(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_MAINTENANCE_ENABLED", "true")
+    monkeypatch.setenv("LORE_MAINTENANCE_INTERVAL_SECONDS", "120")
+    config = LoreConfig()
+    store = SettingsStore(tmp_path / "settings.db")
+    store.initialize()
+
+    assert merged_maintenance_config(config, store) == (True, 120)
+    store.close()
+
+
+def test_merged_maintenance_config_stored_false_overrides_truthy_env(tmp_path, monkeypatch):
+    """A stored 'false' must win over a truthy env default (the None-check, not `or`)."""
+    monkeypatch.setenv("LORE_MAINTENANCE_ENABLED", "true")
+    config = LoreConfig()
+    store = SettingsStore(tmp_path / "settings.db")
+    store.initialize()
+    store.set(SETTINGS_MAINTENANCE_ENABLED, "false")
+
+    enabled, _interval = merged_maintenance_config(config, store)
+    assert enabled is False
+    store.close()
+
+
+def test_merged_maintenance_config_interval_override_and_corrupt_fallback(tmp_path, monkeypatch):
+    monkeypatch.setenv("LORE_MAINTENANCE_INTERVAL_SECONDS", "120")
+    config = LoreConfig()
+    store = SettingsStore(tmp_path / "settings.db")
+    store.initialize()
+
+    store.set(SETTINGS_MAINTENANCE_INTERVAL_SECONDS, "300")
+    assert merged_maintenance_config(config, store)[1] == 300
+
+    store.set(SETTINGS_MAINTENANCE_INTERVAL_SECONDS, "not-a-number")
+    assert merged_maintenance_config(config, store)[1] == 120
+    store.close()
+
+
+def test_get_maintenance_settings_default_disabled(client):
+    response = client.get("/api/settings/maintenance", headers=reader_headers(client))
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["enabled"] is False
+    assert data["running"] is False
+    assert data["last_maintenance_at"] is None
+    assert data["enabled_source"] == "environment"
+
+
+def test_put_maintenance_enables_and_starts_thread(client):
+    # Large interval so the scheduler parks in wait() and never auto-fires mid-test.
+    response = client.put(
+        "/api/settings/maintenance",
+        json={"enabled": True, "interval_seconds": 10000},
+        headers=admin_headers(client),
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["enabled"] is True
+    assert data["running"] is True
+    assert data["interval_seconds"] == 10000
+    assert data["enabled_source"] == "settings"
+    thread = client.app.state.maintenance_thread
+    assert thread is not None and thread.is_alive()
+
+
+def test_put_maintenance_disables_and_stops_thread(client):
+    enable = client.put(
+        "/api/settings/maintenance",
+        json={"enabled": True, "interval_seconds": 10000},
+        headers=admin_headers(client),
+    )
+    assert enable.status_code == 200, enable.text
+    assert client.app.state.maintenance_thread is not None
+
+    disable = client.put(
+        "/api/settings/maintenance",
+        json={"enabled": False},
+        headers=admin_headers(client),
+    )
+    assert disable.status_code == 200, disable.text
+    assert disable.json()["running"] is False
+    assert client.app.state.maintenance_thread is None
+
+
+def test_delete_maintenance_reverts_to_env(client):
+    config = client.app.state.config
+    config.maintenance_enabled = False
+    config.maintenance_interval_seconds = 86400
+
+    headers = admin_headers(client)
+    updated = client.put(
+        "/api/settings/maintenance",
+        json={"enabled": True, "interval_seconds": 3600},
+        headers=headers,
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["enabled"] is True
+
+    deleted = client.delete("/api/settings/maintenance", headers=headers)
+    assert deleted.status_code == 200, deleted.text
+    payload = deleted.json()
+    assert payload["enabled"] is False
+    assert payload["interval_seconds"] == 86400
+    assert payload["enabled_source"] == "environment"
+    assert client.app.state.settings_store.get(SETTINGS_MAINTENANCE_ENABLED) is None
+    assert client.app.state.settings_store.get(SETTINGS_MAINTENANCE_INTERVAL_SECONDS) is None
+
+
+def test_run_now_executes_tick_and_updates_timestamp(client):
+    response = client.post("/api/settings/maintenance/run-now", headers=admin_headers(client))
+    assert response.status_code == 202, response.text
+    assert response.json()["started"] is True
+
+    # The pass runs on a background thread; poll until last_maintenance_at appears.
+    last = None
+    for _ in range(50):
+        time.sleep(0.1)
+        poll = client.get("/api/settings/maintenance", headers=admin_headers(client))
+        last = poll.json()["last_maintenance_at"]
+        if last is not None:
+            break
+    assert last is not None, "run-now did not populate last_maintenance_at"
