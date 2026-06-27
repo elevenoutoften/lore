@@ -70,8 +70,8 @@ curl "http://localhost:8078/api/memory/context?query=memory+backend&limit=5&max_
       "source_capture_ids": []
     }
   ],
-  "token_count": 19,
-  "char_count": 152,
+  "token_count": 23,
+  "char_count": 162,
   "max_tokens": 900,
   "max_chars": 4000,
   "truncated": false

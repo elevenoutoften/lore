@@ -108,17 +108,6 @@ def _rag_context_line(result: RagExpandedResult) -> tuple[str, list[MemoryContex
             source_capture_ids=[],
         )
     ]
-    for claim_id in result.supporting_claims[:3]:
-        claim_ref = f"claim:{claim_id}"
-        citations.append(
-            MemoryContextCitation(
-                ref=claim_ref,
-                kind="claim",
-                id=claim_id,
-                source_page_ids=[result.page_id],
-                source_capture_ids=[],
-            )
-        )
     return line, citations
 
 

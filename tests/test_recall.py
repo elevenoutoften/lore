@@ -471,7 +471,7 @@ def test_memory_context_endpoint_returns_bounded_deterministic_markdown(client):
     assert after["last_accessed_at"] == before["last_accessed_at"] is None
 
 
-def test_memory_context_endpoint_formats_rag_page_citations(client):
+def test_memory_context_endpoint_keeps_only_visible_rag_page_citations(client):
     repo = client.app.state.repository
     repo.upsert_page(
         "services/context-source",
@@ -485,6 +485,25 @@ visibility: internal
 
 Prompt context needle lives in this source page.
 """,
+    )
+    client.app.state.ledger_db.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-memory-context-rag",
+            processed_at="2026-06-01T00:00:00+00:00",
+            source_capture_ids=["inbox/2026-06-01/context-source"],
+            claims=[
+                ExtractedClaim(
+                    subject="services/context-source",
+                    predicate="supports",
+                    object="prompt context needle",
+                    confidence="high",
+                    source_page_ids=["services/context-source"],
+                )
+            ],
+            entities=[],
+            edges=[],
+            invalidations=[],
+        )
     )
     client.post("/api/search/reindex")
 
@@ -500,8 +519,12 @@ Prompt context needle lives in this source page.
 
     assert resp.status_code == 200, resp.text
     body = resp.json()
+    rag_result = next(result for result in body["rag"]["results"] if result["page_id"] == "services/context-source")
     assert "[page:services/context-source]" in body["context"]
+    assert "claims " in body["context"]
     assert any(citation["ref"] == "page:services/context-source" for citation in body["citations"])
+    assert rag_result["supporting_claims"]
+    assert not any(citation["ref"].startswith("claim:") for citation in body["citations"])
     assert body["recall"] is None
     assert body["rag"]["total"] >= 1
 
