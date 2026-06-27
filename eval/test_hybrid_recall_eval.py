@@ -8,14 +8,15 @@ surfaces we care about:
 - ``LedgerDB.recall_claims``
 
 The corpus carries explicit case labels and expectation text so CI output makes
-it obvious when a paraphrase, graph-expansion, contradiction-update, or
-distractor case regresses.
+it obvious when a paraphrase, graph-expansion, abstention, scope-isolation, or
+contradiction-update case regresses.
 """
 
 from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -32,10 +33,39 @@ if TYPE_CHECKING:
     from lore_app.ledger import LedgerDB
 
 EVAL_CORPUS = Path(__file__).parent / "hybrid_corpus.json"
+REQUIRED_CASE_TYPES = {
+    "abstention",
+    "actor-isolation",
+    "lane-isolation",
+    "recency-discrimination",
+    "contradiction-update",
+}
 
 
 def load_corpus() -> dict[str, Any]:
     return json.loads(EVAL_CORPUS.read_text(encoding="utf-8"))
+
+
+def total_query_count(corpus: dict[str, Any]) -> int:
+    return len(corpus["hybrid_queries"]) + len(corpus["recall_queries"])
+
+
+def corpus_case_types(corpus: dict[str, Any]) -> set[str]:
+    return {
+        str(entry["case_type"])
+        for section in ("hybrid_queries", "recall_queries")
+        for entry in corpus[section]
+    }
+
+
+def parse_eval_now(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def is_abstention_case(entry: dict[str, Any]) -> bool:
+    return bool(entry.get("expect_no_results"))
 
 
 def render_capture_markdown(capture: dict[str, Any]) -> str:
@@ -169,6 +199,13 @@ def find_page_result(results: list[dict[str, Any]], page_id: str) -> dict[str, A
     return None
 
 
+def test_hybrid_eval_corpus_shape() -> None:
+    corpus = load_corpus()
+    total = total_query_count(corpus)
+    assert 25 <= total <= 40, f"expected 25-40 eval queries, found {total}"
+    assert corpus_case_types(corpus) >= REQUIRED_CASE_TYPES
+
+
 @pytest.fixture()
 def hybrid_eval_runtime(tmp_path: Path) -> dict[str, Any]:
     corpus = load_corpus()
@@ -213,19 +250,35 @@ def test_hybrid_retrieve_expanded_eval_gate(hybrid_eval_runtime: dict[str, Any])
 
     print("\nHybrid eval:")
     for entry in queries:
-        response = client.post(
-            "/api/rag/retrieve",
-            json={
-                "query": entry["query"],
-                "limit": entry.get("limit", 6),
-                "expand_hops": entry.get("expand_hops", 2),
-                "include_claims": True,
-                "include_decisions": True,
-            },
-        )
+        request_body = {
+            "query": entry["query"],
+            "limit": entry.get("limit", 6),
+            "expand_hops": entry.get("expand_hops", 2),
+            "include_claims": True,
+            "include_decisions": True,
+        }
+        if entry.get("lane"):
+            request_body["lane"] = entry["lane"]
+        if entry.get("actor"):
+            request_body["actor"] = entry["actor"]
+
+        response = client.post("/api/rag/retrieve", json=request_body)
         assert response.status_code == 200, response.text
         payload = response.json()
         results = payload["results"]
+
+        if is_abstention_case(entry):
+            abstained = results == []
+            reciprocal_ranks.append(1.0 if abstained else 0.0)
+            precision_sum += 1.0 if abstained else 0.0
+            if abstained:
+                recall_hits += 1
+            status = "OK" if abstained else "MISS"
+            print(
+                f"  {status} [{entry['case_type']}] {entry['id']}: "
+                f"results={len(results)} :: {entry['expectation']}"
+            )
+            continue
 
         rank = first_expected_page_rank(results, entry["expected_page_ids"])
         hits = count_expected_page_hits(results, entry["expected_page_ids"], k=3)
@@ -277,7 +330,27 @@ def test_recall_claims_eval_gate(hybrid_eval_runtime: dict[str, Any]) -> None:
     for entry in queries:
         expected_candidate_ids = [claim_id_map[claim_id] for claim_id in entry["expected_claim_ids"]]
         forbidden_candidate_ids = [claim_id_map[claim_id] for claim_id in entry.get("forbidden_claim_ids", [])]
-        results = ledger.recall_claims(query=entry["query"], limit=5, record_access=False)
+        results = ledger.recall_claims(
+            query=entry["query"],
+            limit=5,
+            lane=entry.get("lane"),
+            actor=entry.get("actor"),
+            record_access=False,
+            now=parse_eval_now(entry.get("now")),
+        )
+
+        if is_abstention_case(entry):
+            abstained = results == []
+            reciprocal_ranks.append(1.0 if abstained else 0.0)
+            precision_sum += 1.0 if abstained else 0.0
+            if abstained:
+                recall_hits += 1
+            status = "OK" if abstained else "MISS"
+            print(
+                f"  {status} [{entry['case_type']}] {entry['id']}: "
+                f"results={len(results)} :: {entry['expectation']}"
+            )
+            continue
 
         rank = first_expected_claim_rank(results, expected_candidate_ids)
         hits = count_expected_claim_hits(results, expected_candidate_ids, k=3)

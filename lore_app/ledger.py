@@ -1278,6 +1278,17 @@ class LedgerDB:
             entry["age_days"] = round(age_days, 4)
             scored.append(entry)
 
+        if query and query.strip():
+            # When a caller supplies a query, abstain instead of returning the
+            # strongest arbitrary claim if nothing matches lexically or
+            # semantically.
+            scored = [
+                entry
+                for entry in scored
+                if float(entry["recall_signals"].get("relevance", 0.0)) > 0.0
+                or float(entry["recall_signals"].get("semantic_similarity", 0.0)) > 0.0
+            ]
+
         scored.sort(
             key=lambda item: (item["recall_score"], float(item.get("strength") or 0.0)),
             reverse=True,

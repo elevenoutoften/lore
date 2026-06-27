@@ -2,12 +2,12 @@
   "floors": {
     "hybrid": {
       "recall_at_3": 1.0,
-      "mrr": 0.75,
+      "mrr": 0.9,
       "precision_at_3": 0.4
     },
     "recall": {
       "recall_at_3": 1.0,
-      "mrr": 0.9,
+      "mrr": 0.95,
       "precision_at_3": 0.4
     }
   },
@@ -63,6 +63,14 @@
     {
       "id": "services/graph-only-target",
       "content": "---\ntitle: Sealed Context Target\nkind: service\nvisibility: internal\nstatus: active\nsummary: Opaque destination used to prove linked context traversal.\ntags: [sealed, context]\n---\n\n# Sealed Context Target\n\nThis deliberately opaque destination contains no lexical form of its retrieval probe.\n"
+    },
+    {
+      "id": "notes/ops-lane-sentinel",
+      "content": "---\ntitle: Ops Lane Sentinel\nkind: note\nvisibility: internal\nstatus: active\nlane: ops\nsummary: Lane-scoped retrieval sentinel for ops-only memory.\ntags: [laneopsbeacon, ops]\n---\n\n# Ops Lane Sentinel\n\nThe laneopsbeacon sentinel belongs only to the ops lane and should not leak into project-scoped retrieval.\n"
+    },
+    {
+      "id": "notes/tenant-b-sentinel",
+      "content": "---\ntitle: Tenant B Sentinel\nkind: note\nvisibility: internal\nstatus: active\nactor: agent:tenant-b\nsummary: Actor-scoped retrieval sentinel for tenant B.\ntags: [tenantbravokey, tenant]\n---\n\n# Tenant B Sentinel\n\nThe tenantbravokey sentinel belongs only to agent:tenant-b and should stay hidden from other actor scopes.\n"
     }
   ],
   "captures": [
@@ -535,6 +543,86 @@
       "lane": "ops",
       "related_pages": ["services/archive-worker"],
       "body": "A cleanup reminder again mentioned [[services/archive-worker]] and nightly note compaction."
+    },
+    {
+      "id": "inbox/2026-05-16/ops-lane-sentinel",
+      "session_id": "session-2026-05-16",
+      "title": "Ops lane sentinel",
+      "observed_at": "2026-05-16T06:00:00+00:00",
+      "actor": "agent:ops",
+      "lane": "ops",
+      "related_pages": ["notes/ops-lane-sentinel"],
+      "body": "The laneopsbeacon sentinel belongs only to the ops lane and should stay out of project recall results.",
+      "claims": [
+        {
+          "id": "claim-ops-lane-sentinel",
+          "subject": "notes/ops-lane-sentinel",
+          "predicate": "belongs_to",
+          "object": "laneopsbeacon ops lane only",
+          "confidence": "high",
+          "source_page_ids": ["notes/ops-lane-sentinel"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-05-16/tenant-b-sentinel",
+      "session_id": "session-2026-05-16",
+      "title": "Tenant B sentinel",
+      "observed_at": "2026-05-16T06:20:00+00:00",
+      "actor": "agent:tenant-b",
+      "lane": "project",
+      "related_pages": ["notes/tenant-b-sentinel"],
+      "body": "The tenantbravokey sentinel belongs only to agent:tenant-b and should stay hidden from other actor scopes.",
+      "claims": [
+        {
+          "id": "claim-tenant-b-sentinel",
+          "subject": "notes/tenant-b-sentinel",
+          "predicate": "belongs_to",
+          "object": "tenantbravokey agent:tenant-b only",
+          "confidence": "high",
+          "source_page_ids": ["notes/tenant-b-sentinel"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-02-10/memory-audit-slot-old",
+      "session_id": "session-2026-02-10",
+      "title": "Older memory audit slot",
+      "observed_at": "2026-02-10T07:00:00+00:00",
+      "actor": "agent:reviewer",
+      "lane": "project",
+      "related_pages": ["runbooks/retrieval-triage"],
+      "body": "The older memory audit slot ran on Tuesdays for [[runbooks/retrieval-triage]].",
+      "claims": [
+        {
+          "id": "claim-memory-audit-slot-old",
+          "subject": "runbooks/retrieval-triage-old",
+          "predicate": "uses",
+          "object": "the memory audit slot",
+          "confidence": "medium",
+          "source_page_ids": ["runbooks/retrieval-triage"]
+        }
+      ]
+    },
+    {
+      "id": "inbox/2026-05-21/memory-audit-slot-new",
+      "session_id": "session-2026-05-21",
+      "title": "Newer memory audit slot",
+      "observed_at": "2026-05-21T07:00:00+00:00",
+      "actor": "agent:reviewer",
+      "lane": "project",
+      "related_pages": ["runbooks/retrieval-triage"],
+      "body": "The newer memory audit slot now runs on Fridays for [[runbooks/retrieval-triage]].",
+      "claims": [
+        {
+          "id": "claim-memory-audit-slot-new",
+          "subject": "runbooks/retrieval-triage-new",
+          "predicate": "uses",
+          "object": "the memory audit slot",
+          "confidence": "medium",
+          "source_page_ids": ["runbooks/retrieval-triage"]
+        }
+      ]
     }
   ],
   "supersessions": [
@@ -654,6 +742,48 @@
       "query": "lexica boundar",
       "expected_page_ids": ["services/rrf-sentinel"],
       "expectation": "A loose multi-word prefix query must match the sentinel even though lexical and boundary are not adjacent in its text."
+    },
+    {
+      "id": "hybrid-abstention-no-answer",
+      "case_type": "abstention",
+      "query": "zzzmarsupial quokkanebula anchorless",
+      "expected_page_ids": [],
+      "expect_no_results": true,
+      "expectation": "A completely unrelated query should abstain instead of returning arbitrary pages."
+    },
+    {
+      "id": "hybrid-lane-ops-hit",
+      "case_type": "lane-isolation",
+      "query": "laneopsbeacon",
+      "lane": "ops",
+      "expected_page_ids": ["notes/ops-lane-sentinel"],
+      "expectation": "The ops-only sentinel should be retrievable when the request is scoped to the ops lane."
+    },
+    {
+      "id": "hybrid-lane-project-miss",
+      "case_type": "lane-isolation",
+      "query": "laneopsbeacon",
+      "lane": "project",
+      "expected_page_ids": [],
+      "expect_no_results": true,
+      "expectation": "The ops-only sentinel must stay out of project-scoped retrieval."
+    },
+    {
+      "id": "hybrid-actor-tenant-b-hit",
+      "case_type": "actor-isolation",
+      "query": "tenantbravokey",
+      "actor": "agent:tenant-b",
+      "expected_page_ids": ["notes/tenant-b-sentinel"],
+      "expectation": "The tenant-B sentinel should be retrievable only when the matching actor scope is requested."
+    },
+    {
+      "id": "hybrid-actor-tenant-a-miss",
+      "case_type": "actor-isolation",
+      "query": "tenantbravokey",
+      "actor": "agent:tenant-a",
+      "expected_page_ids": [],
+      "expect_no_results": true,
+      "expectation": "The tenant-B sentinel must stay hidden from other actor scopes."
     }
   ],
   "recall_queries": [
@@ -735,6 +865,56 @@
       "query": "what should happen after a contradiction update",
       "expected_claim_ids": ["claim-retrieval-prefers-latest"],
       "expectation": "The recall policy should explicitly prefer the latest live claim after a contradiction update."
+    },
+    {
+      "id": "recall-abstention-no-answer",
+      "case_type": "abstention",
+      "query": "zzzmarsupial quokkanebula anchorless",
+      "expected_claim_ids": [],
+      "expect_no_results": true,
+      "expectation": "A completely unrelated recall query should abstain instead of returning arbitrary strong claims."
+    },
+    {
+      "id": "recall-lane-ops-hit",
+      "case_type": "lane-isolation",
+      "query": "laneopsbeacon",
+      "lane": "ops",
+      "expected_claim_ids": ["claim-ops-lane-sentinel"],
+      "expectation": "The ops-only claim should be recallable when the request is scoped to the ops lane."
+    },
+    {
+      "id": "recall-lane-project-miss",
+      "case_type": "lane-isolation",
+      "query": "laneopsbeacon",
+      "lane": "project",
+      "expected_claim_ids": [],
+      "expect_no_results": true,
+      "expectation": "The ops-only claim must stay out of project-scoped recall."
+    },
+    {
+      "id": "recall-actor-tenant-b-hit",
+      "case_type": "actor-isolation",
+      "query": "tenantbravokey",
+      "actor": "agent:tenant-b",
+      "expected_claim_ids": ["claim-tenant-b-sentinel"],
+      "expectation": "The tenant-B claim should be recallable only when the matching actor scope is requested."
+    },
+    {
+      "id": "recall-actor-tenant-a-miss",
+      "case_type": "actor-isolation",
+      "query": "tenantbravokey",
+      "actor": "agent:tenant-a",
+      "expected_claim_ids": [],
+      "expect_no_results": true,
+      "expectation": "The tenant-B claim must stay hidden from other actor scopes."
+    },
+    {
+      "id": "recall-memory-audit-recency",
+      "case_type": "recency-discrimination",
+      "query": "memory audit slot",
+      "now": "2026-06-20T00:00:00+00:00",
+      "expected_claim_ids": ["claim-memory-audit-slot-new"],
+      "expectation": "The newer matching audit-slot claim should outrank the older equal-strength claim."
     }
   ]
 }

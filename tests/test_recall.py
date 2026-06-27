@@ -117,8 +117,22 @@ def test_recall_claims_ranks_query_relevance_first(tmp_path):
     results = ledger.recall_claims(query="memory backend", limit=5, record_access=False)
 
     assert results[0]["content_json"]["subject"] == "services/lore"
-    assert results[0]["recall_score"] >= results[1]["recall_score"]
+    assert len(results) == 1
     assert results[0]["recall_signals"]["relevance"] == 1.0
+
+
+def test_recall_claims_abstains_when_query_has_no_match(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    _seed(ledger, [ExtractedClaim(subject="services/lore", predicate="is", object="an agent memory backend", confidence="high")])
+
+    results = ledger.recall_claims(
+        query="zzzmarsupial quokkanebula anchorless",
+        limit=5,
+        record_access=False,
+    )
+
+    assert results == []
 
 
 def test_recall_caps_synchronous_semantic_scoring_pool(tmp_path):
@@ -361,7 +375,7 @@ def test_memory_recall_endpoint_returns_ranked_claims(client):
     resp = client.get("/api/memory/recall", params={"query": "memory backend", "limit": 5})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["count"] >= 2
+    assert body["count"] == 1
     assert "relevance" in body["weights"]
     assert body["latency_ms"] >= 0.0
     top = body["claims"][0]
@@ -381,6 +395,17 @@ def test_memory_recall_endpoint_no_query_drops_relevance_weight(client):
     resp = client.get("/api/memory/recall")
     assert resp.status_code == 200, resp.text
     assert "relevance" not in resp.json()["weights"]
+
+
+def test_memory_recall_endpoint_abstains_for_irrelevant_query(client):
+    _reinforce(client, "services/lore", "is", "an agent memory backend")
+    resp = client.get("/api/memory/recall", params={"query": "zzzmarsupial quokkanebula anchorless", "limit": 5})
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["count"] == 0
+    assert body["claims"] == []
+    assert body["hint"] and "no matching memory" in body["hint"].lower()
 
 
 def test_memory_recall_endpoint_default_does_not_write_access(client):
@@ -437,7 +462,7 @@ def test_memory_context_endpoint_returns_bounded_deterministic_markdown(client):
     assert "[claim:" in body["context"]
     assert body["citations"][0]["kind"] == "claim"
     assert body["citations"][0]["ref"].startswith("claim:")
-    assert body["recall"]["count"] >= 2
+    assert body["recall"]["count"] == 1
     assert body["rag"] is None
 
     after = client.get("/api/ledger/claims").json()["claims"][0]
