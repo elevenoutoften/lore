@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from lore_app.ledger import LedgerDB
+from lore_app.memory_context import _rag_context_line
 from lore_app.recall import (
     compute_recall_score,
     recency_score,
@@ -14,7 +15,7 @@ from lore_app.recall import (
     text_relevance,
     weights_for_query,
 )
-from lore_app.schemas import ExtractedClaim, ExtractionResult
+from lore_app.schemas import ExtractedClaim, ExtractionResult, RagExpandedResult
 
 # ─── Pure scoring ───────────────────────────────────────────────────────────
 
@@ -469,6 +470,24 @@ def test_memory_context_endpoint_returns_bounded_deterministic_markdown(client):
     assert after["candidate_id"] == before["candidate_id"]
     assert after["access_count"] == before["access_count"] == 0
     assert after["last_accessed_at"] == before["last_accessed_at"] is None
+
+
+def test_rag_context_line_keeps_supporting_claims_out_of_citations():
+    result = RagExpandedResult(
+        page_id="services/context-source",
+        title="Context Source",
+        score=0.875,
+        sources=["services/context-source"],
+        citations=["Prompt context needle lives in this source page."],
+        supporting_claims=["c-support-1", "c-support-2"],
+        relevant_because="The source page contains the prompt context needle.",
+    )
+
+    line, returned_citations = _rag_context_line(result)
+
+    assert "claims c-support-1, c-support-2" in line
+    assert "[claim:" not in line
+    assert [citation.ref for citation in returned_citations] == [f"page:{result.page_id}"]
 
 
 def test_memory_context_endpoint_keeps_only_visible_rag_page_citations(client):
