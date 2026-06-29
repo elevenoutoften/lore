@@ -98,13 +98,10 @@
       };
       this.reader = null;             // assembled reader view-model (page) or node VM
       this.extHover = null;           // page id hovered in reader/sidebar -> graph highlight
-      // Legend type toggles. The human knowledge map defaults to curated Pages
-      // only — the internal memory nodes (captures, claims, entities, traces,
-      // plans, sources, tools, policies, …) are what made the map unreadable.
-      // They stay in the data and one legend click away, but the default human
-      // surface is the clean page graph. loadPrefs() may override from storage.
+      // The human knowledge map is a wiki graph of curated PAGES only (internal
+      // memory nodes are dropped in buildGraph). The legend filters by page KIND
+      // (services, projects, decisions, …); typeOff is keyed by kind.
       this.typeOff = {};
-      Object.keys(TYPES).forEach((t) => { if (t !== 'page') this.typeOff[t] = true; });
       this._openToken = 0;            // guards async reader fills against rapid re-opens
       // The settings form must be non-null before the first render: openSettings()
       // calls renderSettings() synchronously (counter()/dropdowns read this.s.llm)
@@ -691,14 +688,13 @@
     renderLegend() {
       const host = this.root.querySelector('#l2-legend');
       if (!host || !this.s.gnodes) return;
-      const counts = {}; this.s.gnodes.forEach((n) => { counts[n.type] = (counts[n.type] || 0) + 1; });
-      const plural = (s) => s.endsWith('y') ? s.slice(0, -1) + 'ies' : s + 's';
-      const items = Object.keys(TYPES).filter((t) => counts[t]).map((t) => {
-        const off = !!this.typeOff[t];
-        return `<button data-act="legend-toggle" data-type="${t}" style="display:inline-flex;align-items:center;gap:6px;height:23px;padding:0 9px;border-radius:999px;border:1px solid ${off ? 'var(--separator)' : 'var(--separator-strong)'};background:${off ? 'transparent' : 'rgba(255,255,255,.045)'};cursor:pointer;opacity:${off ? 0.38 : 1};transition:all .14s">
-          <span style="width:8px;height:8px;border-radius:50%;background:${TYPES[t].color}"></span>
-          <span style="font-family:'Inter',sans-serif;font-size:11px;font-weight:500;color:var(--text-body)">${plural(TYPES[t].label)}</span>
-          <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text-dim)">${counts[t]}</span></button>`;
+      const counts = {}; this.s.gnodes.forEach((n) => { const k = this.nodeKind(n); counts[k] = (counts[k] || 0) + 1; });
+      const items = Object.keys(KINDS).filter((k) => counts[k]).map((k) => {
+        const off = !!this.typeOff[k];
+        return `<button data-act="legend-toggle" data-type="${k}" style="display:inline-flex;align-items:center;gap:6px;height:23px;padding:0 9px;border-radius:999px;border:1px solid ${off ? 'var(--separator)' : 'var(--separator-strong)'};background:${off ? 'transparent' : 'rgba(255,255,255,.045)'};cursor:pointer;opacity:${off ? 0.38 : 1};transition:all .14s">
+          <span style="width:8px;height:8px;border-radius:50%;background:${KINDS[k].color}"></span>
+          <span style="font-family:'Inter',sans-serif;font-size:11px;font-weight:500;color:var(--text-body)">${KINDS[k].label}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text-dim)">${counts[k]}</span></button>`;
       }).join('');
       host.innerHTML = `<span style="font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dimmer);margin-right:2px">Legend</span>${items}`;
     }
@@ -710,7 +706,13 @@
     // GRAPH (canvas force layout, ported from the redesign)
     // ======================================================
     buildGraph(g) {
-      const nodes = (g.nodes || []).filter((n) => !(n.metadata && n.metadata.placeholder));
+      // The human knowledge map shows curated PAGES only. Internal memory nodes
+      // (capture/claim/entity/invalidation/plan/trace/source/tool/policy/actor/
+      // task) are system structures, not readable articles, so they are excluded
+      // here: they never render, never clutter the legend, and can never be opened
+      // as an unreadable "page". They remain available to agents via the API/MCP
+      // and to operators via the agent-ops dashboards.
+      const nodes = (g.nodes || []).filter((n) => n.type === 'page' && !(n.metadata && n.metadata.placeholder));
       this.s.gmap = {};
       this.s.gnodes = nodes.map((n) => ({ id: n.id, type: n.type, label: n.label || titleOf(n.id), kind: (n.metadata || {}).kind, summary: (n.metadata || {}).summary || null, meta: n.metadata || {} }));
       this.s.gnodes.forEach((n) => { this.s.gmap[n.id] = n; });
@@ -721,9 +723,12 @@
       this.s.degOrder = this.s.gnodes.map((n) => n.id).sort((a, b) => (this.s.deg[b] - this.s.deg[a]) || (a < b ? -1 : 1));
       // Truncation provenance from the server (stats.truncated when the vault
       // exceeds the node cap) so the header can flag a partial view.
+      // Page-only human map: totals reflect curated pages, not the full context
+      // graph. Truncation only matters if the page set itself was capped.
       const st = (g && g.stats) || {};
-      this.s.gtruncated = !!st.truncated;
-      this.s.gtotal = st.total_nodes || this.s.gnodes.length;
+      const totalPages = st.page || this.s.gnodes.length;
+      this.s.gtruncated = totalPages > this.s.gnodes.length;
+      this.s.gtotal = totalPages;
       // (re)seed positions
       this.pos = {};
       const N = this.s.gnodes.length || 1;
@@ -769,9 +774,10 @@
       (this.s.gedges || []).forEach((e) => { if (e.s === id) set[e.t] = true; else if (e.t === id) set[e.s] = true; });
       return set;
     }
+    nodeKind(n) { const sp = this.s.byId[n.id]; return (sp && sp.kind) || n.kind || 'page'; }
     visibleSet() {
       const off = this.typeOff, vis = {};
-      this.s.gnodes.forEach((n) => { if (!off[n.type]) vis[n.id] = true; });
+      this.s.gnodes.forEach((n) => { if (!off[this.nodeKind(n)]) vis[n.id] = true; });
       return vis;
     }
     fitView() {
@@ -779,10 +785,10 @@
       let ids = [], focused = false;
       if (o && this.s.gmap[o]) {
         const nb = this.neighborhood(o);
-        ids = this.s.gnodes.filter((n) => nb[n.id] && (!off[n.type] || n.id === o)).map((n) => n.id);
+        ids = this.s.gnodes.filter((n) => nb[n.id] && (!off[this.nodeKind(n)] || n.id === o)).map((n) => n.id);
         focused = ids.length > 0;
       }
-      if (!focused) ids = this.s.gnodes.filter((n) => !off[n.type]).map((n) => n.id);
+      if (!focused) ids = this.s.gnodes.filter((n) => !off[this.nodeKind(n)]).map((n) => n.id);
       if (!ids.length) { this.tf = { s: 0.82, ox: this.vw / 2, oy: this.vh / 2 }; this._alpha = 1; return; }
       let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity;
       ids.forEach((id) => { const p = this.pos[id]; mnx = Math.min(mnx, p.x); mny = Math.min(mny, p.y); mxx = Math.max(mxx, p.x); mxy = Math.max(mxy, p.y); });
@@ -830,7 +836,7 @@
         this._alpha *= 0.992;
       }
     }
-    nodeColor(n) { return tc(n.type).color; }
+    nodeColor(n) { const sp = this.s.byId[n.id]; return kc((sp && sp.kind) || n.kind).color; }
     nodeR(n) { return 6 + Math.min(13, (this.s.deg[n.id] || 0) * 1.7); }
     draw() {
       const ctx = this.ctx; if (!ctx) return;
