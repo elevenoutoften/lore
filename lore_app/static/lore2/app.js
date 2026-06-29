@@ -98,7 +98,13 @@
       };
       this.reader = null;             // assembled reader view-model (page) or node VM
       this.extHover = null;           // page id hovered in reader/sidebar -> graph highlight
-      this.typeOff = {};              // legend type toggles
+      // Legend type toggles. The human knowledge map defaults to curated Pages
+      // only — the internal memory nodes (captures, claims, entities, traces,
+      // plans, sources, tools, policies, …) are what made the map unreadable.
+      // They stay in the data and one legend click away, but the default human
+      // surface is the clean page graph. loadPrefs() may override from storage.
+      this.typeOff = {};
+      Object.keys(TYPES).forEach((t) => { if (t !== 'page') this.typeOff[t] = true; });
       this._openToken = 0;            // guards async reader fills against rapid re-opens
       // The settings form must be non-null before the first render: openSettings()
       // calls renderSettings() synchronously (counter()/dropdowns read this.s.llm)
@@ -116,6 +122,7 @@
         const p = JSON.parse(localStorage.getItem('lore.settings') || '{}');
         if (p.labelMode) this.s.labelMode = p.labelMode;
         if (p.readerFont) this.s.readerFont = p.readerFont;
+        if (p.typeOff && typeof p.typeOff === 'object') this.typeOff = p.typeOff;
       } catch (e) {}
       this.root.setAttribute('data-font', this.s.readerFont);
     }
@@ -697,7 +704,7 @@
     }
     cycleLabels() { const o = ['smart', 'all', 'off']; const i = o.indexOf(this.s.labelMode); this.s.labelMode = o[(i + 1) % o.length]; this.savePref({ labelMode: this.s.labelMode }); this.updateGraphHeader(); }
     resetView() { this.wantFit = true; this.reheat(); }
-    toggleType(t) { if (!t) return; this.typeOff[t] = !this.typeOff[t]; this.reheat(); this.renderLegend(); }
+    toggleType(t) { if (!t) return; this.typeOff[t] = !this.typeOff[t]; this.savePref({ typeOff: this.typeOff }); this.reheat(); this.renderLegend(); }
 
     // ======================================================
     // GRAPH (canvas force layout, ported from the redesign)
