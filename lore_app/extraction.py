@@ -36,6 +36,23 @@ DETERMINISTIC_METADATA_SECTIONS = {
     "suggested target",
 }
 
+# Operational captures (the heartbeat self-audit, and any lane="ops" note) record
+# KB-health alerts, not durable knowledge. They must never enter the extraction
+# pipeline: otherwise every daily audit run re-mints duplicate ops claims/entities
+# into the ledger (the heartbeat re-pollution bug). Keep this in sync with
+# heartbeat.HEARTBEAT_CAPTURE_SOURCE_TASK.
+OPERATIONAL_SOURCE_TASKS = frozenset({"heartbeat-self-audit"})
+
+
+def _summary_is_operational(page: PageSummary) -> bool:
+    return page.source_task in OPERATIONAL_SOURCE_TASKS
+
+
+def _detail_is_operational(detail: PageDetail) -> bool:
+    if detail.source_task in OPERATIONAL_SOURCE_TASKS:
+        return True
+    return optional_string(detail.frontmatter.get("lane")) == "ops"
+
 
 def get_unprocessed_captures(
     repo: LoreRepository,
@@ -51,6 +68,7 @@ def get_unprocessed_captures(
         for page in repo.list_pages(kind="capture")
         if page.status == "draft"
         and page.id.startswith(("inbox/", "notes/"))
+        and not _summary_is_operational(page)
         and not ledger.is_capture_extracted(page.id)
     ]
     captures.sort(key=lambda page: page.id, reverse=True)
@@ -313,6 +331,8 @@ def _select_captures(
         if detail is None:
             continue
         if detail.frontmatter.get("kind") != "capture" or detail.status != "draft":
+            continue
+        if _detail_is_operational(detail):
             continue
         details.append(detail)
     return details

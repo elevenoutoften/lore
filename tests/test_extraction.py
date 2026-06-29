@@ -165,6 +165,42 @@ status: review
     assert get_unprocessed_captures(repo, ledger_db=ledger) == []
 
 
+def test_operational_captures_are_excluded_from_extraction(tmp_path):
+    """Heartbeat self-audit / lane=ops captures are alerts, not knowledge, and must
+    never feed the extraction ledger (the heartbeat re-pollution bug)."""
+    repo = LoreRepository(tmp_path / "pages")
+    capture_id = add_capture(repo)
+    repo.upsert_page(
+        "inbox/2026-05-10/heartbeat-audit-85-low-confidence-pages",
+        """---
+title: 'Heartbeat audit: 85 low-confidence pages'
+kind: capture
+visibility: internal
+status: draft
+lane: ops
+actor: heartbeat
+source_task: heartbeat-self-audit
+---
+
+# Heartbeat audit: 85 low-confidence pages
+
+Heartbeat found low-confidence pages that need verification:
+- [[services/lore]] (low)
+""",
+    )
+    ledger = make_ledger(tmp_path)
+
+    # Auto-consolidation path: the heartbeat capture is never selected.
+    assert [c.id for c in get_unprocessed_captures(repo, ledger_db=ledger)] == [capture_id]
+
+    # Explicit-ids path: requesting extraction of the heartbeat capture is a no-op.
+    hb_id = "inbox/2026-05-10/heartbeat-audit-85-low-confidence-pages"
+    result = extract_from_captures(repo, capture_ids=[hb_id], dry_run=False, ledger_db=ledger)
+    assert result.source_capture_ids == []
+    assert result.claims == []
+    assert result.entities == []
+
+
 def test_extract_from_captures_dry_run_returns_results_without_storing(tmp_path):
     repo = LoreRepository(tmp_path / "pages")
     capture_id = add_capture(repo)
