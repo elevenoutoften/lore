@@ -123,7 +123,24 @@ def test_embed_route_is_framable(client):
 
 
 def test_template_scripts_use_csp_nonce(client):
-    response = client.get("/projects/example-project")
+    """SSR operator pages embed inline scripts that must carry the per-request CSP
+    nonce (the lore2 reader/index pages instead load an external app.js)."""
+    response = client.get("/settings")
     assert response.status_code == 200
     nonce = re.search(r"script-src 'self' 'nonce-([^']+)'", response.headers["Content-Security-Policy"]).group(1)
     assert f'<script nonce="{nonce}">' in response.text
+
+
+def test_spa_shell_loads_external_script_without_inline(client):
+    """The lore2 SPA shell loads app.js as an external script and embeds no
+    un-nonced inline script, so the nonce-gated script-src (no 'unsafe-inline')
+    would block an injected inline script."""
+    response = client.get("/")
+    assert response.status_code == 200
+    assert '<script src="/static/lore2/app.js' in response.text
+    # No inline <script> without a src or nonce — anything injected would be CSP-blocked.
+    assert re.search(r"<script(?![^>]*\bsrc=)(?![^>]*\bnonce=)", response.text) is None
+    csp = response.headers["Content-Security-Policy"]
+    script_src = csp.split("script-src", 1)[1]
+    assert "'nonce-" in script_src
+    assert "'unsafe-inline'" not in script_src

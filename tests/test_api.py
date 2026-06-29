@@ -195,12 +195,14 @@ def test_frontmatter_spec_endpoint(client):
 
 
 def test_sources_display_in_reader(client):
+    """The reader serves the SPA shell; its provenance panel is populated from the
+    page-detail API, which exposes the page's declared sources."""
     response = client.get("/projects/example-project")
     assert response.status_code == 200
+    assert 'id="loreRoot"' in response.text
 
-    assert "provenance-panel" in response.text
-    assert "Sources" in response.text
-    assert "README.md" in response.text
+    detail = client.get("/api/pages/projects/example-project").json()
+    assert "README.md" in detail["sources"]
 
 
 def test_metadata_update(client):

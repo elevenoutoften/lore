@@ -21,7 +21,7 @@ def main() -> None:
     port = int(os.environ.get("LORE_PREVIEW_PORT", "8765"))
     lp._prepare_workspace()
     lp._configure_env(port)
-    import uvicorn  # noqa: PLC0415
+    import uvicorn
 
     uvicorn.run("lore_app.asgi:app", host=lp.HOST, port=port, log_level="warning")
 

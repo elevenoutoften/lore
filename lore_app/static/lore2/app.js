@@ -42,6 +42,14 @@
     ['openai', 'OpenAI'], ['anthropic', 'Anthropic'], ['ollama', 'Ollama'], ['azure-openai', 'Azure OpenAI'],
     ['openrouter', 'OpenRouter'], ['google', 'Google'], ['mistral', 'Mistral'], ['groq', 'Groq'], ['none', 'None'],
   ];
+  // Graph scale guards. The server caps the payload to the highest-degree nodes
+  // (stats.truncated reports it); the client mirrors that cap on the fetch and
+  // limits the O(n^2) force repulsion to the top-degree nodes so a large vault
+  // can't freeze the tab — remaining nodes still get edge-spring + drift forces.
+  // GRAPH_NODE_LIMIT must stay in sync with DEFAULT_CONTEXT_GRAPH_NODES in
+  // lore_app/context_graph.py (the server's default cap for the same endpoint).
+  const GRAPH_NODE_LIMIT = 1500;
+  const GRAPH_SIM_CAP = 700;
 
   // ---------- small helpers ----------
   const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -142,7 +150,7 @@
       this.renderList();
       // 2) typed context graph -> canvas
       try {
-        const g = await this.fetchJSON('/api/context-graph');
+        const g = await this.fetchJSON('/api/context-graph?limit=' + GRAPH_NODE_LIMIT);
         this.buildGraph(g);
         this.startGraph();
         this.renderLegend();
@@ -662,7 +670,13 @@
       if (t) t.textContent = reader ? 'Connections' : 'Knowledge map';
       if (sub) {
         if (reader && o) { const n = Math.max(0, Object.keys(this.neighborhood(o)).length - 1); sub.textContent = n + ' connected'; }
-        else sub.textContent = (this.s.gnodes ? this.s.gnodes.length : 0) + ' nodes · ' + (this.s.gedges ? this.s.gedges.length : 0) + ' links';
+        else {
+          const shown = this.s.gnodes ? this.s.gnodes.length : 0;
+          const links = this.s.gedges ? this.s.gedges.length : 0;
+          sub.textContent = this.s.gtruncated
+            ? 'top ' + shown + ' of ' + this.s.gtotal + ' nodes · ' + links + ' links'
+            : shown + ' nodes · ' + links + ' links';
+        }
       }
       const lt = this.root.querySelector('#l2-labeltext');
       if (lt) lt.textContent = 'Labels: ' + ({ smart: 'Smart', all: 'All', off: 'Off' }[this.s.labelMode] || 'Smart');
@@ -696,6 +710,13 @@
       this.s.gedges = (g.edges || []).filter((e) => this.s.gmap[e.source] && this.s.gmap[e.target]).map((e) => ({ s: e.source, t: e.target, type: e.type }));
       this.s.deg = {}; this.s.gnodes.forEach((n) => { this.s.deg[n.id] = 0; });
       this.s.gedges.forEach((e) => { this.s.deg[e.s]++; this.s.deg[e.t]++; });
+      // Highest-degree-first order drives the O(n^2) repulsion cap in simStep().
+      this.s.degOrder = this.s.gnodes.map((n) => n.id).sort((a, b) => (this.s.deg[b] - this.s.deg[a]) || (a < b ? -1 : 1));
+      // Truncation provenance from the server (stats.truncated when the vault
+      // exceeds the node cap) so the header can flag a partial view.
+      const st = (g && g.stats) || {};
+      this.s.gtruncated = !!st.truncated;
+      this.s.gtotal = st.total_nodes || this.s.gnodes.length;
       // (re)seed positions
       this.pos = {};
       const N = this.s.gnodes.length || 1;
@@ -772,10 +793,17 @@
       const ids = this.s.gnodes.filter((n) => vis[n.id]).map((n) => n.id);
       const a = this._alpha;
       if (a > 0.02) {
-        for (let i = 0; i < ids.length; i++) {
-          const pi = this.pos[ids[i]];
-          for (let j = i + 1; j < ids.length; j++) {
-            const pj = this.pos[ids[j]];
+        // All-pairs repulsion is O(n^2)/frame; above the cap, only the highest-degree
+        // visible nodes repel each other. Everything else keeps its seeded position and
+        // still moves under the edge-spring + drift passes below, so large vaults stay
+        // interactive instead of pinning a core for the whole cooldown.
+        const rep = ids.length > GRAPH_SIM_CAP
+          ? (this.s.degOrder || ids).filter((id) => vis[id]).slice(0, GRAPH_SIM_CAP)
+          : ids;
+        for (let i = 0; i < rep.length; i++) {
+          const pi = this.pos[rep[i]];
+          for (let j = i + 1; j < rep.length; j++) {
+            const pj = this.pos[rep[j]];
             let dx = pi.x - pj.x, dy = pi.y - pj.y, d2 = dx * dx + dy * dy + 0.01;
             const f = 5200 / d2; const d = Math.sqrt(d2);
             const ux = dx / d, uy = dy / d;

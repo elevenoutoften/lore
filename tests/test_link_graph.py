@@ -34,14 +34,15 @@ def test_page_links_api_reports_backlinks(client):
 
 
 def test_reader_shows_relationship_panel(client):
+    """The reader serves the SPA shell; its relationship panel (outgoing links +
+    backlinks) is populated from the links API rather than server-rendered HTML."""
     response = client.get("/services/workflow-engine")
     assert response.status_code == 200
-    assert "Backlinks" in response.text
-    assert "Outgoing" in response.text
-    assert "Developer JSON" in response.text
-    assert "Links JSON" in response.text
-    assert 'class="reader-api-toggle"' in response.text
-    assert "/projects/example-project" in response.text
+    assert 'id="loreRoot"' in response.text
+
+    links = client.get("/api/pages/services/workflow-engine/links").json()
+    assert any(edge["target"] == "projects/example-project" for edge in links["outgoing"])
+    assert any(edge["source"] == "projects/example-project" for edge in links["backlinks"])
 
 
 def test_graph_cache(client):

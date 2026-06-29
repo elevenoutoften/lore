@@ -46,7 +46,10 @@ dev = [
 include = ["lore_app*"]
 
 [tool.setuptools.package-data]
-lore_app = ["templates/*.html", "static/*.css", "static/vendor/*.js"]
+# Recursive so the whole static tree ships in the wheel — including the lore2 SPA
+# (static/lore2/*.js, *.css, favicon.svg, fonts/*.woff2). A non-recursive
+# "static/*.css" misses subdirectories, which 404'd the SPA on wheel/systemd deploys.
+lore_app = ["templates/*.html", "static/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "eval"]

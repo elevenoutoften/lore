@@ -30,6 +30,15 @@ if TYPE_CHECKING:
 
 WIKILINK_PATTERN = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 
+# The /api/context-graph payload feeds a client-side force layout whose per-frame
+# cost is O(n^2). A large vault can reach thousands of page/candidate nodes, which
+# would freeze the browser, so the HTTP boundary caps the returned graph to the
+# highest-degree nodes by default. Traversal endpoints (neighbors/paths/explain)
+# keep using the full cached graph; only the render payload is bounded.
+# Keep in sync with GRAPH_NODE_LIMIT in lore_app/static/lore2/app.js (the client
+# mirrors this value on its fetch).
+DEFAULT_CONTEXT_GRAPH_NODES = 1500
+
 
 class ContextGraphCache:
     """Lazy-rebuild cache for ContextGraph, invalidated by page or ledger changes."""
@@ -210,6 +219,41 @@ def scope_context_graph(graph: ContextGraph, actor: str | None) -> ContextGraph:
     for node in kept_nodes:
         stats[node.type.value] = stats.get(node.type.value, 0) + 1
     stats["edges"] = len(kept_edges)
+    return ContextGraph(nodes=kept_nodes, edges=kept_edges, stats=stats)
+
+
+def truncate_context_graph(graph: ContextGraph, max_nodes: int | None) -> ContextGraph:
+    """Cap a graph to its highest-degree nodes for browser rendering.
+
+    Keeps the ``max_nodes`` most-connected nodes (ties broken by id so the result
+    is deterministic and stable across requests) plus every edge whose endpoints
+    both survive. ``stats`` is rebuilt for the kept set and annotated with
+    ``total_nodes``/``returned_nodes``/``truncated`` so the UI can show that the
+    view is partial. A ``None``/non-positive cap, or a graph already within the
+    cap, is returned unchanged.
+    """
+    total = len(graph.nodes)
+    if not max_nodes or max_nodes <= 0 or total <= max_nodes:
+        return graph
+
+    degree: dict[str, int] = {node.id: 0 for node in graph.nodes}
+    for edge in graph.edges:
+        if edge.source in degree:
+            degree[edge.source] += 1
+        if edge.target in degree:
+            degree[edge.target] += 1
+
+    kept_nodes = sorted(graph.nodes, key=lambda node: (-degree[node.id], node.id))[:max_nodes]
+    kept_ids = {node.id for node in kept_nodes}
+    kept_edges = [edge for edge in graph.edges if edge.source in kept_ids and edge.target in kept_ids]
+
+    stats: dict[str, int] = {}
+    for node in kept_nodes:
+        stats[node.type.value] = stats.get(node.type.value, 0) + 1
+    stats["edges"] = len(kept_edges)
+    stats["total_nodes"] = total
+    stats["returned_nodes"] = len(kept_nodes)
+    stats["truncated"] = 1
     return ContextGraph(nodes=kept_nodes, edges=kept_edges, stats=stats)
 
 

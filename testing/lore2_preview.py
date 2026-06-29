@@ -11,6 +11,7 @@ testing/.lore2-preview/ and is wiped + rebuilt on each launch. Stop with Ctrl+C.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import socket
@@ -84,10 +85,8 @@ def _open_browser_when_ready(port: int) -> None:
                 if s.connect_ex((HOST, port)) == 0:
                     time.sleep(0.4)
                     print(f"\n  Lore preview is live at  {url}\n")
-                    try:
+                    with contextlib.suppress(Exception):
                         webbrowser.open(url)
-                    except Exception:
-                        pass
                     return
             time.sleep(0.3)
         print(f"\n  Server did not come up in time. Open {url} manually.\n")
@@ -103,12 +102,12 @@ def main() -> None:
     _configure_env(port)
 
     try:
-        import uvicorn  # noqa: PLC0415
+        import uvicorn
     except ModuleNotFoundError:
         raise SystemExit(
             "uvicorn is not installed for this Python. Activate the project venv "
             "(.venv) or run:  python -m pip install -e .[dev]"
-        )
+        ) from None
 
     print("=" * 60)
     print("  Lore — lore2 redesign preview")

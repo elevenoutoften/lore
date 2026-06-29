@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 
-def test_index_renders_page_list(client):
+def test_index_serves_spa_shell(client):
+    """The home route serves the lore2 SPA shell; the page list is rendered
+    client-side from the JSON API rather than server-side HTML."""
     response = client.get("/")
     assert response.status_code == 200
     assert "Lore" in response.text
-    assert "Featured reading" in response.text
-    assert "Recently updated" in response.text
-    assert "Search Lore" in response.text
-    assert "ExampleProject" in response.text
-    assert "Workflow Engine" in response.text
-    assert "Create an access key" not in response.text
+    assert 'id="loreRoot"' in response.text
+    assert "/static/lore2/app.js" in response.text
+    # The data the SPA lists comes from /api/pages.
+    titles = {page["title"] for page in client.get("/api/pages?limit=200").json()}
+    assert "ExampleProject" in titles
+    assert "Workflow Engine" in titles
 
 
 def test_api_key_page_renders(client):
@@ -32,15 +34,23 @@ def test_settings_page_renders(client):
     assert 'name="bearer_token" type="password"' in response.text
 
 
-def test_page_view_renders_markdown(client):
+def test_page_view_serves_shell_and_rendered_markdown(client):
+    """The reader route serves the SPA shell; the rendered markdown (headings,
+    tables, resolved wiki-links, missing-link markers) is served by the API the
+    SPA fetches client-side."""
     response = client.get("/projects/example-project")
     assert response.status_code == 200
-    assert "ExampleProject runs compute" in response.text
-    assert "<h2" in response.text
-    assert "<table>" in response.text
-    assert 'href="/services/workflow-engine"' in response.text
-    assert "wiki-link--missing" in response.text
-    assert "data-stub-target" in response.text
+    assert 'id="loreRoot"' in response.text
+    assert "/static/lore2/app.js" in response.text
+
+    rendered = client.get("/api/pages/projects/example-project/rendered").json()
+    html = rendered["html"]
+    assert "ExampleProject runs compute" in html
+    assert "<h2" in html
+    assert "<table>" in html
+    assert 'href="/services/workflow-engine"' in html
+    assert "wiki-link--missing" in html
+    assert any(link["page_id"] == "services/missing" for link in rendered["missing_links"])
 
 
 def test_rendered_api_returns_html_without_changing_raw_api(client):
@@ -181,14 +191,14 @@ def test_mcp_unmatched_path_returns_json_404(client):
 
 
 def test_nav_separates_read_and_operate(client):
-    """The shared nav keeps reader entry points distinct from operator surfaces."""
-    home = client.get("/").text
+    """The shared nav keeps reader entry points distinct from operator surfaces.
+
+    The lore2 index/reader pages render their chrome client-side, so this guards
+    the shared _nav.html partial via an SSR operator page that still includes it.
+    """
+    nav = client.get("/heartbeat").text
     for href in ("/", "/search", "/graph", "/captures", "/procedures", "/heartbeat", "/lint", "/rag", "/api-keys", "/settings"):
-        assert f'href="{href}"' in home, href
-    assert 'aria-label="Read"' in home
-    assert 'aria-label="Operate"' in home
-    assert "Search</a>" in home
-    # The nav is a shared partial, so a deep operator page carries the same grouped links.
-    heartbeat = client.get("/heartbeat").text
-    assert 'aria-label="Read"' in heartbeat
-    assert 'aria-label="Operate"' in heartbeat
+        assert f'href="{href}"' in nav, href
+    assert 'aria-label="Read"' in nav
+    assert 'aria-label="Operate"' in nav
+    assert "Search</a>" in nav
