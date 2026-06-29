@@ -57,6 +57,12 @@ coverage.xml
 tmp/
 .worktrees/
 
+# lore2 UI preview throwaway instance (rebuilt on each launch)
+testing/.lore2-preview/
+
+# Local Claude Preview launch config (machine-specific absolute paths)
+.claude/launch.json
+
 # Demo vault runtime writes (captures, consolidated pages, audit log)
 sample-vault/.lore/
 sample-vault/inbox/

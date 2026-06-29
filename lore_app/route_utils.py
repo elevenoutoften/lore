@@ -38,6 +38,7 @@ def template_context(app_request: Request, **values: Any) -> dict[str, Any]:
         "brand_url": config.brand_url,
         "favicon_url": config.favicon_url,
         "csp_nonce": getattr(app_request.state, "csp_nonce", ""),
+        "asset_version": getattr(app_request.app.state, "asset_version", ""),
     }
 
 

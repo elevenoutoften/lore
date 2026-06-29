@@ -370,6 +370,9 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.config = lore_config
+    # Per-process token for cache-busting the SPA static assets (?v=...). Changes on
+    # every restart/deploy so a browser never serves a stale lore2 app.js/css.
+    app.state.asset_version = f"{package_version()}.{secrets.token_hex(4)}"
     app.state.trusted_headers = lore_config.trusted_headers
     app.state.trusted_proxy_auth = lore_config.trusted_proxy_auth
     app.state.repository = repo

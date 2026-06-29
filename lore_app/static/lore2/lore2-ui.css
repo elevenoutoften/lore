@@ -1,0 +1,39 @@
+/* Lore2 UI — app-specific supplements that the design expressed via dc-runtime's
+ * non-standard `style-hover` attribute (which real browsers ignore). Hand-authored;
+ * complements the generated lore2.css. Keep selectors scoped to the classes app.js
+ * assigns so nothing else is affected. */
+
+/* canvas force-graph cursor */
+#loreGraphCanvas { cursor: grab; touch-action: none; }
+#loreGraphCanvas.grabbing { cursor: grabbing; }
+#loreGraphCanvas.pointing { cursor: pointer; }
+
+/* sidebar gear / icon button */
+.l2-icon-btn:hover {
+  color: var(--text-heading);
+  border-color: var(--separator-strong);
+  background: var(--bg-hover);
+}
+
+/* glassy graph overlay buttons (Labels / Fit) */
+.l2-glass-btn:hover {
+  color: var(--text-heading);
+  border-color: var(--separator-strong);
+}
+
+/* reader header buttons (Close / Locate) */
+.l2-reader-btn:hover {
+  background: rgba(255, 255, 255, .09);
+  color: var(--reader-ink);
+}
+
+/* sidebar page rows + search result rows */
+.l2-row:hover { background: var(--bg-hover); }
+
+/* reader connection / neighbor cards */
+.l2-conn:hover {
+  background: rgba(255, 255, 255, .06);
+  border-color: var(--separator-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .3);
+}

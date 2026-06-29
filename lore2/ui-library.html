@@ -1,0 +1,1317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Axis Love — UI Library</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg-page: #000000;
+  --bg-surface: #1d1d1f;
+  --bg-surface-2: #252528;
+  --bg-elevated: rgba(255,255,255,0.05);
+  --bg-hover: rgba(255,255,255,0.08);
+  --bg-field: rgba(255,255,255,0.04);
+  --bg-inset: rgba(255,255,255,0.025);
+  --rose: #ff8fbe;
+  --rose-hover: #ff6da8;
+  --rose-glow: rgba(255,143,190,0.25);
+  --rose-glow-strong: rgba(255,143,190,0.4);
+  --rose-bg: rgba(255,143,190,0.1);
+  --rose-bg-strong: rgba(255,143,190,0.15);
+  --rose-border: rgba(255,143,190,0.3);
+  --rose-border-strong: rgba(255,143,190,0.36);
+  --rose-border-soft: rgba(255,143,190,0.2);
+  --rose-focus: rgba(255,143,190,0.6);
+  --rose-focus-ring: rgba(255,143,190,0.12);
+  --hot-pink: #ff43a2;
+  --hot-pink-bg: rgba(255,67,162,0.1);
+  --positive: #22c55e;
+  --positive-bg: rgba(34,197,94,0.1);
+  --warning: #facc15;
+  --warning-bg: rgba(250,204,21,0.1);
+  --error: #f87171;
+  --error-bg: rgba(248,113,113,0.1);
+  --error-border: rgba(248,113,113,0.3);
+  --error-surface-bg: rgba(248,113,113,0.08);
+  --error-surface-border: rgba(248,113,113,0.24);
+  --human-tint: rgba(248,113,113,0.04);
+  --human-tint-hover: rgba(248,113,113,0.07);
+  --human-border: rgba(248,113,113,0.25);
+  --human-border-hover: rgba(248,113,113,0.4);
+  --human-glow: rgba(248,113,113,0.2);
+  --neutral: #6b7280;
+  --neutral-bg: rgba(255,255,255,0.08);
+  --text-heading: #ffffff;
+  --text-body: rgba(255,255,255,0.85);
+  --text-muted: rgba(255,255,255,0.5);
+  --text-dim: rgba(255,255,255,0.4);
+  --text-dimmer: rgba(255,255,255,0.25);
+  --separator: rgba(255,255,255,0.06);
+  --separator-strong: rgba(255,255,255,0.1);
+  --separator-hover: rgba(255,255,255,0.18);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+  --space-12: 48px; --space-16: 64px;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 400ms;
+  --sb-track-inset: 6px;
+  --sb-track-top: 9px;
+  --sb-track-bottom: 9px;
+  --sb-track-width: 4px;
+  --sb-thumb-min: 10px;
+  --sb-thumb-size: 4px;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  min-height:100vh;
+  font-family:var(--font-sans);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255,143,190,0.11), transparent 28rem),
+    radial-gradient(circle at 88% 18%, rgba(255,67,162,0.07), transparent 22rem),
+    var(--bg-page);
+  color:var(--text-body);
+  line-height:1.47;
+  font-size:15px;
+  -webkit-font-smoothing:antialiased;
+}
+button,input,textarea,select{font:inherit}
+button{cursor:pointer}
+a{color:var(--rose);text-decoration:none}
+.shell{width:min(1480px, calc(100vw - 48px));margin:0 auto;padding:44px 0 80px}
+.hero{
+  display:grid;
+  grid-template-columns:minmax(0,1.1fr) minmax(280px,.9fr);
+  gap:var(--space-6);
+  align-items:end;
+  margin-bottom:var(--space-8);
+}
+.kicker{
+  font-family:var(--font-mono);
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--rose);
+  margin-bottom:var(--space-3);
+}
+h1{
+  color:var(--text-heading);
+  font-size:clamp(36px, 6vw, 76px);
+  line-height:.96;
+  letter-spacing:-.055em;
+  margin:0 0 var(--space-4);
+}
+.lead{max-width:760px;margin:0;color:var(--text-muted);font-size:16px}
+.summary-card{
+  border:1px solid var(--separator);
+  border-radius:var(--radius-xl);
+  background:linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.035));
+  padding:var(--space-5);
+  box-shadow:0 24px 80px rgba(0,0,0,.24);
+}
+.summary-card h2{margin:0 0 var(--space-3);font-family:var(--font-mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-heading)}
+.summary-list{display:grid;gap:var(--space-2);margin:0;padding:0;list-style:none}
+.summary-list li{display:flex;justify-content:space-between;gap:var(--space-4);border-bottom:1px solid var(--separator);padding-bottom:var(--space-2);font-size:13px;color:var(--text-muted)}
+.summary-list li:last-child{border-bottom:0;padding-bottom:0}
+.summary-list strong{color:var(--text-heading);font-family:var(--font-mono);font-size:12px}
+.nav{
+  display:flex;
+  flex-wrap:wrap;
+  gap:var(--space-2);
+  margin-bottom:var(--space-8);
+  padding:var(--space-3);
+  border:1px solid var(--separator);
+  border-radius:var(--radius-lg);
+  background:rgba(0,0,0,.34);
+  position:sticky;
+  top:12px;
+  z-index:20;
+  backdrop-filter:blur(16px);
+}
+.nav a{
+  font-family:var(--font-mono);
+  font-size:11px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--text-muted);
+  border:1px solid var(--separator);
+  border-radius:var(--radius-full);
+  padding:var(--space-2) var(--space-3);
+}
+.nav a:hover{color:var(--rose);border-color:rgba(255,143,190,.34);background:var(--rose-bg)}
+.cluster{
+  margin-top:var(--space-8);
+  border:1px solid var(--separator);
+  border-radius:var(--radius-xl);
+  background:rgba(29,29,31,.72);
+  overflow:hidden;
+}
+.cluster-head{
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:var(--space-3);
+  padding:var(--space-6);
+  border-bottom:1px solid var(--separator);
+  background:linear-gradient(90deg, rgba(255,255,255,.04), transparent);
+}
+.cluster h2{margin:0 0 var(--space-2);color:var(--text-heading);font-size:25px;letter-spacing:-.025em}
+.cluster p{margin:0;color:var(--text-muted)}
+.specimens{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
+  gap:var(--space-4);
+  padding:var(--space-5);
+}
+.specimen{
+  border:1px solid var(--separator);
+  border-radius:var(--radius-lg);
+  background:rgba(0,0,0,.22);
+  padding:var(--space-4);
+  min-width:0;
+  overflow:visible;
+}
+.specimen.wide{grid-column:span 2}
+.specimen-title{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:var(--space-3);
+  margin-bottom:var(--space-4);
+}
+.specimen-title h3{
+  margin:0;
+  color:var(--text-heading);
+  font-size:14px;
+  font-weight:650;
+}
+.source{
+  display:inline-flex;
+  flex-shrink:0;
+  font-family:var(--font-mono);
+  font-size:10px;
+  color:var(--text-dim);
+  border:1px solid var(--separator);
+  border-radius:var(--radius-full);
+  padding:2px 7px;
+}
+.canvas{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:var(--space-3);
+  min-height:74px;
+  padding:var(--space-4);
+  border-radius:var(--radius-md);
+  background:rgba(255,255,255,.025);
+  border:1px dashed rgba(255,255,255,.08);
+  overflow:visible;
+}
+.canvas.stack{align-items:stretch;flex-direction:column}
+.specimen.full{grid-column:1 / -1}
+.card-preview-column{width:min(100%,300px)}
+.idea-preview-page{width:100%;min-width:0}
+.surface-preview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-3);width:100%}
+.surface-preview-panel{min-width:0}
+.surface-card{position:relative;width:100%;min-height:158px;display:flex;flex-direction:column;gap:6px;padding:14px 16px;border:1px solid var(--separator);border-radius:var(--radius-md);background:var(--bg-elevated);color:var(--text-body);text-align:left;font-family:var(--font-sans);cursor:pointer;overflow:hidden;transition:transform var(--duration-base) var(--ease-out),border-color var(--duration-fast) ease,background var(--duration-fast) ease,box-shadow var(--duration-fast) ease}
+.surface-card:hover{transform:translateY(-1px);border-color:var(--separator-strong);box-shadow:0 4px 16px rgba(0,0,0,0.3)}
+.surface-card.is-human{background:var(--human-tint);border-color:var(--human-border);animation:glowPulse 3s ease-in-out infinite}
+.surface-card.is-human:hover{background:var(--human-tint-hover);border-color:var(--human-border-hover);box-shadow:0 4px 24px var(--human-glow)}
+.surface-card.is-new{border-style:dashed;border-color:var(--separator-strong)}
+.surface-card.is-new:hover{border-color:var(--rose-border-strong);background:var(--bg-hover)}
+.surface-card-top{display:flex;align-items:center;gap:8px;min-height:20px}
+.surface-card-title{padding-right:38px;font-size:13px;font-weight:600;line-height:1.4;color:var(--text-heading)}
+.surface-card-description{padding-right:38px;font-size:13px;line-height:18px;color:var(--text-dim);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.surface-card>.card-deps{display:none}
+.surface-card-footer{display:flex;align-items:center;gap:var(--space-2);margin-top:auto;padding-top:2px;min-height:16px}
+.surface-card-date{font-family:var(--font-mono);font-size:10px;color:var(--text-dimmer)}
+.surface-card-avatar{position:absolute;right:14px;bottom:14px;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--rose);color:#000;font-family:var(--font-mono);font-size:9px;font-weight:700;line-height:1}
+.surface-card-mark{width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:4px;border:1px solid var(--separator-strong);border-radius:var(--radius-sm);background:var(--bg-elevated);color:var(--rose);font-family:var(--font-mono);font-size:19px;line-height:1}
+.danger-zone{border:1px solid var(--error-surface-border);border-radius:var(--radius-lg);padding:var(--space-6);margin-top:var(--space-10)}
+.danger-zone h3{color:var(--error);margin:0 0 var(--space-4)}
+.notes{margin:var(--space-3) 0 0;padding:0;list-style:none;display:grid;gap:6px;color:var(--text-dim);font-size:12px}
+.notes li::before{content:"- ";color:var(--rose)}
+
+/* Component library primitives. */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);font-family:var(--font-sans);font-weight:500;border:none;cursor:pointer;border-radius:var(--radius-md);white-space:nowrap;transition:all var(--duration-base) var(--ease-out);text-decoration:none;font-size:13px;padding:var(--space-2) var(--space-4)}
+.btn-primary{background:var(--rose);color:#000;font-weight:600}
+.btn-primary:hover{background:var(--rose-hover);transform:translateY(-1px);box-shadow:0 4px 20px var(--rose-glow)}
+.btn-secondary{background:transparent;color:var(--rose);border:1px solid var(--rose-border)}
+.btn-secondary:hover{background:var(--rose-bg);border-color:var(--rose)}
+.btn-ghost{background:transparent;color:var(--text-muted)}
+.btn-ghost:hover{color:var(--text-heading);background:var(--bg-hover)}
+.btn-danger{color:var(--error);border:1px solid var(--error-border);background:transparent}
+.btn-danger:hover{background:var(--error-bg);border-color:var(--error)}
+.btn-icon{width:36px;height:36px;padding:0;border-radius:var(--radius-md);background:var(--bg-surface);color:var(--text-muted);border:1px solid var(--separator);font-size:15px}
+.close-btn{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;border-radius:var(--radius-md);background:transparent;color:var(--text-muted);cursor:pointer;transition:all var(--duration-fast) ease;padding:0;font-size:22px;line-height:1;font-weight:400}
+.close-btn:hover{color:var(--text-heading);border-color:var(--separator);background:var(--bg-hover)}
+.form-label{font-family:var(--font-mono);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);display:block;margin-bottom:var(--space-2)}
+.form-input{width:100%;height:36px;background:var(--bg-field);border:1px solid var(--separator-strong);border-radius:var(--radius-md);padding:0 11px;font-size:13px;line-height:1.45;color:var(--text-heading);font-family:var(--font-sans);transition:border-color var(--duration-fast) ease,background var(--duration-fast) ease,box-shadow var(--duration-fast) ease;outline:none}
+.form-input:focus{border-color:var(--rose-focus);background:rgba(255,255,255,0.06);box-shadow:0 0 0 3px var(--rose-focus-ring)}
+.form-input::placeholder{color:var(--text-dim)}
+.form-input-sm{max-width:300px}
+.form-input[type="text"],.form-input[type="url"]{height:36px}
+textarea.form-input{height:auto;padding:10px 11px;resize:vertical}
+.editor-input,.editor-textarea{width:100%;border:1px solid var(--separator-strong);border-radius:var(--radius-md);background:var(--bg-field);color:var(--text-heading);font-family:var(--font-sans);font-size:13px;line-height:1.45;outline:none;transition:border-color var(--duration-fast) ease, background var(--duration-fast) ease, box-shadow var(--duration-fast) ease}
+.editor-input{height:36px;padding:0 11px}
+.editor-textarea{min-height:92px;resize:vertical;padding:10px 11px}
+.note-compose{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:var(--space-2);margin-top:var(--space-3);padding:6px;border:1px solid var(--separator-strong);border-radius:var(--radius-md);background:var(--bg-field);transition:border-color var(--duration-fast) ease,background var(--duration-fast) ease,box-shadow var(--duration-fast) ease}
+.note-compose:focus-within{border-color:rgba(255,143,190,0.34);background:rgba(255,255,255,0.055);box-shadow:0 0 0 3px var(--rose-focus-ring)}
+.note-compose input{width:100%;height:36px;background:transparent;border:0;padding:0 var(--space-2);font-family:var(--font-sans);font-size:14px;color:var(--text-body);outline:none}
+.note-compose input::placeholder{color:var(--text-dim)}
+.search-box{display:flex;align-items:center;height:36px;background:var(--bg-surface);border:1px solid var(--separator);border-radius:var(--radius-md);padding:var(--space-2) var(--space-3);gap:var(--space-2);min-width:200px;transition:border-color var(--duration-fast) ease}
+.search-box:focus-within{border-color:var(--rose)}
+.search-box svg{width:14px;height:14px;color:var(--text-dim);flex-shrink:0}
+.search-box input{background:none;border:none;outline:none;color:var(--text-body);font-family:var(--font-sans);font-size:13px;width:100%}
+.search-box input::placeholder{color:var(--text-dim)}
+.priority-counter{display:flex;align-items:center;height:36px;background:var(--bg-field);border:1px solid var(--separator-strong);border-radius:var(--radius-md);overflow:hidden}
+.priority-counter:focus-within{border-color:var(--rose-focus);box-shadow:0 0 0 3px var(--rose-focus-ring)}
+.priority-counter button{display:flex;align-items:center;justify-content:center;width:36px;height:100%;background:none;border:none;color:var(--text-muted);cursor:pointer;transition:background var(--duration-fast) ease,color var(--duration-fast) ease;flex-shrink:0}
+.priority-counter button:hover{background:var(--bg-hover);color:var(--text-heading)}
+.priority-counter button:active{background:rgba(255,255,255,0.12)}
+.priority-counter button svg{width:14px;height:14px}
+.priority-counter input{flex:1;min-width:0;background:none;border:none;outline:none;text-align:center;font-family:var(--font-mono);font-size:13px;font-weight:500;color:var(--text-heading);padding:var(--space-2) 0;-moz-appearance:textfield}
+.priority-counter input::-webkit-inner-spin-button,.priority-counter input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.flow-select{position:relative;width:100%}
+.project-filter .flow-select{width:178px}
+.flow-select-trigger{width:100%;min-height:36px;display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);border:1px solid var(--separator);border-radius:var(--radius-md);background:var(--bg-surface);color:var(--text-body);font-family:var(--font-sans);font-size:13px;line-height:1.45;padding:var(--space-2) var(--space-3);cursor:pointer;text-align:left;transition:border-color var(--duration-fast) ease,background var(--duration-fast) ease,box-shadow var(--duration-fast) ease,color var(--duration-fast) ease}
+.flow-select-trigger:hover,.flow-select.is-open .flow-select-trigger{border-color:var(--separator-strong);background:var(--bg-surface-2);color:var(--text-heading)}
+.flow-select-trigger:focus-visible{outline:none;border-color:var(--rose);box-shadow:0 0 0 3px var(--rose-focus-ring)}
+.flow-select-value{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.flow-select-caret{width:12px;height:12px;flex:0 0 12px;color:var(--text-dim);transition:transform var(--duration-fast) ease,color var(--duration-fast) ease}
+.flow-select.is-open .flow-select-caret{transform:rotate(180deg);color:var(--rose)}
+.flow-select-menu{position:absolute;z-index:80;top:calc(100% + var(--space-2));left:0;right:0;max-height:260px;overflow:auto;padding:var(--space-1);border:1px solid var(--separator-strong);border-radius:var(--radius-md);background:var(--bg-surface);box-shadow:0 18px 50px rgba(0,0,0,0.55),0 0 0 1px rgba(255,255,255,0.03);opacity:0;transform:translateY(-4px) scale(.98);transform-origin:top;pointer-events:none;transition:opacity var(--duration-fast) ease,transform var(--duration-fast) ease}
+.flow-select.is-open .flow-select-menu{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}
+.flow-select-option{width:100%;min-height:34px;display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);border:0;border-radius:var(--radius-sm);background:transparent;color:var(--text-body);font-family:var(--font-sans);font-size:13px;line-height:1.35;padding:var(--space-2) var(--space-3);cursor:pointer;text-align:left}
+.flow-select-option:hover,.flow-select-option:focus-visible{outline:none;background:var(--bg-hover);color:var(--text-heading)}
+.flow-select-option.is-selected{background:var(--rose-bg);color:var(--rose)}
+.task-card{position:relative;background:var(--bg-elevated);border:1px solid var(--separator);border-radius:var(--radius-md);padding:14px 16px;cursor:pointer;transition:all var(--duration-base) var(--ease-out);display:flex;flex-direction:column;gap:6px;text-align:left;font-family:var(--font-sans);color:var(--text-body);width:100%;touch-action:none;user-select:none}
+.task-card:hover{border-color:var(--separator-strong);transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,0,0,0.3)}
+.task-card:active{transform:translateY(0)}
+.task-card[data-human="true"]{background:var(--human-tint);border-color:var(--human-border);animation:glowPulse 3s ease-in-out infinite}
+.task-card[data-human="true"]:hover{background:var(--human-tint-hover);border-color:var(--human-border-hover);box-shadow:0 4px 24px var(--human-glow)}
+.card-top-row{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;min-height:20px}
+.project-tag,.project-name{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;padding:2px 7px;border-radius:var(--radius-full);background:var(--neutral-bg);color:var(--text-muted);white-space:nowrap;line-height:1.4}
+.task-id{font-family:var(--font-mono);font-size:10px;font-weight:500;color:var(--text-dim);letter-spacing:0.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.priority-dots{display:inline-flex;align-items:center;gap:3px;margin-left:auto;cursor:default;flex-shrink:0}
+.priority-dots .dot{width:7px;height:7px;border-radius:50%;background:var(--text-dim);transition:background var(--duration-fast) ease}
+.priority-dots .dot.filled{background:var(--text-body)}
+.human-badge{font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:2px 8px;border-radius:var(--radius-full);background:var(--error-bg);color:var(--error);border:1px solid var(--error-border);white-space:nowrap;flex-shrink:0;animation:humanBadgePulse 3s ease-in-out infinite}
+.task-card[data-human="true"] .priority-dots .dot.filled{background:var(--error)}
+.card-title{font-size:13px;font-weight:600;color:var(--text-heading);line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;padding-right:38px}
+.card-deps{font-family:var(--font-mono);font-size:10px;color:var(--text-dim);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;padding-right:38px}
+.card-deps:empty{display:none}
+.card-deps .dep-arrow{margin-right:2px;opacity:0.5}
+.card-footer{display:flex;align-items:center;gap:var(--space-2);margin-top:auto;padding-top:8px;border-top:1px solid var(--separator);min-height:20px}
+.card-footer:empty{display:none;border:none;padding:0;margin:0}
+.card-date{font-family:var(--font-mono);font-size:10px;color:var(--text-dimmer);margin-left:auto}
+.agent-avatar,.author{position:absolute;bottom:14px;right:14px;width:22px;height:22px;border-radius:50%;background:var(--rose);color:#000;display:inline-flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:9px;font-weight:700;line-height:1;cursor:default;transition:transform var(--duration-fast) var(--ease-spring)}
+.idea-card:hover .author{transform:scale(1.06)}
+.idea-wall{display:flex;flex-wrap:wrap;align-items:flex-start;gap:var(--space-3);isolation:isolate}
+.idea-card{position:relative;flex:1 1 250px;width:clamp(250px, 26vw, 390px);height:158px;display:flex;flex-direction:column;gap:5px;padding:16px 16px 14px;border:1px solid var(--separator);border-radius:var(--radius-md);background:var(--bg-elevated);color:var(--text-body);text-align:left;overflow:hidden;cursor:pointer;transition:transform var(--duration-base) var(--ease-out), border-color var(--duration-fast) ease, background var(--duration-fast) ease, box-shadow var(--duration-fast) ease, opacity var(--duration-base) ease}
+.idea-card:hover,.idea-card:focus-within{transform:translateY(-1px);border-color:var(--separator-strong);background:var(--bg-elevated);box-shadow:0 4px 16px rgba(0,0,0,0.3)}
+.idea-card.wide{flex-basis:330px}
+.idea-card.narrow{flex-basis:220px}
+.idea-card.is-template{border-style:dashed;border-color:var(--separator-strong);background:var(--bg-elevated)}
+.idea-card.is-template:hover,.idea-card.is-template:focus-within{border-color:var(--rose-border-strong);background:var(--bg-hover)}
+.idea-card.is-template .idea-title{padding-right:0;font-size:14px}
+.idea-card.is-template .idea-preview{padding-right:0;white-space:normal}
+.template-mark{width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:4px;border:1px solid var(--separator-strong);border-radius:var(--radius-sm);background:var(--bg-elevated);color:var(--rose);font-family:var(--font-mono);font-size:19px;line-height:1;transition:background var(--duration-fast) ease,border-color var(--duration-fast) ease,transform var(--duration-base) var(--ease-spring)}
+.idea-card.is-template:hover .template-mark{border-color:rgba(255,143,190,0.4);background:var(--rose-bg);transform:scale(1.04)}
+.project-name{align-self:flex-start;max-width:calc(100% - 40px);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis}
+.idea-title{padding-right:38px;font-size:13px;font-weight:600;line-height:19px;max-height:38px;color:var(--text-heading);flex:0 0 auto;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.idea-preview{font-size:13px;line-height:18px;color:var(--text-dim);flex:0 0 auto;overflow:hidden;overflow-wrap:anywhere;padding-right:38px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.idea-footer{display:flex;align-items:center;gap:var(--space-2);margin-top:auto;padding-top:2px;min-height:16px}
+.date{font-family:var(--font-mono);font-size:10px;color:var(--text-dimmer);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.flow-chip{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);font-family:var(--font-mono);font-size:11px;font-weight:500;line-height:1;padding:var(--space-1) var(--space-3);border-radius:var(--radius-full);border:1px solid transparent;white-space:nowrap}
+/* Single tone source for the chip family: flow-chip tones + their aliases (dep-status, api-key-role). */
+.chip-rose,.api-key-role.admin{background:var(--rose-bg-strong);color:var(--rose);border-color:var(--rose-border-soft)}
+.chip-neutral,.api-key-role.read-only,.dep-item .dep-status{background:var(--neutral-bg);color:var(--text-muted)}
+.chip-positive,.dep-status.status-done{background:var(--positive-bg);color:var(--positive)}
+.chip-warning,.dep-status.status-todo{background:var(--warning-bg);color:var(--warning)}
+.chip-error{background:var(--error-bg);color:var(--error)}
+.api-key-role{font-family:var(--font-mono);font-size:10px;padding:var(--space-1) var(--space-2);border-radius:var(--radius-full);white-space:nowrap}
+.filter-pill,.mobile-tab{font-family:var(--font-mono);font-weight:600;border-radius:var(--radius-full);background:transparent;color:var(--text-muted);border:1px solid var(--separator);cursor:pointer;transition:all var(--duration-fast) ease;white-space:nowrap}
+.filter-pill{font-size:11px;padding:var(--space-1) var(--space-3)}
+.filter-pill.active,.mobile-tab.active{background:var(--rose-bg-strong);color:var(--rose);border-color:var(--rose-border)}
+.mobile-tab{font-size:12px;font-weight:500;padding:var(--space-2) var(--space-4)}
+.count,.tab-count{margin-left:var(--space-1);opacity:.7}
+.nav-link{font-size:13px;font-weight:500;color:var(--text-muted);padding:var(--space-2) var(--space-3);border-radius:var(--radius-md);transition:color var(--duration-fast) ease}
+.nav-link.active{color:var(--rose)}
+.sidebar-link{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-5);font-size:14px;color:var(--text-muted);transition:all var(--duration-fast) ease;border-left:2px solid transparent}
+.sidebar-link.active{color:var(--rose);border-left-color:var(--rose);background:var(--rose-bg)}
+.toggle{display:flex;align-items:center;gap:var(--space-3);cursor:pointer}
+.toggle-track{width:44px;height:24px;background:var(--bg-surface);border:1px solid var(--separator);border-radius:var(--radius-full);position:relative;transition:all var(--duration-base) ease;flex-shrink:0}
+.toggle-track::after{content:'';position:absolute;top:3px;left:3px;width:16px;height:16px;background:var(--text-muted);border-radius:50%;transition:all var(--duration-base) var(--ease-spring)}
+.toggle input{display:none}
+.toggle input:checked+.toggle-track{background:var(--rose);border-color:var(--rose)}
+.toggle input:checked+.toggle-track::after{transform:translateX(20px);background:#000}
+.note-card{background:var(--bg-elevated);border:1px solid var(--separator);border-radius:var(--radius-md);padding:var(--space-3)}
+.note-card.note-accent{border-left:3px solid var(--rose)}
+.note-card.note-blocker{border-left:3px solid var(--error)}
+.note-header{display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-2)}
+.note-author{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
+.note-time{font-family:var(--font-mono);font-size:11px;color:var(--text-dim)}
+.note-body{font-size:14px;line-height:1.6;color:var(--text-body)}
+.blocker-banner{background:var(--error-surface-bg);border:1px solid var(--error-surface-border);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4);margin-bottom:var(--space-5);display:none;align-items:flex-start;gap:var(--space-3)}
+.blocker-banner.active{display:flex}
+.blocker-banner .blocker-icon{width:18px;height:18px;flex-shrink:0;color:var(--error);margin-top:1px}
+.blocker-banner .blocker-text{font-size:14px;color:var(--error);line-height:1.55}
+.ac-item{display:flex;align-items:flex-start;gap:var(--space-3);padding:10px var(--space-3);background:var(--bg-elevated);border:1px solid var(--separator);border-radius:var(--radius-md);font-size:14px;line-height:1.5}
+.ac-check{width:18px;height:18px;border-radius:4px;border:1.5px solid var(--text-dim);flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;transition:all var(--duration-fast) ease;cursor:pointer}
+.ac-check:hover{border-color:var(--rose);background:var(--rose-bg)}
+.ac-check.checked{background:var(--positive);border-color:var(--positive)}
+.ac-check svg{display:none;width:12px;height:12px;stroke:var(--bg-page);stroke-width:2.5;fill:none}
+.ac-check.checked svg{display:block}
+.dep-item{font-size:13px;color:var(--text-body);padding:11px var(--space-3);border:1px solid var(--separator);border-radius:var(--radius-md);display:grid;grid-template-columns:auto minmax(0,1fr);align-items:flex-start;gap:var(--space-3);line-height:1.4;background:var(--bg-elevated)}
+.dep-item .dep-status{display:inline-flex;align-items:center;gap:var(--space-2);font-family:var(--font-mono);font-size:11px;font-weight:500;line-height:1;padding:var(--space-1) var(--space-3);border-radius:var(--radius-full);border:1px solid transparent;text-transform:none;white-space:nowrap;flex-shrink:0;margin-top:1px}
+.dep-body{min-width:0;flex:1}
+.dep-title{display:flex;align-items:baseline;gap:var(--space-2);font-size:13px;color:var(--text-body);line-height:1.4;min-width:0;flex-wrap:wrap}
+.dep-id{font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--text-heading)}
+.dep-name{color:var(--text-muted)}
+.dep-meta{font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-top:4px;display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;text-transform:uppercase;letter-spacing:0.06em}
+.dep-relation{color:var(--text-muted)}
+.toast{background:var(--bg-surface);border:1px solid var(--separator-strong);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4);font-size:13px;color:var(--text-heading);animation:toastIn .3s ease forwards;box-shadow:0 8px 32px rgba(0,0,0,0.4)}
+.toast.toast-success{border-left:3px solid var(--positive)}
+.system-table{margin-top:var(--space-1);border:1px solid var(--separator);border-radius:var(--radius-md);overflow:hidden;background:var(--bg-inset);width:100%}
+.system-row{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);padding:var(--space-2) var(--space-3);min-height:36px;border-bottom:1px solid var(--separator)}
+.system-row:last-child{border-bottom:0}
+.system-label{font-size:13px;color:var(--text-body);min-width:0}
+.api-key-row{display:flex;align-items:center;gap:var(--space-4);padding:var(--space-4) 0;border-bottom:1px solid var(--separator);width:100%}
+.api-key-name{font-family:var(--font-mono);font-size:13px;font-weight:500;color:var(--text-heading);min-width:120px}
+.api-key-value{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@keyframes glowPulse{0%,100%{box-shadow:0 0 12px rgba(248,113,113,0.08),0 0 0 0 transparent}50%{box-shadow:0 0 24px var(--human-glow),0 0 0 0 transparent}}
+@keyframes humanBadgePulse{0%,100%{opacity:1}50%{opacity:0.75}}
+@keyframes toastIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes navPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 var(--rose-glow)}50%{opacity:.7;box-shadow:0 0 8px 2px var(--rose-glow)}}
+@keyframes motionGlow{0%,100%{box-shadow:0 0 20px rgba(255,143,190,0.1)}50%{box-shadow:0 0 40px rgba(255,143,190,0.2)}}
+@keyframes floatY{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+
+/* Foundations — typography */
+.type-showcase{display:grid;width:100%}
+.type-row{display:grid;grid-template-columns:170px minmax(0,1fr);gap:var(--space-6);align-items:baseline;padding:var(--space-4) 0;border-bottom:1px solid var(--separator)}
+.type-row:last-child{border-bottom:0}
+.type-meta{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;line-height:1.6}
+.type-sample{font-weight:600;color:var(--text-heading);min-width:0;overflow-wrap:anywhere}
+.type-sample.display{font-family:var(--font-mono);font-size:48px;text-transform:uppercase;letter-spacing:0.12em;line-height:1.07}
+.type-sample.h1{font-size:36px;letter-spacing:-0.02em;line-height:1.15}
+.type-sample.h2{font-size:30px;letter-spacing:-0.01em;line-height:1.2}
+.type-sample.h3{font-size:24px;line-height:1.3}
+.type-sample.h4{font-size:20px;line-height:1.35}
+.type-sample.h5{font-size:17px;line-height:1.4}
+.type-sample.h6{font-size:15px;line-height:1.4}
+.type-sample.body{font-weight:400;font-size:15px;line-height:1.6;color:var(--text-body)}
+.type-sample.caption{font-weight:400;font-size:13px;line-height:1.5;color:var(--text-muted)}
+.type-sample.label-mono{font-family:var(--font-mono);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:0.1em;color:var(--rose)}
+.font-card{display:flex;flex-direction:column;gap:var(--space-2)}
+.font-glyphs{font-size:32px;line-height:1.15;color:var(--text-heading)}
+.font-glyphs.mono{font-family:var(--font-mono)}
+.font-glyphs.sans{font-family:var(--font-sans)}
+.font-weights{font-size:13px;color:var(--text-muted)}
+
+/* Foundations — motion & spec rows */
+.spec-list{display:grid;gap:var(--space-2);width:100%}
+.spec-row{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);padding:var(--space-2) var(--space-3);border:1px solid var(--separator);border-radius:var(--radius-md);background:var(--bg-inset)}
+.spec-k{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted)}
+.spec-v{font-family:var(--font-mono);font-size:12px;color:var(--rose);text-align:right}
+.motion-swatch{width:60px;height:60px;border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:center;color:var(--rose);font-family:var(--font-mono);font-size:20px}
+.motion-pulse{background:var(--rose);animation:navPulse 2s ease-in-out infinite}
+.motion-glow{background:var(--rose-bg-strong);animation:motionGlow 3s ease-in-out infinite}
+.motion-float{background:var(--bg-surface);border:2px solid var(--rose);border-radius:var(--radius-full);animation:floatY 4s ease-in-out infinite}
+
+/* Component — custom scrollbar (.flow-scroll) */
+.flow-scroll{scrollbar-width:none;-ms-overflow-style:none}
+.flow-scroll::-webkit-scrollbar{display:none;width:0;height:0}
+.flow-scroll-none{scrollbar-width:none;-ms-overflow-style:none}
+.flow-scroll-none::-webkit-scrollbar{display:none;width:0;height:0}
+.flow-scroll-auto{scrollbar-width:none;-ms-overflow-style:none}
+.flow-scroll-auto::-webkit-scrollbar{display:none;width:0;height:0}
+.flow-scroll-wrapper{position:relative;overflow:hidden}
+.flow-scrollbar-track{position:absolute;z-index:10;opacity:0;transition:opacity var(--duration-fast) ease;pointer-events:none}
+.flow-scrollbar-track[data-axis="y"]{top:var(--sb-track-top);right:var(--sb-track-inset);bottom:var(--sb-track-bottom);width:var(--sb-track-width)}
+.flow-scrollbar-track[data-axis="x"]{left:var(--sb-track-top);right:var(--sb-track-bottom);bottom:var(--sb-track-inset);height:var(--sb-track-width)}
+.flow-scroll-wrapper[data-visible="true"] .flow-scrollbar-track,.flow-scroll-wrapper:hover .flow-scrollbar-track{opacity:1}
+.flow-scroll-wrapper[data-mode="always"] .flow-scrollbar-track{opacity:1}
+.flow-scrollbar-thumb{position:absolute;background:var(--separator-strong);border-radius:var(--radius-full);cursor:pointer;pointer-events:auto;transition:background var(--duration-fast) ease}
+.flow-scrollbar-thumb:hover,.flow-scrollbar-thumb[data-dragging="true"]{background:var(--separator-hover)}
+.flow-scrollbar-track[data-axis="y"] .flow-scrollbar-thumb{width:var(--sb-thumb-size);left:50%;transform:translateX(-50%);right:auto}
+.flow-scrollbar-track[data-axis="x"] .flow-scrollbar-thumb{height:var(--sb-thumb-size);top:50%;transform:translateY(-50%);bottom:auto}
+.scroll-demo{height:188px;overflow-y:auto;width:100%;background:var(--bg-inset);border:1px solid var(--separator);border-radius:var(--radius-md);padding:var(--space-3)}
+.scroll-demo-x{height:auto;overflow-x:auto;display:flex;gap:var(--space-2);align-items:center;width:100%;background:var(--bg-inset);border:1px solid var(--separator);border-radius:var(--radius-md);padding:var(--space-3)}
+.scroll-demo .note-card{margin-bottom:var(--space-2)}
+.scroll-demo .note-card:last-child{margin-bottom:0}
+.scroll-demo-x .flow-chip{flex-shrink:0}
+
+@media (max-width:760px){
+  .shell{width:min(100% - 24px, 1480px);padding-top:24px}
+  .hero,.cluster-head{grid-template-columns:1fr}
+  .specimen.wide{grid-column:auto}
+  .surface-preview-grid{grid-template-columns:1fr}
+  .token-row{grid-template-columns:1fr}
+  .type-row{grid-template-columns:1fr;gap:var(--space-1)}
+  .nav{position:static}
+}
+</style>
+</head>
+<body>
+<main class="shell">
+  <section class="hero">
+    <div>
+      <div class="kicker">Axis Love · UI Library</div>
+      <h1>Components, tokens, and motion for the Axis interface.</h1>
+      <p class="lead">A living reference for the axis.love product surfaces: the shared design tokens, the interactive components, and the typography and motion rules behind them. Everything here is the real implementation — copy a component, reuse a token, and it matches the app.</p>
+    </div>
+    <aside class="summary-card">
+      <h2>At a glance</h2>
+      <ul class="summary-list">
+        <li><span>Typefaces</span><strong>IBM Plex Mono · Inter</strong></li>
+        <li><span>Accent</span><strong>Rose #ff8fbe</strong></li>
+        <li><span>Surface scale</span><strong>page → surface → elevated → inset</strong></li>
+        <li><span>Components</span><strong>buttons · fields · selects · cards · chips</strong></li>
+        <li><span>Motion</span><strong>spring + ease-out · 150 / 250 / 400ms</strong></li>
+      </ul>
+    </aside>
+  </section>
+
+  <nav class="nav" aria-label="Library sections">
+    <a href="#typography">Type</a>
+    <a href="#buttons">Buttons</a>
+    <a href="#close">Close</a>
+    <a href="#fields">Fields</a>
+    <a href="#selects">Selects</a>
+    <a href="#cards">Cards</a>
+    <a href="#chips">Chips</a>
+    <a href="#filters">Filters</a>
+    <a href="#navigation">Navigation</a>
+    <a href="#toggles">Toggles</a>
+    <a href="#feedback">Feedback</a>
+    <a href="#motion">Motion</a>
+    <a href="#scrollbars">Scrollbars</a>
+  </nav>
+
+  <section class="cluster" id="typography">
+    <div class="cluster-head">
+      <div>
+        <h2>Typography</h2>
+        <p>IBM Plex Mono for display, labels, and identifiers; Inter for body and UI copy. Two families, one hierarchy.</p>
+      </div>
+    </div>
+    <div class="specimens">
+      <article class="specimen full">
+        <div class="specimen-title"><h3>Type scale</h3><span class="source">--font-mono · --font-sans</span></div>
+        <div class="canvas stack">
+          <div class="type-showcase">
+            <div class="type-row"><div class="type-meta">Display<br>Mono / 48px / 700</div><div class="type-sample display">Axis Love</div></div>
+            <div class="type-row"><div class="type-meta">Heading 1<br>Inter / 36px / 600</div><div class="type-sample h1">Design with precision</div></div>
+            <div class="type-row"><div class="type-meta">Heading 2<br>Inter / 30px / 600</div><div class="type-sample h2">Built on dark surfaces</div></div>
+            <div class="type-row"><div class="type-meta">Heading 3<br>Inter / 24px / 600</div><div class="type-sample h3">Rose leads the system</div></div>
+            <div class="type-row"><div class="type-meta">Heading 4<br>Inter / 20px / 600</div><div class="type-sample h4">Every pixel has purpose</div></div>
+            <div class="type-row"><div class="type-meta">Heading 5<br>Inter / 17px / 600</div><div class="type-sample h5">Typography carries the system</div></div>
+            <div class="type-row"><div class="type-meta">Heading 6<br>Inter / 15px / 600</div><div class="type-sample h6">The details are not details</div></div>
+            <div class="type-row"><div class="type-meta">Body<br>Inter / 15px / 400</div><div class="type-sample body">The foundation of any great interface is typography that breathes. Good type doesn't shout — it guides, setting rhythm between heading and body.</div></div>
+            <div class="type-row"><div class="type-meta">Caption<br>Inter / 13px / 400</div><div class="type-sample caption">Captions provide context without competing. Use for metadata, timestamps, and secondary annotations.</div></div>
+            <div class="type-row"><div class="type-meta">Label Mono<br>Mono / 12px / 500</div><div class="type-sample label-mono">System Token · --rose</div></div>
+          </div>
+        </div>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>IBM Plex Mono</h3><span class="source">--font-mono</span></div>
+        <div class="canvas stack">
+          <div class="font-card">
+            <div class="font-glyphs mono">AaGg 0123 →◆▲</div>
+            <div class="font-weights">Display, kickers, labels, IDs, counts. Weights 300–700.</div>
+          </div>
+        </div>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Inter</h3><span class="source">--font-sans</span></div>
+        <div class="canvas stack">
+          <div class="font-card">
+            <div class="font-glyphs sans">AaGg 0123 →◆▲</div>
+            <div class="font-weights">Body, headings, buttons, UI copy. Weights 300–700.</div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="cluster" id="buttons">
+    <div class="cluster-head">
+      <div>
+        <h2>Action Buttons</h2>
+        <p>Pink CTAs, rose outline actions, ghost text actions, and danger actions. One primary size; the icon and close controls are separate square utilities.</p>
+      </div>
+    </div>
+    <div class="specimens">
+      <article class="specimen">
+        <div class="specimen-title"><h3>Primary rose buttons</h3><span class="source">board/settings/brandbook</span></div>
+        <div class="canvas">
+          <button class="btn btn-primary">+ Add Idea</button>
+          <button class="btn btn-primary">Create task</button>
+          <button class="btn btn-primary">Save</button>
+          <button class="btn btn-primary">Action</button>
+        </div>
+        <ul class="notes">
+          <li>One filled rose CTA for the primary action on a surface.</li>
+          <li>Single size — pair with secondary or ghost for lower-emphasis actions.</li>
+        </ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Secondary rose outline</h3><span class="source">board/settings</span></div>
+        <div class="canvas">
+          <button class="btn btn-secondary">Ideas</button>
+          <button class="btn btn-secondary">+ Add Task</button>
+          <button class="btn btn-secondary">+ Register agent</button>
+          <button class="btn btn-secondary">Add note</button>
+        </div>
+        <ul class="notes">
+          <li>Rose outline for secondary actions that still need presence.</li>
+          <li>Also used as the embedded action inside the note-compose field.</li>
+        </ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Ghost and utility actions</h3><span class="source">board/settings</span></div>
+        <div class="canvas">
+          <button class="btn btn-ghost">Cancel</button>
+          <button class="btn btn-ghost">Revoke</button>
+          <button class="btn btn-ghost">Configure</button>
+          <button class="btn btn-icon" aria-label="Settings">...</button>
+        </div>
+        <ul class="notes">
+          <li>Low-emphasis text action for cancel, revoke, and inline row actions.</li>
+          <li>The square icon button is a separate utility token.</li>
+        </ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Editor actions</h3><span class="source">ideas</span></div>
+        <div class="canvas">
+          <button class="btn btn-ghost">Cancel</button>
+          <button class="btn btn-danger">Archive</button>
+          <button class="btn btn-primary">Save</button>
+        </div>
+        <ul class="notes">
+          <li>The standard ghost / danger / primary trio inside an editor.</li>
+          <li>Only layout differs — e.g. a destructive action sitting on the left.</li>
+        </ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Danger action</h3><span class="source">settings/ideas</span></div>
+        <div class="canvas">
+          <button class="btn btn-danger">Delete workspace</button>
+          <button class="btn btn-danger">Archive</button>
+        </div>
+        <ul class="notes">
+          <li>Transparent red outline with an error-tinted background on hover.</li>
+          <li>Use for destructive actions like delete or archive.</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section class="cluster" id="close">
+    <div class="cluster-head">
+      <div>
+        <h2>Close Buttons</h2>
+        <p>One 40px square close control with a Unicode cross, used across popups, modals, and detail panels. Placement stays contextual.</p>
+      </div>
+    </div>
+    <div class="specimens">
+      <article class="specimen">
+        <div class="specimen-title"><h3>Shared close control</h3><span class="source">board/ideas/settings</span></div>
+        <div class="canvas">
+          <button class="close-btn" aria-label="Close">×</button>
+          <span class="source">40px / radius-md / Unicode ×</span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="cluster" id="fields">
+    <div class="cluster-head">
+      <div>
+        <h2>Input Fields</h2>
+        <p>One-line controls share a 36px / radius-md shell — text inputs, the search box, inline compose, and the numeric stepper. Textareas keep the same shell with adjustable height.</p>
+      </div>
+    </div>
+    <div class="specimens">
+      <article class="specimen">
+        <div class="specimen-title"><h3>Standard form input</h3><span class="source">settings/board modal</span></div>
+        <div class="canvas stack">
+          <label class="form-label">Workspace name</label>
+          <input class="form-input form-input-sm" value="Axis Love">
+          <label class="form-label">Webhook URL</label>
+          <input class="form-input" placeholder="https://hooks.slack.com/services/...">
+        </div>
+        <ul class="notes">
+          <li>radius-md shell at a 36px one-line height.</li>
+          <li>.form-input-sm only caps max-width — a layout utility, not a separate variant.</li>
+        </ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Textareas</h3><span class="source">board/ideas</span></div>
+        <div class="canvas stack">
+          <textarea class="form-input" style="min-height:76px" placeholder="What needs to happen..."></textarea>
+          <textarea class="editor-textarea" placeholder="What should be remembered or explored?"></textarea>
+        </div>
+        <ul class="notes">
+          <li>Same colors and focus; only min-height and padding differ slightly.</li>
+          <li>Textareas share radius-md while preserving adjustable height.</li>
+        </ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Search box</h3><span class="source">board</span></div>
+        <div class="canvas">
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input placeholder="Search tasks...">
+          </div>
+        </div>
+        <ul class="notes">
+          <li>The reference geometry for one-line controls: radius-md, 36px tall.</li>
+          <li>Its search-specific icon and surface background remain contextual.</li>
+        </ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Inline compose field</h3><span class="source">board detail</span></div>
+        <div class="canvas stack">
+          <div class="note-compose">
+            <input placeholder="Add a note...">
+            <button class="btn btn-secondary">Add note</button>
+          </div>
+        </div>
+        <ul class="notes">
+          <li>A field group with an embedded action, not a separate input style.</li>
+        </ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Numeric stepper</h3><span class="source">board modal</span></div>
+        <div class="canvas">
+          <div class="priority-counter" style="width:260px">
+            <button type="button" aria-label="Decrease priority">
+              <svg viewBox="0 0 14 14" fill="none"><path d="M3 7h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+            <input type="number" value="500">
+            <button type="button" aria-label="Increase priority">
+              <svg viewBox="0 0 14 14" fill="none"><path d="M3 7h8M7 3v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+        </div>
+        <ul class="notes">
+          <li>This is a field group with mono center input and side icon buttons.</li>
+          <li>Now shares radius-md and 36px geometry with the search shell.</li>
+          <li>Keep counter-specific internal icon-button layout.</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section class="cluster" id="selects">
+    <div class="cluster-head">
+      <div>
+        <h2>Selects and Dropdowns</h2>
+        <p>One animated custom select for every context: trigger, caret rotation, absolute menu, selected option, full keyboard handling, and outside-click close.</p>
+      </div>
+    </div>
+    <div class="specimens">
+      <article class="specimen">
+        <div class="specimen-title"><h3>Custom select trigger</h3><span class="source">board/ideas</span></div>
+        <div class="canvas stack" style="min-height:250px">
+          <div class="flow-select" data-flow-select style="max-width:280px">
+            <button class="flow-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="flow-select-value">All projects</span>
+              <svg class="flow-select-caret" viewBox="0 0 12 12" aria-hidden="true"><path fill="currentColor" d="M6 8L1 3h10z"/></svg>
+            </button>
+            <input type="hidden" name="library-project" value="">
+            <div class="flow-select-menu" role="listbox">
+              <button class="flow-select-option is-selected" type="button" role="option" aria-selected="true" data-value="">All projects</button>
+              <button class="flow-select-option" type="button" role="option" aria-selected="false" data-value="Flow">Flow</button>
+              <button class="flow-select-option" type="button" role="option" aria-selected="false" data-value="Lore">Lore</button>
+            </div>
+          </div>
+        </div>
+        <ul class="notes">
+          <li>Click the trigger to inspect the real open/close animation.</li>
+          <li>This is the expanded idea-card editor implementation, adopted everywhere.</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section class="cluster" id="cards">
+    <div class="cluster-head">
+      <div>
+        <h2>Cards and Surfaces</h2>
+        <p>Task cards and idea cards share one card surface: the same elevated shell, radius, outline, hover lift, project pill, title slot, bottom row, and rose avatar. Their extra content remains optional.</p>
+      </div>
+    </div>
+    <div class="specimens">
+      <article class="specimen">
+        <div class="specimen-title"><h3>Regular card surface</h3><span class="source">board + ideas</span></div>
+        <div class="canvas">
+          <div class="card-preview-column">
+            <article class="surface-card">
+              <div class="surface-card-top"><span class="project-tag">flow</span><span class="task-id">BOARD-REALTIME-01</span><span class="priority-dots"><span class="dot filled"></span><span class="dot filled"></span><span class="dot filled"></span></span></div>
+              <div class="surface-card-title">Add live board updates for card/status changes</div>
+              <div class="surface-card-description">Depends on WEB-UI-REVIEW-01</div>
+              <div class="card-deps"><span class="dep-arrow">↓</span> WEB-UI-REVIEW-01</div>
+              <div class="surface-card-footer"><span class="surface-card-date">2026-05-28</span></div>
+              <span class="surface-card-avatar" title="cybercream">C</span>
+            </article>
+          </div>
+        </div>
+        <ul class="notes"><li>Base shell for both task and idea content models. The middle slot can hold dependencies, a description, or nothing.</li></ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Human-required state</h3><span class="source">board</span></div>
+        <div class="canvas">
+          <div class="card-preview-column">
+            <article class="surface-card is-human">
+              <div class="surface-card-top"><span class="project-tag">lore</span><span class="task-id">L-EXTR-H01</span><span class="human-badge">Human</span></div>
+              <div class="surface-card-title">Decide which extraction model should power the first production pass</div>
+              <div class="surface-card-description">Same card shell with the human-required warning treatment layered on top.</div>
+              <div class="surface-card-footer"><span class="surface-card-date">2026-05-28</span></div>
+              <span class="surface-card-avatar" title="nyx">N</span>
+            </article>
+          </div>
+        </div>
+        <ul class="notes"><li>Warning tint, border, glow, and badge are state modifiers.</li></ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>New idea state</h3><span class="source">ideas</span></div>
+        <div class="canvas">
+          <div class="card-preview-column">
+            <article class="surface-card is-new">
+              <div class="surface-card-mark">+</div>
+              <div class="surface-card-title">Add new idea</div>
+              <div class="surface-card-description">Capture a title, description, and project without leaving the wall.</div>
+              <div class="surface-card-footer"><span class="surface-card-date">NEW DRAFT</span></div>
+            </article>
+          </div>
+        </div>
+        <ul class="notes"><li>Dashed outline and plus mark are state modifiers; the shell stays shared.</li></ul>
+      </article>
+      <article class="specimen full">
+        <div class="specimen-title"><h3>Detail support surfaces</h3><span class="source">board detail</span></div>
+        <div class="canvas">
+          <div class="surface-preview-grid">
+            <div class="surface-preview-panel">
+              <div class="note-card note-accent">
+                <div class="note-header"><span class="note-author">Codex</span><span class="note-time">Just now</span></div>
+                <div class="note-body">Rose-left note accent for noteworthy updates.</div>
+              </div>
+            </div>
+            <div class="surface-preview-panel">
+              <div class="dep-item">
+                <span class="flow-chip dep-status status-done">done</span>
+                <div class="dep-body">
+                  <div class="dep-title"><span class="dep-id">F-P0</span><span class="dep-name">Agent Registry &amp; Dispatcher</span></div>
+                  <div class="dep-meta"><span class="dep-relation">blocks this task</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+      <article class="specimen full">
+        <div class="specimen-title"><h3>Rows and tables</h3><span class="source">settings/board detail</span></div>
+        <div class="canvas">
+          <div class="surface-preview-grid">
+            <div class="system-table">
+              <div class="system-row"><span class="system-label">Status</span><span class="flow-chip chip-warning">Todo</span></div>
+              <div class="system-row"><span class="system-label">Priority</span><span class="flow-chip chip-rose">980</span></div>
+            </div>
+            <div class="api-key-row">
+              <div class="api-key-name">Production</div>
+              <div class="api-key-value">fl_..............................</div>
+              <span class="api-key-role admin">admin</span>
+              <button class="btn btn-ghost">Revoke</button>
+            </div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="cluster" id="chips">
+    <div class="cluster-head">
+      <div>
+        <h2>Chips, Badges, Avatars, and Metadata</h2>
+        <p>One tone system — rose, neutral, positive, warning, error — shared by status chips, dependency statuses, and API roles. Tiny metadata pills and the human badge are tone variants at smaller sizes.</p>
+      </div>
+    </div>
+    <div class="specimens">
+      <article class="specimen">
+        <div class="specimen-title"><h3>Flow chips</h3><span class="source">board detail/brandbook</span></div>
+        <div class="canvas">
+          <span class="flow-chip chip-rose">980</span>
+          <span class="flow-chip chip-neutral">unclaimed</span>
+          <span class="flow-chip chip-positive">done</span>
+          <span class="flow-chip chip-warning">todo</span>
+          <span class="flow-chip chip-error">blocked</span>
+        </div>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Tiny metadata pills</h3><span class="source">board/ideas/settings</span></div>
+        <div class="canvas">
+          <span class="project-tag">flow</span>
+          <span class="project-name">girllm</span>
+          <span class="api-key-role admin">admin</span>
+          <span class="api-key-role read-only">read_only</span>
+          <span class="human-badge">Human</span>
+        </div>
+        <ul class="notes">
+          <li>Project tags and idea project-names share the same tiny uppercase pill.</li>
+          <li>API role pills use the same language with tighter horizontal padding.</li>
+        </ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Avatars</h3><span class="source">board/ideas</span></div>
+        <div class="canvas">
+          <span class="agent-avatar" style="position:static">N</span>
+          <span class="author" style="position:static">C</span>
+          <span class="source">Both are 22px rose initial circles</span>
+        </div>
+        <ul class="notes">
+          <li>One 22px rose initial circle — the shared avatar for agents and authors.</li>
+        </ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Priority dots</h3><span class="source">board</span></div>
+        <div class="canvas">
+          <span class="priority-dots"><span class="dot filled"></span><span class="dot filled"></span><span class="dot filled"></span></span>
+          <span class="priority-dots"><span class="dot filled"></span><span class="dot"></span><span class="dot"></span></span>
+          <span class="priority-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+        </div>
+        <ul class="notes">
+          <li>A priority signal, not a chip — dots fill by weight.</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section class="cluster" id="filters">
+    <div class="cluster-head">
+      <div>
+        <h2>Pills, Tabs, and Segmented Filters</h2>
+        <p>Desktop filter pills and mobile column tabs are visually the same rose-active pill pattern with different font size and padding.</p>
+      </div>
+    </div>
+    <div class="specimens">
+      <article class="specimen">
+        <div class="specimen-title"><h3>Filter pills</h3><span class="source">board secondary bar</span></div>
+        <div class="canvas">
+          <button class="filter-pill active">All <span class="count">81</span></button>
+          <button class="filter-pill">Human required <span class="count">2</span></button>
+          <button class="filter-pill">Flow <span class="count">18</span></button>
+        </div>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Mobile tabs</h3><span class="source">board mobile</span></div>
+        <div class="canvas">
+          <button class="mobile-tab active">Backlog <span class="tab-count">41</span></button>
+          <button class="mobile-tab">Todo <span class="tab-count">15</span></button>
+          <button class="mobile-tab">Done <span class="tab-count">16</span></button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="cluster" id="navigation">
+    <div class="cluster-head">
+      <div>
+        <h2>Navigation Links</h2>
+        <p>Top navigation and settings sidebar links share muted default states and rose active states, but differ structurally: pill-ish top nav vs left-border sidebar.</p>
+      </div>
+    </div>
+    <div class="specimens">
+      <article class="specimen">
+        <div class="specimen-title"><h3>Top nav</h3><span class="source">settings</span></div>
+        <div class="canvas">
+          <a class="nav-link" href="#">Board</a>
+          <a class="nav-link" href="#">Dashboard</a>
+          <a class="nav-link active" href="#">Settings</a>
+        </div>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Sidebar nav</h3><span class="source">settings</span></div>
+        <div class="canvas stack">
+          <a class="sidebar-link active" href="#"><span>--</span> Workspace</a>
+          <a class="sidebar-link" href="#"><span>--</span> Agents</a>
+          <a class="sidebar-link" href="#"><span>--</span> API Keys</a>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="cluster" id="toggles">
+    <div class="cluster-head">
+      <div>
+        <h2>Toggles and Checks</h2>
+        <p>Settings toggles use a full switch component. Acceptance criteria in task detail uses square checks. Webhook event labels use toggle wrappers without the visible track.</p>
+      </div>
+    </div>
+    <div class="specimens">
+      <article class="specimen">
+        <div class="specimen-title"><h3>Switches</h3><span class="source">settings</span></div>
+        <div class="canvas">
+          <label class="toggle"><input type="checkbox" checked><span class="toggle-track"></span></label>
+          <label class="toggle"><input type="checkbox"><span class="toggle-track"></span></label>
+        </div>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Acceptance checks</h3><span class="source">board detail</span></div>
+        <div class="canvas stack">
+          <div class="ac-item"><div class="ac-check checked"><svg viewBox="0 0 16 16"><polyline points="3.5 8 7 11.5 12.5 4.5"/></svg></div><span>Board updates without page refresh.</span></div>
+          <div class="ac-item"><div class="ac-check"></div><span>Focus states remain visible.</span></div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="cluster" id="feedback">
+    <div class="cluster-head">
+      <div>
+        <h2>Feedback, Alerts, and Empty States</h2>
+        <p>Toasts, blocker banners, danger zones, note accents, and empty states all reuse surface plus status-color accents.</p>
+      </div>
+    </div>
+    <div class="specimens">
+      <article class="specimen">
+        <div class="specimen-title"><h3>Toast</h3><span class="source">board/ideas</span></div>
+        <div class="canvas stack">
+          <div class="toast">Copied task ID</div>
+          <div class="toast toast-success">Saved idea</div>
+        </div>
+        <ul class="notes">
+          <li>Board toast has success left border; ideas toast is neutral-only.</li>
+        </ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Blocker alert</h3><span class="source">board detail</span></div>
+        <div class="canvas stack">
+          <div class="blocker-banner active">
+            <svg class="blocker-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="8"/><line x1="10" y1="11" x2="10" y2="7"/><circle cx="10" cy="14" r="0.5" fill="currentColor"/></svg>
+            <div class="blocker-text">Human input is required before this task can move forward.</div>
+          </div>
+        </div>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Status-accent surfaces</h3><span class="source">settings/board detail</span></div>
+        <div class="canvas stack">
+          <div class="note-card note-blocker"><div class="note-body">Red left border note for blockers.</div></div>
+          <div class="danger-zone"><h3>Danger zone</h3><button class="btn btn-danger">Delete workspace</button></div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="cluster" id="motion">
+    <div class="cluster-head">
+      <div>
+        <h2>Motion</h2>
+        <p>Spring curves for physical movement, ease-out for polish. Three durations, two easings, and a small set of looping accents for live and featured states.</p>
+      </div>
+    </div>
+    <div class="specimens">
+      <article class="specimen">
+        <div class="specimen-title"><h3>Pulse</h3><span class="source">navPulse · 2s</span></div>
+        <div class="canvas"><div class="motion-swatch motion-pulse"></div></div>
+        <ul class="notes"><li>Breathing glow for live indicators and active nav. 2s loop, ease-in-out.</li></ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Glow pulse</h3><span class="source">motionGlow · 3s</span></div>
+        <div class="canvas"><div class="motion-swatch motion-glow">◆</div></div>
+        <ul class="notes"><li>Expanding box-shadow for featured cards and CTAs. 3s loop, builds hierarchy.</li></ul>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Float</h3><span class="source">floatY · 4s</span></div>
+        <div class="canvas"><div class="motion-swatch motion-float">▲</div></div>
+        <ul class="notes"><li>Gentle vertical drift for decorative motifs. Adds life without distraction.</li></ul>
+      </article>
+      <article class="specimen wide">
+        <div class="specimen-title"><h3>Durations &amp; easings</h3><span class="source">--duration-* · --ease-*</span></div>
+        <div class="canvas stack">
+          <div class="spec-list">
+            <div class="spec-row"><span class="spec-k">Duration · Fast</span><span class="spec-v">150ms — hover, color</span></div>
+            <div class="spec-row"><span class="spec-k">Duration · Base</span><span class="spec-v">250ms — card &amp; button transforms</span></div>
+            <div class="spec-row"><span class="spec-k">Duration · Slow</span><span class="spec-v">400ms — section transitions</span></div>
+            <div class="spec-row"><span class="spec-k">Easing · Spring</span><span class="spec-v">cubic-bezier(0.34, 1.56, 0.64, 1)</span></div>
+            <div class="spec-row"><span class="spec-k">Easing · Ease-out</span><span class="spec-v">cubic-bezier(0.16, 1, 0.3, 1)</span></div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="cluster" id="scrollbars">
+    <div class="cluster-head">
+      <div>
+        <h2>Scrollbars</h2>
+        <p>Custom scrollbar component — a real DOM track and thumb, no native pseudo-elements. Add a class to any scrollable container; the initializer hides the native bar and syncs a thin thumb. Scroll, drag the thumb, or click the track in the live panels below.</p>
+      </div>
+    </div>
+    <div class="specimens">
+      <article class="specimen">
+        <div class="specimen-title"><h3>Default · 4px</h3><span class="source">.flow-scroll</span></div>
+        <div class="canvas stack">
+          <div class="scroll-demo flow-scroll">
+            <div class="note-card">Always-visible 4px thumb</div>
+            <div class="note-card">Panels, modals, detail popups</div>
+            <div class="note-card">Drag the thumb to scroll</div>
+            <div class="note-card">Click the track to jump</div>
+            <div class="note-card">Syncs on scroll &amp; resize</div>
+            <div class="note-card">Built for dense dark surfaces</div>
+            <div class="note-card">Wheel &amp; keyboard friendly</div>
+            <div class="note-card">Last row</div>
+          </div>
+        </div>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Auto-hide</h3><span class="source">.flow-scroll-auto</span></div>
+        <div class="canvas stack">
+          <div class="scroll-demo flow-scroll flow-scroll-auto">
+            <div class="note-card">Thumb fades in on hover</div>
+            <div class="note-card">Clean by default</div>
+            <div class="note-card">Good for reading surfaces</div>
+            <div class="note-card">Reduces visual noise</div>
+            <div class="note-card">Reveals while scrolling</div>
+            <div class="note-card">Hides after idle</div>
+            <div class="note-card">Hover to reveal</div>
+            <div class="note-card">Last row</div>
+          </div>
+        </div>
+      </article>
+      <article class="specimen">
+        <div class="specimen-title"><h3>Hidden · horizontal</h3><span class="source">.flow-scroll-none</span></div>
+        <div class="canvas stack">
+          <div class="scroll-demo-x flow-scroll-none">
+            <span class="flow-chip chip-neutral">Design tokens</span>
+            <span class="flow-chip chip-neutral">Components</span>
+            <span class="flow-chip chip-neutral">Patterns</span>
+            <span class="flow-chip chip-neutral">Templates</span>
+            <span class="flow-chip chip-neutral">Guidelines</span>
+            <span class="flow-chip chip-neutral">Motion</span>
+            <span class="flow-chip chip-neutral">Color</span>
+            <span class="flow-chip chip-neutral">Spacing</span>
+          </div>
+          <ul class="notes"><li>No visible thumb; smooth wheel-to-horizontal. For mobile tabs and chip rows.</li></ul>
+        </div>
+      </article>
+    </div>
+  </section>
+</main>
+<script>
+function initFlowDropdowns(scope = document) {
+  scope.querySelectorAll('[data-flow-select]').forEach(dropdown => {
+    if (dropdown.dataset.ready === 'true') return;
+    dropdown.dataset.ready = 'true';
+    const trigger = dropdown.querySelector('.flow-select-trigger');
+    const options = Array.from(dropdown.querySelectorAll('.flow-select-option'));
+    trigger?.addEventListener('click', event => {
+      event.stopPropagation();
+      const shouldOpen = !dropdown.classList.contains('is-open');
+      closeFlowDropdowns(dropdown);
+      dropdown.classList.toggle('is-open', shouldOpen);
+      trigger.setAttribute('aria-expanded', String(shouldOpen));
+    });
+    trigger?.addEventListener('keydown', event => {
+      if (event.key === 'Escape') closeFlowDropdowns();
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        dropdown.classList.add('is-open');
+        trigger.setAttribute('aria-expanded', 'true');
+        (dropdown.querySelector('.flow-select-option.is-selected') || options[0])?.focus();
+      }
+    });
+    options.forEach(option => {
+      option.addEventListener('click', event => {
+        event.stopPropagation();
+        setFlowDropdownValue(dropdown, option.dataset.value || '', option.textContent.trim());
+        closeFlowDropdowns();
+      });
+      option.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+          closeFlowDropdowns();
+          trigger?.focus();
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          option.click();
+          trigger?.focus();
+        }
+      });
+    });
+  });
+}
+function setFlowDropdownValue(dropdown, value, label) {
+  dropdown.querySelector('.flow-select-value').textContent = label;
+  const input = dropdown.querySelector('input[type="hidden"]');
+  if (input) input.value = value;
+  dropdown.querySelectorAll('.flow-select-option').forEach(option => {
+    const selected = (option.dataset.value || '') === value;
+    option.classList.toggle('is-selected', selected);
+    option.setAttribute('aria-selected', String(selected));
+  });
+}
+function closeFlowDropdowns(except) {
+  document.querySelectorAll('[data-flow-select].is-open').forEach(dropdown => {
+    if (dropdown === except) return;
+    dropdown.classList.remove('is-open');
+    dropdown.querySelector('.flow-select-trigger')?.setAttribute('aria-expanded', 'false');
+  });
+}
+document.addEventListener('click', () => closeFlowDropdowns());
+initFlowDropdowns();
+
+/* ─── Custom scrollbar (.flow-scroll) — real DOM track + thumb ─── */
+(function() {
+  'use strict';
+  var sbTweaks = { trackInset: 6, trackTop: 9, trackBottom: 9, thumbMin: 10, thumbSize: 4 };
+
+  function initCustomScrollbar(el) {
+    var isAuto = el.classList.contains('flow-scroll-auto');
+    var style = getComputedStyle(el);
+    var hasVertical = style.overflowY === 'auto' || style.overflowY === 'scroll';
+    var hasHorizontal = style.overflowX === 'auto' || style.overflowX === 'scroll';
+    if (!hasVertical && !hasHorizontal) return;
+    if (el.closest('.flow-scroll-wrapper')) return;
+
+    var wrapper = document.createElement('div');
+    wrapper.className = 'flow-scroll-wrapper';
+    wrapper.setAttribute('data-mode', isAuto ? 'auto' : 'always');
+    wrapper.setAttribute('data-visible', 'false');
+    el.parentNode.insertBefore(wrapper, el);
+    wrapper.appendChild(el);
+
+    var tracks = [];
+    if (hasVertical) tracks.push(createTrack(wrapper, el, 'y'));
+    if (hasHorizontal) tracks.push(createTrack(wrapper, el, 'x'));
+
+    function updateAll() { tracks.forEach(function(t) { t.update(); }); }
+
+    el.addEventListener('scroll', function() {
+      updateAll();
+      if (!isAuto) return;
+      wrapper.setAttribute('data-visible', 'true');
+      clearTimeout(el._scrollHideTimer);
+      el._scrollHideTimer = setTimeout(function() { wrapper.setAttribute('data-visible', 'false'); }, 800);
+    }, { passive: true });
+
+    var ro = new ResizeObserver(function() { updateAll(); });
+    ro.observe(el);
+    updateAll();
+  }
+
+  function createTrack(wrapper, el, axis) {
+    var track = document.createElement('div');
+    track.className = 'flow-scrollbar-track';
+    track.setAttribute('data-axis', axis);
+    var thumb = document.createElement('div');
+    thumb.className = 'flow-scrollbar-thumb';
+    thumb.setAttribute('data-dragging', 'false');
+    track.appendChild(thumb);
+    wrapper.appendChild(track);
+
+    var isVertical = axis === 'y';
+    function getScrollSize() { return isVertical ? el.scrollHeight : el.scrollWidth; }
+    function getClientSize() { return isVertical ? el.clientHeight : el.clientWidth; }
+    function getScrollPos() { return isVertical ? el.scrollTop : el.scrollLeft; }
+    function getTrackSize() { return isVertical ? track.clientHeight : track.clientWidth; }
+    function setScrollPos(val) { if (isVertical) { el.scrollTop = val; } else { el.scrollLeft = val; } }
+
+    function update() {
+      var scrollSize = getScrollSize(), clientSize = getClientSize();
+      if (scrollSize <= clientSize) { track.style.display = 'none'; return; }
+      track.style.display = '';
+      var trackSize = getTrackSize();
+      var ratio = clientSize / scrollSize;
+      var thumbSize = Math.max(sbTweaks.thumbMin, Math.round(trackSize * ratio));
+      var maxScroll = scrollSize - clientSize;
+      var maxThumbOffset = trackSize - thumbSize;
+      var thumbOffset = maxScroll > 0 ? (getScrollPos() / maxScroll) * maxThumbOffset : 0;
+      if (isVertical) {
+        thumb.style.height = thumbSize + 'px'; thumb.style.top = thumbOffset + 'px'; thumb.style.width = sbTweaks.thumbSize + 'px';
+      } else {
+        thumb.style.width = thumbSize + 'px'; thumb.style.left = thumbOffset + 'px'; thumb.style.height = sbTweaks.thumbSize + 'px';
+      }
+    }
+
+    var isDragging = false, dragStart = 0, dragStartScroll = 0;
+    thumb.addEventListener('mousedown', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      isDragging = true;
+      dragStart = isVertical ? e.clientY : e.clientX;
+      dragStartScroll = getScrollPos();
+      thumb.setAttribute('data-dragging', 'true');
+      document.body.style.userSelect = 'none';
+    });
+    document.addEventListener('mousemove', function(e) {
+      if (!isDragging) return;
+      e.preventDefault();
+      var current = isVertical ? e.clientY : e.clientX;
+      var delta = current - dragStart;
+      var trackSize = getTrackSize(), scrollSize = getScrollSize(), clientSize = getClientSize();
+      var thumbSize = Math.max(sbTweaks.thumbMin, Math.round(trackSize * (clientSize / scrollSize)));
+      var maxThumbOffset = trackSize - thumbSize, maxScroll = scrollSize - clientSize;
+      if (maxThumbOffset > 0 && maxScroll > 0) setScrollPos(dragStartScroll + (delta / maxThumbOffset) * maxScroll);
+    });
+    document.addEventListener('mouseup', function() {
+      if (!isDragging) return;
+      isDragging = false;
+      thumb.setAttribute('data-dragging', 'false');
+      document.body.style.userSelect = '';
+    });
+    track.addEventListener('mousedown', function(e) {
+      if (e.target === thumb) return;
+      e.preventDefault();
+      var trackRect = track.getBoundingClientRect();
+      var clickPos = isVertical ? e.clientY - trackRect.top : e.clientX - trackRect.left;
+      var trackSize = getTrackSize(), scrollSize = getScrollSize(), clientSize = getClientSize();
+      var thumbSize = Math.max(sbTweaks.thumbMin, Math.round(trackSize * (clientSize / scrollSize)));
+      var maxThumbOffset = trackSize - thumbSize, maxScroll = scrollSize - clientSize;
+      var thumbOffset = Math.max(0, Math.min(maxThumbOffset, clickPos - thumbSize / 2));
+      if (maxThumbOffset > 0 && maxScroll > 0) setScrollPos((thumbOffset / maxThumbOffset) * maxScroll);
+    });
+    return { update: update };
+  }
+
+  document.querySelectorAll('.flow-scroll').forEach(initCustomScrollbar);
+
+  document.querySelectorAll('.flow-scroll-none').forEach(function(el) {
+    var style = getComputedStyle(el);
+    if (style.overflowX !== 'auto' && style.overflowX !== 'scroll') return;
+    var targetScroll = el.scrollLeft, currentScroll = targetScroll, isActive = false;
+    function tick() {
+      var diff = targetScroll - currentScroll;
+      if (Math.abs(diff) < 0.5) { currentScroll = targetScroll; el.scrollLeft = currentScroll; isActive = false; return; }
+      currentScroll += diff * 0.15; el.scrollLeft = currentScroll; requestAnimationFrame(tick);
+    }
+    el.addEventListener('wheel', function(e) {
+      if (Math.abs(e.deltaX) < 1 && Math.abs(e.deltaY) > 0) {
+        e.preventDefault();
+        targetScroll += e.deltaY;
+        targetScroll = Math.max(0, Math.min(targetScroll, el.scrollWidth - el.clientWidth));
+        if (!isActive) { isActive = true; currentScroll = el.scrollLeft; requestAnimationFrame(tick); }
+      }
+    }, { passive: false });
+  });
+})();
+</script>
+</body>
+</html>
