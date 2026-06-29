@@ -35,8 +35,7 @@ from pathlib import Path
 # --- wire up the bundled Python SDK ----------------------------------------
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "sdk" / "python"))
-from lore_sdk import MemoryProvider  # noqa: E402  (after sys.path tweak)
-from lore_sdk import LoreClient      # noqa: E402
+from lore_sdk import LoreClient, MemoryProvider  # noqa: E402  (imported after the sys.path tweak above)
 
 BASE = os.environ.get("LORE_BASE_URL", "https://lore.axis.love").rstrip("/")
 KEY = os.environ.get("LORE_API_KEY", "").strip()
@@ -79,7 +78,7 @@ def main() -> int:
         cap_id = mem.capture(memory_text=text, lane="ops",
                              metadata={"confidence": "high", "source_task": MARK})
         record("1. capture", bool(cap_id), str(cap_id))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         record("1. capture", False, repr(e))
         return _summary()
 
@@ -127,7 +126,7 @@ def main() -> int:
         try:
             ack = mem.acknowledge_recall(ids[:3])
             record("5. ack recall", True, f"acked {len(ids[:3])} -> {json.dumps(ack)[:120]}")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             record("5. ack recall", False, repr(e))
     else:
         record("5. ack recall", False, "no candidate_ids to ack (recall returned nothing)")
@@ -138,7 +137,7 @@ def main() -> int:
         s = client.search("memory backend", limit=3)
         hits = s.get("hits", s.get("results", [])) if isinstance(s, dict) else s
         record("6a. search", bool(hits), f"hits={len(hits) if hits else 0}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         record("6a. search", False, repr(e))
     status, rag = http("POST", "/api/rag/retrieve-expanded",
                        {"query": "how does agent memory recall ranking work", "limit": 3})
@@ -157,7 +156,7 @@ def main() -> int:
                isinstance(legacy, dict),
                "NOTE: the Hermes plugin uses POST /api/capture + page search, "
                "NOT /api/memory/recall — it does not use the new ledger loop.")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         record("7. legacy capture (Hermes plugin path)", False, repr(e))
 
     return _summary()
