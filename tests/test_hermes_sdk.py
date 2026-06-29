@@ -243,9 +243,7 @@ def test_authenticated_hermes_capture_recall_ack_loop(tmp_path):
         assert recalled["count"] >= 1
         claim = next(claim for claim in recalled["claims"] if claim["actor"] == "nyx")
 
-        acknowledged = json.loads(
-            provider.handle_tool_call("lore_ack", {"candidate_ids": [claim["candidate_id"]]})
-        )
+        acknowledged = json.loads(provider.handle_tool_call("lore_ack", {"candidate_ids": [claim["candidate_id"]]}))
         assert acknowledged["acknowledged_count"] == 1
 
         after_ack = json.loads(

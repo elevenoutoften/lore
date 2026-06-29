@@ -125,7 +125,10 @@ def test_recall_claims_ranks_query_relevance_first(tmp_path):
 def test_recall_claims_abstains_when_query_has_no_match(tmp_path):
     ledger = LedgerDB(tmp_path / "ledger.db")
     ledger.initialize()
-    _seed(ledger, [ExtractedClaim(subject="services/lore", predicate="is", object="an agent memory backend", confidence="high")])
+    _seed(
+        ledger,
+        [ExtractedClaim(subject="services/lore", predicate="is", object="an agent memory backend", confidence="high")],
+    )
 
     results = ledger.recall_claims(
         query="zzzmarsupial quokkanebula anchorless",

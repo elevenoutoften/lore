@@ -320,7 +320,9 @@ def test_edge_to_missing_target_is_traversable_placeholder(client):
             processed_at="2026-05-01T00:00:00+00:00",
         )
     )
-    claims = ledger.get_candidates(candidate_type="claim", statuses=("candidate", "active"), limit=10000, max_rows=10000)
+    claims = ledger.get_candidates(
+        candidate_type="claim", statuses=("candidate", "active"), limit=10000, max_rows=10000
+    )
     claim_id = next(c["candidate_id"] for c in claims if c["batch_id"] == "batch-missing-target")
     claim_node_id = f"candidate:{claim_id}"
 

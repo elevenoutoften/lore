@@ -91,9 +91,7 @@ stale_after: 2020-01-01
         assert after["strength"] < before["strength"]
 
         captures = [
-            p
-            for p in app.state.repository.list_pages(kind="capture")
-            if p.title.startswith("Heartbeat audit:")
+            p for p in app.state.repository.list_pages(kind="capture") if p.title.startswith("Heartbeat audit:")
         ]
         assert captures, "maintenance tick should emit at least one heartbeat capture"
 

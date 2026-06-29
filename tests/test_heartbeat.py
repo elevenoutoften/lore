@@ -38,9 +38,7 @@ stale_after: 2020-01-01
     assert response.status_code == 200, response.text
     payload = response.json()
 
-    stale = [
-        item for item in payload["stale_pages"]["items"] if item["page_id"] == "runbooks/days-stale-runbook"
-    ]
+    stale = [item for item in payload["stale_pages"]["items"] if item["page_id"] == "runbooks/days-stale-runbook"]
     assert len(stale) == 1
     # Pre-fix days_stale was hardcoded 0 and stale_after was blank.
     assert stale[0]["days_stale"] > 0

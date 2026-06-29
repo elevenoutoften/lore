@@ -72,12 +72,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # would silently lock out every already-working trusted-proxy deployment on
         # upgrade). Public sources are still rejected, so the escalation spoof the
         # explicit-proof check closed stays closed.
-        self.proxy_origin_defaulted = bool(
-            trusted_proxy_auth and not trusted_proxy_secret and not explicit_cidrs
-        )
-        source_cidrs = explicit_cidrs or (
-            list(DEFAULT_TRUSTED_PROXY_CIDRS) if self.proxy_origin_defaulted else []
-        )
+        self.proxy_origin_defaulted = bool(trusted_proxy_auth and not trusted_proxy_secret and not explicit_cidrs)
+        source_cidrs = explicit_cidrs or (list(DEFAULT_TRUSTED_PROXY_CIDRS) if self.proxy_origin_defaulted else [])
         self.trusted_proxy_networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
         for cidr in source_cidrs:
             try:

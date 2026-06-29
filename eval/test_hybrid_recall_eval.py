@@ -51,11 +51,7 @@ def total_query_count(corpus: dict[str, Any]) -> int:
 
 
 def corpus_case_types(corpus: dict[str, Any]) -> set[str]:
-    return {
-        str(entry["case_type"])
-        for section in ("hybrid_queries", "recall_queries")
-        for entry in corpus[section]
-    }
+    return {str(entry["case_type"]) for section in ("hybrid_queries", "recall_queries") for entry in corpus[section]}
 
 
 def parse_eval_now(value: str | None) -> datetime | None:
@@ -281,10 +277,7 @@ def test_hybrid_retrieve_expanded_eval_gate(hybrid_eval_runtime: dict[str, Any])
             if abstained:
                 recall_hits += 1
             status = "OK" if abstained else "MISS"
-            print(
-                f"  {status} [{entry['case_type']}] {entry['id']}: "
-                f"results={len(results)} :: {entry['expectation']}"
-            )
+            print(f"  {status} [{entry['case_type']}] {entry['id']}: results={len(results)} :: {entry['expectation']}")
             continue
 
         rank = first_expected_page_rank(results, entry["expected_page_ids"])
@@ -354,10 +347,7 @@ def test_recall_claims_eval_gate(hybrid_eval_runtime: dict[str, Any]) -> None:
             if abstained:
                 recall_hits += 1
             status = "OK" if abstained else "MISS"
-            print(
-                f"  {status} [{entry['case_type']}] {entry['id']}: "
-                f"results={len(results)} :: {entry['expectation']}"
-            )
+            print(f"  {status} [{entry['case_type']}] {entry['id']}: results={len(results)} :: {entry['expectation']}")
             continue
 
         rank = first_expected_claim_rank(results, expected_candidate_ids)

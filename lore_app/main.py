@@ -137,9 +137,7 @@ def run_maintenance_tick(app: FastAPI) -> None:
         ledger = state.ledger_db
 
         try:
-            captures = emit_heartbeat_captures(
-                repo, config=state.lint_config, graph=state.graph_cache.get(repo)
-            )
+            captures = emit_heartbeat_captures(repo, config=state.lint_config, graph=state.graph_cache.get(repo))
             for capture in captures:
                 state.metrics.increment_index_size()
                 state.search_index.upsert_page_from_detail(capture)

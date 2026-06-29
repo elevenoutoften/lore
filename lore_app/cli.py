@@ -102,9 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     key_sub = p_key.add_subparsers(dest="key_command")
     p_key_create = key_sub.add_parser("create", help="Create an API key and print its token once")
     p_key_create.add_argument("--name", required=True, help="Human-readable key name")
-    p_key_create.add_argument(
-        "--role", default="admin", choices=list(API_KEY_ROLES), help="Key role (default: admin)"
-    )
+    p_key_create.add_argument("--role", default="admin", choices=list(API_KEY_ROLES), help="Key role (default: admin)")
     p_key_create.add_argument("--description", default="", help="Optional description")
 
     args = parser.parse_args(argv)
@@ -406,10 +404,7 @@ def cmd_verify(input_file: str) -> int:
         return 1
     databases = backup.get("databases") or {}
     if int(manifest.get("version") or 1) >= 2:
-        print(
-            f"Backup verified: {actual_count} pages, {len(databases)} database(s), "
-            f"version {manifest.get('version')}"
-        )
+        print(f"Backup verified: {actual_count} pages, {len(databases)} database(s), version {manifest.get('version')}")
     else:
         print(f"Backup verified: {actual_count} pages, version {manifest.get('version')}")
     return 0

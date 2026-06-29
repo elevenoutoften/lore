@@ -42,6 +42,7 @@ logger = logging.getLogger("lore.mcp")
 
 router = APIRouter()
 
+
 @router.post("/mcp")
 async def mcp(
     request: Request,

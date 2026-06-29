@@ -286,7 +286,5 @@ def test_get_candidates_max_rows_lifts_default_clamp(tmp_path):
     # External callers keep the protective 500-row clamp even with a huge limit.
     assert len(ledger.get_candidates(candidate_type="claim", limit=10000)) == 500
     # Internal graph/RAG callers can scan past it with max_rows.
-    uncapped = ledger.get_candidates(
-        candidate_type="claim", statuses=("candidate", "active"), limit=600, max_rows=600
-    )
+    uncapped = ledger.get_candidates(candidate_type="claim", statuses=("candidate", "active"), limit=600, max_rows=600)
     assert len(uncapped) > 500

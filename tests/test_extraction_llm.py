@@ -589,10 +589,7 @@ def test_llm_prompt_anchors_relative_dates_to_capture_observed_at(tmp_path):
         summary="Lore updated billing yesterday and started the rollout last week.",
         suggested_target_page="services/lore",
         observed_at="2026-05-26T15:00:00+00:00",
-        body=(
-            "Yesterday Lore switched to the new billing flow. "
-            "The rollout started last week."
-        ),
+        body=("Yesterday Lore switched to the new billing flow. The rollout started last week."),
     )
     capture = repo.read_page(capture_id)
     assert capture is not None

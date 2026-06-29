@@ -121,7 +121,9 @@ class LoreConfig:
             "off",
         )
         self.claim_forget_after_floor_days: int = int(os.environ.get("LORE_CLAIM_FORGET_AFTER_FLOOR_DAYS", "30"))
-        self.vector_reconcile_interval_seconds: int = int(os.environ.get("LORE_VECTOR_RECONCILE_INTERVAL_SECONDS", "300"))
+        self.vector_reconcile_interval_seconds: int = int(
+            os.environ.get("LORE_VECTOR_RECONCILE_INTERVAL_SECONDS", "300")
+        )
         # In-process maintenance scheduler (heartbeat self-audit + ledger decay +
         # distillation). Opt-in: a default install with no external cron otherwise
         # never decays claims or emits heartbeat captures. Default interval daily.

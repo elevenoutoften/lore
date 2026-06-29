@@ -980,14 +980,18 @@ class LedgerDB:
         cutoff = (now_dt - timedelta(days=floor_days)).isoformat()
         actor_clause = " AND actor = ?" if actor else ""
         params: tuple[Any, ...] = (
-            DEFAULT_CLAIM_DECAY_FLOOR,
-            DEFAULT_CLAIM_DECAY_FLOOR,
-            cutoff,
-            actor,
-        ) if actor else (
-            DEFAULT_CLAIM_DECAY_FLOOR,
-            DEFAULT_CLAIM_DECAY_FLOOR,
-            cutoff,
+            (
+                DEFAULT_CLAIM_DECAY_FLOOR,
+                DEFAULT_CLAIM_DECAY_FLOOR,
+                cutoff,
+                actor,
+            )
+            if actor
+            else (
+                DEFAULT_CLAIM_DECAY_FLOOR,
+                DEFAULT_CLAIM_DECAY_FLOOR,
+                cutoff,
+            )
         )
         with self._lock:
             rows = self.connection.execute(
@@ -1117,7 +1121,9 @@ class LedgerDB:
                 )
                 new_strength = max(decay_floor, old_strength * (0.995**days))
                 last_decayed_at = (
-                    str(row["last_decayed_at"]) if old_strength <= decay_floor and row["last_decayed_at"] else now.isoformat()
+                    str(row["last_decayed_at"])
+                    if old_strength <= decay_floor and row["last_decayed_at"]
+                    else now.isoformat()
                 )
                 stored_floor = decay_floor if decay_floor > DEFAULT_CLAIM_DECAY_FLOOR else None
 

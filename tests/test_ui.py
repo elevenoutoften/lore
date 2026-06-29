@@ -197,7 +197,18 @@ def test_nav_separates_read_and_operate(client):
     the shared _nav.html partial via an SSR operator page that still includes it.
     """
     nav = client.get("/heartbeat").text
-    for href in ("/", "/search", "/graph", "/captures", "/procedures", "/heartbeat", "/lint", "/rag", "/api-keys", "/settings"):
+    for href in (
+        "/",
+        "/search",
+        "/graph",
+        "/captures",
+        "/procedures",
+        "/heartbeat",
+        "/lint",
+        "/rag",
+        "/api-keys",
+        "/settings",
+    ):
         assert f'href="{href}"' in nav, href
     assert 'aria-label="Read"' in nav
     assert 'aria-label="Operate"' in nav

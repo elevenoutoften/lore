@@ -126,6 +126,4 @@ def test_typescript_sdk_readme_imports_match_package_name():
     imports = re.findall(r'from\s+"([^"]+)"', readme)
     sdk_imports = [i for i in imports if not i.startswith(".") and "node:" not in i]
     for imp in sdk_imports:
-        assert imp in valid_imports, (
-            f"README imports '{imp}' but package.json exposes {sorted(valid_imports)}"
-        )
+        assert imp in valid_imports, f"README imports '{imp}' but package.json exposes {sorted(valid_imports)}"

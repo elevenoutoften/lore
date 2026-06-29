@@ -186,16 +186,12 @@ def main(argv: list[str] | None = None) -> int:
     print("Lore concurrent write benchmark")
     print("===============================")
     print(f"writes={metrics.requested_writes} max_workers={metrics.max_workers}")
+    print(f"success={metrics.success_count} retries={metrics.retry_count} failures={metrics.failure_count}")
     print(
-        f"success={metrics.success_count} retries={metrics.retry_count} failures={metrics.failure_count}"
+        f"persisted ledger={metrics.ledger_candidates} search={metrics.search_hits} markdown={metrics.markdown_pages}"
     )
     print(
-        f"persisted ledger={metrics.ledger_candidates} "
-        f"search={metrics.search_hits} markdown={metrics.markdown_pages}"
-    )
-    print(
-        f"latency p50={metrics.p50_ms}ms p99={metrics.p99_ms}ms "
-        f"max={metrics.max_ms}ms elapsed={metrics.elapsed_ms}ms"
+        f"latency p50={metrics.p50_ms}ms p99={metrics.p99_ms}ms max={metrics.max_ms}ms elapsed={metrics.elapsed_ms}ms"
     )
     if metrics.failures:
         print("failures:")

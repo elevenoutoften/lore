@@ -269,7 +269,9 @@ def test_close_releases_all_thread_connections(tmp_path):
         warnings.simplefilter("always")
         ledger.close()
         gc.collect()
-    db_warnings = [w for w in caught if issubclass(w.category, ResourceWarning) and "database" in str(w.message).lower()]
+    db_warnings = [
+        w for w in caught if issubclass(w.category, ResourceWarning) and "database" in str(w.message).lower()
+    ]
     assert not db_warnings, f"close() leaked an unclosed database: {[str(w.message) for w in db_warnings]}"
 
     closed.set()

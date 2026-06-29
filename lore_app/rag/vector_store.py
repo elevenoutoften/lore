@@ -450,9 +450,7 @@ class VectorStore:
 
     def page_scopes(self) -> dict[str, tuple[str | None, str | None]]:
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT page_id, MAX(actor), MAX(lane) FROM chunks GROUP BY page_id"
-            ).fetchall()
+            rows = self._conn.execute("SELECT page_id, MAX(actor), MAX(lane) FROM chunks GROUP BY page_id").fetchall()
         return {str(page_id): (actor, lane) for page_id, actor, lane in rows}
 
     def record_pending_reindex(self, page_id: str, reason: str) -> None:

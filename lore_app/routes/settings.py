@@ -225,9 +225,7 @@ def api_run_maintenance_now(
     from ..main import run_maintenance_tick
 
     app = request.app
-    threading.Thread(
-        target=run_maintenance_tick, args=(app,), name="lore-maintenance-run-now", daemon=True
-    ).start()
+    threading.Thread(target=run_maintenance_tick, args=(app,), name="lore-maintenance-run-now", daemon=True).start()
     logger.info("Maintenance run-now dispatched")
     base = _maintenance_settings_response(app, settings_store)
     return MaintenanceRunNowResponse(**base.model_dump(), started=True)

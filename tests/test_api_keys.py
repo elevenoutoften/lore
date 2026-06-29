@@ -142,9 +142,7 @@ def test_bearer_mode_global_secret_operator_is_admin(content_dir, search_db):
 
 def test_insecure_none_bind_denies_nonloopback_admin(content_dir, search_db):
     """auth='none' on a non-loopback bind must not hand admin to a non-loopback client."""
-    with _configured_client(
-        content_dir, search_db, auth_mode="none", host="0.0.0.0", allow_insecure_bind=True
-    ) as c:
+    with _configured_client(content_dir, search_db, auth_mode="none", host="0.0.0.0", allow_insecure_bind=True) as c:
         # TestClient is a non-loopback client ("testclient"); the open none-mode bypass
         # must not apply, or any network client could mint keys / rewrite settings.
         assert c.post("/api/api-keys", json={"name": "evil", "role": "admin"}).status_code == 401
