@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from ..deps import get_ledger_db
+from ..deps import get_context_graph_cache, get_ledger_db
 from ..extraction import compute_extraction_hash
 from ..route_utils import actor_from_request, recall_actor_scope, value_error_to_http
 from ..schemas import (
@@ -17,8 +17,10 @@ from ..schemas import (
     LedgerReinforceRequest,
     LedgerSupersedeRequest,
 )
+from .api_keys import require_lore_key_admin
 
 if TYPE_CHECKING:
+    from ..context_graph import ContextGraphCache
     from ..ledger import LedgerDB
 
 ledger_router = APIRouter(prefix="/api/ledger", tags=["ledger"])
@@ -131,6 +133,20 @@ def archive_candidate(
     except ValueError as exc:
         raise value_error_to_http(exc) from exc
     return {"candidate_id": candidate_id, "status": "archived"}
+
+
+@ledger_router.post("/cleanup/disposable-candidates")
+def cleanup_disposable_candidates(
+    _admin: None = Depends(require_lore_key_admin),
+    ledger_db: LedgerDB = Depends(get_ledger_db),
+    context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
+) -> dict:
+    """Reject, archive, or scrub live candidates backed by disposable sources."""
+    result = ledger_db.cleanup_disposable_candidates()
+    changed_count = sum(len(ids) for ids in result.values())
+    if changed_count:
+        context_graph_cache.invalidate()
+    return {**result, "changed_count": changed_count}
 
 
 @ledger_router.post("/decay", response_model=DecayResult)

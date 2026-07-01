@@ -46,6 +46,15 @@ Lore reads configuration from environment variables through
 | `LORE_VECTOR_RECONCILE_INTERVAL_SECONDS` | `300` | Dense-index reconciliation interval. |
 | `LORE_AUDIT_RETENTION_DAYS` | `365` | Retention window for audit-log records. |
 
+Operational, test, and evaluation captures are retained as audit inputs, not
+durable knowledge. Heartbeat audit captures (`source_task:
+heartbeat-self-audit`, page IDs containing `heartbeat-audit`) and disposable
+test/smoke/probe captures must not remain as live extraction candidates. During
+maintenance, Lore rejects candidates sourced only from disposable capture
+provenance, archives already-active disposable candidates, and scrubs disposable
+source IDs from mixed real/disposable provenance so curated backfill remains
+recallable without re-polluting the graph.
+
 ### Maintenance, proxy trust, and browser policy
 
 | Variable | Default | Purpose |

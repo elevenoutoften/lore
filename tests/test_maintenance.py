@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from lore_app.config import LoreConfig
 from lore_app.main import create_app, run_maintenance_tick
-from lore_app.schemas import ExtractedClaim, ExtractionResult
+from lore_app.schemas import ExtractedClaim, ExtractedEdge, ExtractionResult
 
 
 def make_config(tmp_path) -> LoreConfig:
@@ -108,6 +108,35 @@ def test_memory_health_reports_last_maintenance_at(tmp_path):
         second = client.get("/api/memory/health")
         assert second.status_code == 200
         assert second.json()["last_maintenance_at"] is not None
+
+
+def test_maintenance_tick_cleans_disposable_candidates(tmp_path):
+    config = make_config(tmp_path)
+    with TestClient(create_app(config)) as client:
+        app = client.app
+        heartbeat_capture = "inbox/2026-06-29/heartbeat-audit-2-procedure-issues"
+        app.state.ledger_db.store_extraction_result(
+            ExtractionResult(
+                batch_id="batch-disposable-maintenance",
+                processed_at="2026-06-29T00:00:00+00:00",
+                source_capture_ids=[heartbeat_capture],
+                edges=[
+                    ExtractedEdge(
+                        source_entity=heartbeat_capture,
+                        relationship_type="mentions",
+                        target_entity="services/lore",
+                        source_page_ids=[heartbeat_capture],
+                    )
+                ],
+            )
+        )
+        assert app.state.ledger_db.get_candidates(candidate_type="edge", status="candidate")
+
+        run_maintenance_tick(app)
+
+        assert app.state.ledger_db.get_candidates(candidate_type="edge", status="candidate") == []
+        [rejected] = app.state.ledger_db.get_candidates(candidate_type="edge", status="rejected")
+        assert rejected["invalidation_reason"] == "Removed disposable ops/test/eval provenance from the live ledger."
 
 
 def test_maintenance_tick_uses_coalescing_lock(tmp_path):

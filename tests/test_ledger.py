@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 from lore_app.ledger import PINNED_CLAIM_DECAY_FLOOR, LedgerDB
-from lore_app.schemas import ExtractedClaim, ExtractionResult
+from lore_app.schemas import ExtractedClaim, ExtractedEdge, ExtractedEntity, ExtractionResult
 
 
 def test_apply_decay_affects_candidates_without_last_accessed_at(tmp_path):
@@ -178,6 +178,119 @@ def test_unpinned_claim_still_decays_to_default_floor_and_archives(tmp_path):
     assert ledger.recall_claims(query="ordinary claims", limit=5) == []
     [archived] = ledger.get_candidates(candidate_type="claim")
     assert archived["status"] == "archived"
+
+
+def test_cleanup_disposable_candidates_rejects_all_candidate_types_and_archives_active(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    heartbeat_capture = "inbox/2026-06-29/heartbeat-audit-85-low-confidence-pages"
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-disposable",
+            processed_at="2026-06-29T00:00:00+00:00",
+            source_capture_ids=[heartbeat_capture],
+            entities=[ExtractedEntity(name="Heartbeat Audit", entity_type="capture", target_page_hint=heartbeat_capture)],
+            claims=[
+                ExtractedClaim(
+                    subject="services/lore",
+                    predicate="mentions",
+                    object="Heartbeat audit findings are operational alerts.",
+                    confidence="low",
+                    source_page_ids=[heartbeat_capture],
+                )
+            ],
+            edges=[
+                ExtractedEdge(
+                    source_entity=heartbeat_capture,
+                    relationship_type="mentions",
+                    target_entity="services/lore",
+                    source_page_ids=[heartbeat_capture],
+                )
+            ],
+        )
+    )
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-eval-disposable",
+            processed_at="2026-06-29T00:00:00+00:00",
+            source_capture_ids=["inbox/eval/extraction-fixture"],
+            entities=[
+                ExtractedEntity(
+                    name="Eval Fixture Entity",
+                    entity_type="fixture",
+                    summary="Extraction evaluation artifact.",
+                )
+            ],
+        )
+    )
+    claim_id = ledger.get_candidates(candidate_type="claim")[0]["candidate_id"]
+    ledger.activate_candidate(claim_id)
+
+    result = ledger.cleanup_disposable_candidates(reason="test cleanup")
+
+    assert set(result["rejected"]) == {
+        row["candidate_id"]
+        for row in ledger.get_candidates(status="rejected", limit=10)
+        if row["candidate_type"] in {"entity", "edge"}
+    }
+    assert result["archived"] == [claim_id]
+    assert ledger.get_candidates(statuses=("candidate", "active"), limit=10) == []
+    assert {row["status"] for row in ledger.get_candidates(limit=10)} == {"rejected", "archived"}
+
+
+def test_cleanup_disposable_candidates_scrubs_mixed_real_and_disposable_sources(tmp_path):
+    ledger = LedgerDB(tmp_path / "ledger.db")
+    ledger.initialize()
+    real_capture = "notes/agent/2026-05-11/slapps-project-overview"
+    heartbeat_capture = "inbox/2026-06-29/heartbeat-audit-2-procedure-issues"
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-mixed-disposable",
+            processed_at="2026-06-29T00:00:00+00:00",
+            source_capture_ids=[real_capture, heartbeat_capture],
+            claims=[
+                ExtractedClaim(
+                    subject="projects/slapps",
+                    predicate="states",
+                    object="slapps is a real project overview.",
+                    confidence="high",
+                    source_page_ids=[real_capture, heartbeat_capture],
+                )
+            ],
+        )
+    )
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-real-test-page",
+            processed_at="2026-06-29T00:00:00+00:00",
+            claims=[
+                ExtractedClaim(
+                    subject="projects/test-service",
+                    predicate="states",
+                    object="A real page can include test in its slug.",
+                    confidence="high",
+                    source_page_ids=["projects/test-service"],
+                )
+            ],
+        )
+    )
+    mixed_claim_id = next(
+        claim["candidate_id"]
+        for claim in ledger.get_candidates(candidate_type="claim", limit=10)
+        if claim["batch_id"] == "batch-mixed-disposable"
+    )
+
+    result = ledger.cleanup_disposable_candidates(reason="test cleanup")
+
+    assert result["scrubbed"] == [mixed_claim_id]
+    claims = ledger.get_candidates(candidate_type="claim", limit=10)
+    scrubbed_claim = next(claim for claim in claims if claim["batch_id"] == "batch-mixed-disposable")
+    real_page_claim = next(claim for claim in claims if claim["batch_id"] == "batch-real-test-page")
+    assert scrubbed_claim["status"] == "candidate"
+    assert scrubbed_claim["source_capture_ids"] == [real_capture]
+    assert scrubbed_claim["source_page_ids"] == [real_capture]
+    assert real_page_claim["status"] == "candidate"
+    assert real_page_claim["source_page_ids"] == ["projects/test-service"]
 
 
 def test_deadletter_store_list_and_resolve(tmp_path):

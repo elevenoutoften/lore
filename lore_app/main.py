@@ -137,6 +137,15 @@ def run_maintenance_tick(app: FastAPI) -> None:
         ledger = state.ledger_db
 
         try:
+            cleanup = ledger.cleanup_disposable_candidates()
+            cleaned = sum(len(ids) for ids in cleanup.values())
+            if cleaned:
+                logger.info("Maintenance cleaned disposable extraction candidates: %s", cleanup)
+                state.context_graph_cache.invalidate()
+        except Exception:  # pragma: no cover - best-effort maintenance step
+            logger.exception("Maintenance disposable-candidate cleanup step failed.")
+
+        try:
             captures = emit_heartbeat_captures(repo, config=state.lint_config, graph=state.graph_cache.get(repo))
             for capture in captures:
                 state.metrics.increment_index_size()

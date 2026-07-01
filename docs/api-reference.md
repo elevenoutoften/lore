@@ -199,6 +199,8 @@ curl -sS "$LORE_URL/api/promotions"
 | `POST` | `/api/extraction/deadletters/{deadletter_id}/retry` | Retry one extraction dead-letter and resolve it when candidates are produced. |
 | `GET` | `/api/extraction/batches` | List extraction batches. |
 | `GET` | `/api/extraction/candidates` | List extracted candidates. Query: `status`, `type`, `actor`, `cross_actor`, `limit`. |
+| `GET` | `/api/ledger/candidates` | List ledger candidates with provenance. Query: `status`, `type`, `capture_id`, `page_id`, `lane`, `actor`, `cross_actor`, `limit`. |
+| `POST` | `/api/ledger/cleanup/disposable-candidates` | Admin-only retention cleanup for heartbeat/eval/test/smoke/probe candidates; rejects disposable-only candidates, archives active rows, scrubs mixed provenance, and invalidates the context graph cache. |
 | `POST` | `/api/memory/capture` | Lightweight memory capture. Authenticated modes server-stamp actor/agent from the token actor. |
 | `GET` | `/api/memory/recall` | Ranked claim recall. Authenticated modes are scoped to the token actor; admins must set `cross_actor=true` for cross-actor reads. Read-only by default; `record_access=false` unless explicitly set. |
 | `GET` | `/api/memory/context` | Deterministic prompt-ready markdown context assembled from recall claims and optional RAG page hits. Query: `query`, `limit`, `max_tokens`, `max_chars`, `include_recall`, `include_rag`, `rag_expand_hops`, `cross_actor`. |

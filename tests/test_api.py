@@ -383,6 +383,61 @@ def test_ledger_candidates_endpoint(client):
     assert len(filtered.json()) >= 1
 
 
+def test_ledger_cleanup_disposable_candidates_endpoint(client, monkeypatch):
+    from lore_app.ledger import DISPOSABLE_SOURCE_REASON
+    from lore_app.schemas import ExtractedEdge, ExtractedEntity, ExtractionResult
+
+    ledger = client.app.state.ledger_db
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="heartbeat-cleanup-batch",
+            processed_at="2026-06-29T00:00:00+00:00",
+            source_capture_ids=["inbox/2026-06-29/heartbeat-audit-85-low-confidence-pages"],
+            entities=[
+                ExtractedEntity(
+                    name="Synthetic Ops Check",
+                    entity_type="procedure",
+                    summary="Heartbeat audit artifact.",
+                )
+            ],
+            edges=[
+                ExtractedEdge(
+                    source_entity="Synthetic Ops Check",
+                    relationship_type="mentions",
+                    target_entity="services/lore",
+                    evidence="Heartbeat audit linked this test row.",
+                )
+            ],
+        )
+    )
+    before = client.get("/api/ledger/candidates", params={"status": "candidate"})
+    assert before.status_code == 200
+    assert len(before.json()) == 2
+
+    invalidated = {"called": False}
+
+    def mark_invalidated() -> None:
+        invalidated["called"] = True
+
+    monkeypatch.setattr(client.app.state.context_graph_cache, "invalidate", mark_invalidated)
+
+    response = client.post("/api/ledger/cleanup/disposable-candidates")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["changed_count"] == 2
+    assert len(payload["rejected"]) == 2
+    assert payload["archived"] == []
+    assert payload["scrubbed"] == []
+    assert invalidated["called"] is True
+
+    assert client.get("/api/ledger/candidates", params={"status": "candidate"}).json() == []
+    rejected = client.get("/api/ledger/candidates", params={"status": "rejected"}).json()
+    assert {row["candidate_type"] for row in rejected} == {"entity", "edge"}
+    rejected_rows = ledger.get_candidates(status="rejected", limit=10)
+    assert all(row["invalidation_reason"] == DISPOSABLE_SOURCE_REASON for row in rejected_rows)
+
+
 def test_semantics_endpoint(client):
     response = client.get("/api/semantics")
     assert response.status_code == 200

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import sqlite3
 import threading
 import uuid
@@ -94,6 +95,10 @@ VALID_TRANSITIONS = {
     "rejected": set(),  # terminal
     "archived": set(),  # terminal
 }
+DISPOSABLE_SOURCE_REASON = "Removed disposable ops/test/eval provenance from the live ledger."
+DISPOSABLE_SOURCE_PHRASES = ("heartbeat-audit",)
+DISPOSABLE_SOURCE_TOKENS = frozenset({"eval", "evaluation", "test", "smoke", "probe"})
+SOURCE_TOKEN_RE = re.compile(r"[^a-z0-9]+")
 
 
 def utc_now() -> str:
@@ -964,6 +969,79 @@ class LedgerDB:
     def archive_candidate(self, candidate_id: str, *, actor: str | None = None) -> None:
         """Transition active → archived."""
         self._transition_status(candidate_id, "archived", actor=actor)
+
+    @retry_on_locked()
+    def cleanup_disposable_candidates(self, *, reason: str = DISPOSABLE_SOURCE_REASON) -> dict[str, list[str]]:
+        """Remove live candidates that came only from disposable operational/test captures.
+
+        Candidates backed by both disposable and real capture provenance are kept,
+        but their disposable source IDs are scrubbed so retention checks no longer
+        treat them as heartbeat/test artifacts. Candidates whose capture
+        provenance is entirely disposable are transitioned out of the live set.
+        """
+
+        now = utc_now()
+        result: dict[str, list[str]] = {"rejected": [], "archived": [], "scrubbed": []}
+        with self._lock:
+            rows = self.connection.execute(
+                """
+                SELECT candidate_id, status, source_capture_ids, source_page_ids
+                FROM extraction_candidates
+                WHERE status IN ('candidate', 'active')
+                ORDER BY candidate_id
+                """
+            ).fetchall()
+            for row in rows:
+                candidate_id = str(row["candidate_id"])
+                status = str(row["status"])
+                source_capture_ids = _parse_source_capture_ids(row["source_capture_ids"]) or []
+                source_page_ids = _parse_source_capture_ids(row["source_page_ids"]) or []
+                disposable_captures = [
+                    source for source in source_capture_ids if _source_id_is_disposable(source, capture_id=True)
+                ]
+                disposable_pages = [
+                    source for source in source_page_ids if _source_id_is_disposable(source, capture_id=False)
+                ]
+                if not disposable_captures and not disposable_pages:
+                    continue
+
+                kept_capture_ids = [
+                    source for source in source_capture_ids if not _source_id_is_disposable(source, capture_id=True)
+                ]
+                kept_page_ids = [
+                    source for source in source_page_ids if not _source_id_is_disposable(source, capture_id=False)
+                ]
+                all_capture_provenance_is_disposable = bool(source_capture_ids) and not kept_capture_ids
+                all_page_provenance_is_disposable = not source_capture_ids and bool(source_page_ids) and not kept_page_ids
+                if all_capture_provenance_is_disposable or all_page_provenance_is_disposable:
+                    new_status = "rejected" if status == "candidate" else "archived"
+                    self.connection.execute(
+                        """
+                        UPDATE extraction_candidates
+                        SET status = ?, invalidation_reason = ?, updated_at = ?
+                        WHERE candidate_id = ?
+                        """,
+                        (new_status, reason, now, candidate_id),
+                    )
+                    result["rejected" if new_status == "rejected" else "archived"].append(candidate_id)
+                    continue
+
+                self.connection.execute(
+                    """
+                    UPDATE extraction_candidates
+                    SET source_capture_ids = ?, source_page_ids = ?, updated_at = ?
+                    WHERE candidate_id = ?
+                    """,
+                    (json.dumps(kept_capture_ids), json.dumps(kept_page_ids), now, candidate_id),
+                )
+                result["scrubbed"].append(candidate_id)
+
+            if result["rejected"] or result["archived"] or result["scrubbed"]:
+                self.connection.commit()
+                self._bump_generation()
+            else:
+                self.connection.rollback()
+        return result
 
     @retry_on_locked()
     def archive_floored_claims(
@@ -2296,6 +2374,19 @@ def _parse_source_capture_ids(source_capture_ids: Any) -> list[str] | None:
     if not isinstance(sources, list):
         return None
     return [source for source in sources if isinstance(source, str)]
+
+
+def _source_id_is_disposable(source_id: str, *, capture_id: bool) -> bool:
+    normalized = source_id.casefold()
+    if any(phrase in normalized for phrase in DISPOSABLE_SOURCE_PHRASES):
+        return True
+    if normalized.startswith(("eval/", "evaluation/")) or "/eval/" in normalized or "/evaluation/" in normalized:
+        return True
+    if not capture_id and not normalized.startswith(("captures/", "inbox/", "notes/")):
+        return False
+    tail = normalized.rsplit("/", 1)[-1]
+    tokens = {token for token in SOURCE_TOKEN_RE.split(tail) if token}
+    return bool(tokens & DISPOSABLE_SOURCE_TOKENS)
 
 
 def _decode_consolidation_run(row: sqlite3.Row) -> dict[str, Any]:

@@ -19,6 +19,7 @@ from lore_app.schemas import (
     ContextGraphPathQuery,
     ContextRef,
     ExtractedClaim,
+    ExtractedEdge,
     ExtractedEntity,
     ExtractionResult,
     PatchOperation,
@@ -200,6 +201,32 @@ def test_context_graph_includes_entity_and_claim_nodes(client):
 
     assert _node(graph, f"candidate:{candidate_ids['claim_id']}").type == "claim"
     assert _node(graph, f"candidate:{candidate_ids['entity_id']}").type == "entity"
+
+
+def test_context_graph_does_not_count_edge_candidates_as_entities(client):
+    repo = client.app.state.repository
+    ledger = client.app.state.ledger_db
+    ledger.store_extraction_result(
+        ExtractionResult(
+            batch_id="batch-edge-candidate",
+            processed_at="2026-06-29T00:00:00+00:00",
+            source_capture_ids=["inbox/2026-06-29/heartbeat-audit-2-procedure-issues"],
+            edges=[
+                ExtractedEdge(
+                    source_entity="inbox/2026-06-29/heartbeat-audit-2-procedure-issues",
+                    relationship_type="mentions",
+                    target_entity="services/lore",
+                    source_page_ids=["inbox/2026-06-29/heartbeat-audit-2-procedure-issues"],
+                )
+            ],
+        )
+    )
+    [edge_candidate] = ledger.get_candidates(candidate_type="edge")
+
+    graph = build_context_graph(repo, ledger)
+
+    assert _node(graph, f"candidate:{edge_candidate['candidate_id']}") is None
+    assert "entity" not in graph.stats
 
 
 def test_candidate_nodes_include_bi_temporal_and_actor(client):

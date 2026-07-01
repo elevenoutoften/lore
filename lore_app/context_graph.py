@@ -477,6 +477,10 @@ def _add_ledger_nodes(
             continue
 
         candidate_type = optional_string(candidate.get("candidate_type")) or "entity"
+        if candidate_type == "edge":
+            # Extracted relationships do not have a first-class node type in the
+            # public graph contract. Do not masquerade them as entity nodes.
+            continue
         node_type = {
             "claim": ContextNodeType.claim,
             "invalidation": ContextNodeType.invalidation,
