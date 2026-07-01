@@ -9,6 +9,7 @@ from ..context_graph import (
     DEFAULT_CONTEXT_GRAPH_NODES,
     ContextGraphCache,
     explain_context,
+    filter_context_graph,
     query_neighbors,
     query_paths,
     scope_context_graph,
@@ -44,11 +45,16 @@ def get_context_graph(
         le=20000,
         description="Max nodes to return (highest-degree first). Bounds the render payload so large vaults don't freeze the browser; stats.truncated/total_nodes report when the view is partial.",
     ),
+    node_types: list[str] | None = Query(
+        default=None,
+        description="Restrict the render payload to these node types (e.g. node_types=page for the pages-only knowledge map). Applied before the limit; traversal endpoints are unaffected.",
+    ),
     repo: LoreRepository = Depends(get_repo),
     ledger: LedgerDB = Depends(get_ledger_db),
     context_graph_cache: ContextGraphCache = Depends(get_context_graph_cache),
 ) -> ContextGraph:
     graph = scope_context_graph(context_graph_cache.get(repo, ledger), _actor_scope(request, actor, cross_actor))
+    graph = filter_context_graph(graph, node_types)
     return truncate_context_graph(graph, limit)
 
 

@@ -6,9 +6,11 @@ from lore_app.context_graph import (
     ContextGraphCache,
     build_context_graph,
     explain_context,
+    filter_context_graph,
     neighbors_of,
     query_neighbors,
     query_paths,
+    truncate_context_graph,
 )
 from lore_app.schemas import (
     ContextExplainQuery,
@@ -489,6 +491,64 @@ def test_context_graph_stats(client):
     assert graph.stats["policy"] >= 1
     assert graph.stats["source"] >= 1
     assert graph.stats["edges"] == len(graph.edges)
+
+
+def test_filter_context_graph_pages_only(client):
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
+    graph = build_context_graph(repo, ledger)
+    # Sanity: the full graph carries the typed memory nodes the client would drop.
+    assert any(node.type.value != "page" for node in graph.nodes)
+
+    pages_only = filter_context_graph(graph, ["page"])
+
+    assert pages_only.nodes, "expected page nodes to survive the filter"
+    assert all(node.type.value == "page" for node in pages_only.nodes)
+    kept_ids = {node.id for node in pages_only.nodes}
+    # Every retained edge must connect two retained (page) nodes.
+    assert all(edge.source in kept_ids and edge.target in kept_ids for edge in pages_only.edges)
+    # No claim/source/task/actor edges leak through the page-scoped payload.
+    assert all(edge.type.value in {"mentions", "provenance"} for edge in pages_only.edges)
+    assert pages_only.stats["page"] == len(pages_only.nodes)
+    assert pages_only.stats["edges"] == len(pages_only.edges)
+    assert "claim" not in pages_only.stats and "source" not in pages_only.stats
+
+
+def test_filter_context_graph_empty_selection_is_noop(client):
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
+    graph = build_context_graph(repo, ledger)
+
+    assert filter_context_graph(graph, None) is graph
+    assert filter_context_graph(graph, []) is graph
+
+
+def test_filter_then_truncate_reports_page_totals(client):
+    repo, ledger, _capture_id, _candidate_ids = _context_graph_fixture(client)
+    graph = build_context_graph(repo, ledger)
+    pages_only = filter_context_graph(graph, ["page"])
+    page_total = len(pages_only.nodes)
+    assert page_total >= 2
+
+    truncated = truncate_context_graph(pages_only, page_total - 1)
+
+    # Truncation happens over the already-filtered page set, so total_nodes is the
+    # page count (not the full typed-graph size) -- what the client header shows.
+    assert truncated.stats["truncated"] == 1
+    assert truncated.stats["total_nodes"] == page_total
+    assert truncated.stats["returned_nodes"] == page_total - 1
+    assert all(node.type.value == "page" for node in truncated.nodes)
+
+
+def test_context_graph_api_node_types_page_only(client):
+    _context_graph_fixture(client)
+
+    response = client.get("/api/context-graph?node_types=page")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["nodes"], "expected page nodes in the scoped payload"
+    assert all(node["type"] == "page" for node in payload["nodes"])
+    assert "claim" not in payload["stats"]
+    assert "source" not in payload["stats"]
 
 
 def test_context_graph_without_ledger(client):

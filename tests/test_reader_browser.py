@@ -110,8 +110,31 @@ def test_spa_reader_renders_from_api(content_dir, tmp_path):
             home_text = home.inner_text("#loreRoot")
             assert "ExampleProject" in home_text
             assert "Workflow Engine" in home_text
-            # The graph fetch must be bounded by the scale guard, not the raw endpoint.
-            assert any("/api/context-graph?limit=" in u for u in graph_requests), graph_requests
+            # The graph fetch must be the page-only, bounded slice (scale-guard limit
+            # + node_types=page) -- not the full typed context graph the client would
+            # otherwise pull and drop.
+            assert any(
+                "/api/context-graph?" in u and "limit=" in u and "node_types=page" in u for u in graph_requests
+            ), graph_requests
+
+            # The render loop is dirty-driven: it halts once the layout cools and no
+            # view transition is pending (the old always-on requestAnimationFrame
+            # repainted every node every frame forever, pinning idle CPU/GPU). Drive
+            # it cold and assert it stops, then that an interaction reschedules it.
+            loop = home.evaluate(
+                """() => {
+                  const L = window.__lore;
+                  L.wantFit = false; L.centerOnId = null;              // settle pending fit/center
+                  if (L._raf != null) { cancelAnimationFrame(L._raf); L._raf = null; }
+                  L._alpha = 0.01;                                     // force physics cold
+                  L.tick();
+                  const stopsWhenCold = L._raf == null;
+                  L.reheat();                                          // an interaction (open/filter/drag)
+                  return { stopsWhenCold, wakesOnReheat: L._raf != null, warm: L._alpha >= 0.5 };
+                }"""
+            )
+            assert loop["stopsWhenCold"], "graph render loop must stop when the layout cools (P1)"
+            assert loop["wakesOnReheat"] and loop["warm"], "graph render loop must resume on interaction (P1)"
 
             # --- Reader: deep-link opens the page and renders body + panels -------
             reader = _new_page()

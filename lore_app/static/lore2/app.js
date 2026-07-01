@@ -50,6 +50,12 @@
   // lore_app/context_graph.py (the server's default cap for the same endpoint).
   const GRAPH_NODE_LIMIT = 1500;
   const GRAPH_SIM_CAP = 700;
+  // Sidebar paging. /api/pages caps `limit` at 200, so a large vault is loaded by
+  // streaming chunks (honoring X-Total-Count) rather than truncating at the first
+  // 200. PAGE_LOAD_CAP is a safety ceiling so a pathological vault can't spawn an
+  // unbounded request train / DOM.
+  const PAGE_CHUNK = 200;
+  const PAGE_LOAD_CAP = 10000;
 
   // ---------- small helpers ----------
   const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -84,7 +90,7 @@
     constructor(root) {
       this.root = root;
       this.s = {
-        pages: [], byId: {}, detailCache: {},
+        pages: [], byId: {}, detailCache: {}, total: null,
         gnodes: [], gedges: [], gmap: {}, deg: {},
         query: '', listView: 'recent', openId: null,
         labelMode: 'smart', readerFont: 'serif',
@@ -144,23 +150,26 @@
       return d;
     }
     async loadAll() {
-      // 1) page list -> sidebar (fast first paint)
-      try {
-        const pages = await this.fetchJSON('/api/pages?limit=200');
-        this.s.pages = pages;
-        this.s.byId = {};
-        pages.forEach((p) => { this.s.byId[p.id] = p; });
-      } catch (e) { console.error('pages load failed', e); }
+      // 1) page list -> sidebar. The first chunk paints immediately; the rest
+      //    streams in the background (loadPages honors X-Total-Count instead of a
+      //    hard 200 cap, so a large vault's Recent/Flagged/search cover everything).
+      const { tail: pagesTail } = await this.loadPages();
       this.renderList();
-      // 2) typed context graph -> canvas
+      // 2) knowledge map -> canvas. Request the page-only slice: the map renders
+      //    curated pages only, so pulling the full typed context graph (claims,
+      //    plans, traces, policies…) just to drop it is wasted payload. node_types
+      //    must stay in sync with buildGraph, which keeps page nodes.
       try {
-        const g = await this.fetchJSON('/api/context-graph?limit=' + GRAPH_NODE_LIMIT);
+        const g = await this.fetchJSON('/api/context-graph?node_types=page&limit=' + GRAPH_NODE_LIMIT);
         this.buildGraph(g);
         this.startGraph();
         this.renderLegend();
         this.updateGraphHeader();
       } catch (e) { console.error('graph load failed', e); }
-      // 3) details in the background -> flags/warnings (guarded for large vaults)
+      // 3) once the remaining page chunks land, compute detail-backed warnings
+      //    (guarded for large vaults).
+      try { await pagesTail; } catch (e) {}
+      this.renderList();
       if (this.s.pages.length && this.s.pages.length <= 300) {
         Promise.allSettled(this.s.pages.map((p) => this.fetchDetail(p.id))).then(() => {
           this.renderList();
@@ -169,6 +178,54 @@
       }
       // 4) deep-link open
       this.openFromPath();
+    }
+    async fetchWithCount(url, opts) {
+      const r = await fetch(url, Object.assign({ headers: { Accept: 'application/json' } }, opts || {}));
+      if (!r.ok) { const e = new Error(url + ' ' + r.status); e.status = r.status; throw e; }
+      const total = parseInt(r.headers.get('X-Total-Count'), 10);
+      const data = r.status === 204 ? [] : await r.json();
+      return { data: Array.isArray(data) ? data : [], total: isNaN(total) ? null : total };
+    }
+    applyPages(list) {
+      this.s.pages = list.slice();
+      this.s.byId = {};
+      this.s.pages.forEach((p) => { this.s.byId[p.id] = p; });
+    }
+    async loadPages() {
+      // Await the first chunk (fast paint + authoritative X-Total-Count), then hand
+      // back { tail } — a promise for the remaining chunks that is already streaming
+      // in the background. The promise is wrapped in a plain object on purpose: an
+      // async function ADOPTS a returned thenable, so returning the tail promise bare
+      // would make `await this.loadPages()` block on the whole stream and defeat
+      // "first chunk now, tail later" (graph startup would wait for every page chunk).
+      let first;
+      try { first = await this.fetchWithCount('/api/pages?limit=' + PAGE_CHUNK + '&offset=0'); }
+      catch (e) { console.error('pages load failed', e); return { tail: Promise.resolve() }; }
+      const total = (typeof first.total === 'number' && first.total >= 0) ? first.total : first.data.length;
+      this.s.total = total;
+      const acc = first.data.slice();
+      this.applyPages(acc);
+      if (acc.length >= total || first.data.length < PAGE_CHUNK) return { tail: Promise.resolve() };
+      // Kick the remaining chunks off now (runs concurrently with graph startup);
+      // re-render as they arrive.
+      const tail = (async () => {
+        let offset = PAGE_CHUNK;
+        while (offset < total && offset < PAGE_LOAD_CAP) {
+          let res;
+          try { res = await this.fetchWithCount('/api/pages?limit=' + PAGE_CHUNK + '&offset=' + offset); }
+          catch (e) { console.error('pages load failed', e); break; }
+          if (!res.data.length) break;
+          acc.push(...res.data);
+          this.applyPages(acc);
+          this.renderList();
+          if (res.data.length < PAGE_CHUNK) break;
+          offset += PAGE_CHUNK;
+        }
+        if (total > acc.length && offset >= PAGE_LOAD_CAP) {
+          console.warn('Lore sidebar capped at ' + acc.length + ' of ' + total + ' pages (raise PAGE_LOAD_CAP to load more).');
+        }
+      })();
+      return { tail };
     }
 
     // ---------- shell ----------
@@ -303,7 +360,7 @@
       const act = this.data(el, 'act');
       const v = el.value;
       switch (act) {
-        case 'search': this.s.query = v; this.renderList(); break;
+        case 'search': this.s.query = v; this.scheduleList(); break;
         case 'llm-field': this.s.llm[this.data(el, 'field')] = v; this.s.llmToast = ''; this.refreshSettingsActions(); break;
         case 'api-key-input': this.s.apiKeyInput = v; this.s.llmToast = ''; break;
         case 'esc-key-input': this.s.escKeyInput = v; this.s.llmToast = ''; break;
@@ -314,18 +371,24 @@
       }
     }
     onHover(e, on) {
+      let next = this.extHover;
       const row = e.target.closest && e.target.closest('[data-hover-id]');
-      if (row) { this.extHover = on ? this.data(row, 'hover-id') : null; return; }
-      const a = e.target.closest && e.target.closest('a.wl[data-page]');
-      if (a && this.root.querySelector('#l2-reader').contains(a) && !a.classList.contains('broken')) {
-        const t = a.getAttribute('data-page'); this.extHover = on ? (this.s.gmap && this.s.gmap[t] ? t : null) : null;
+      if (row) { next = on ? this.data(row, 'hover-id') : null; }
+      else {
+        const a = e.target.closest && e.target.closest('a.wl[data-page]');
+        if (a && this.root.querySelector('#l2-reader').contains(a) && !a.classList.contains('broken')) {
+          const t = a.getAttribute('data-page'); next = on ? (this.s.gmap && this.s.gmap[t] ? t : null) : null;
+        }
       }
+      // Only repaint the map when the highlighted page actually changed (hover fires
+      // for every bubbled mouseover/out).
+      if (next !== this.extHover) { this.extHover = next; this.requestDraw(); }
     }
     onKey(e) {
       if (e.key !== 'Escape') return;
       if (this.s.settingsOpen) { e.preventDefault(); if (this.s.openSelect) { this.s.openSelect = null; this.renderSettings(); } else this.closeSettings(); }
       else if (this.s.openId) { e.preventDefault(); this.closeReader(); }
-      else if (this.s.query) { this.s.query = ''; const i = this.root.querySelector('#l2-search'); if (i) i.value = ''; this.renderList(); }
+      else if (this.s.query) { this.s.query = ''; clearTimeout(this._listTimer); const i = this.root.querySelector('#l2-search'); if (i) i.value = ''; this.renderList(); }
     }
 
     // ---------- navigation ----------
@@ -381,7 +444,10 @@
       let path = '';
       try { path = decodeURIComponent(location.pathname || '/'); } catch (e) { path = location.pathname || '/'; }
       path = path.replace(/^\/+/, '').replace(/^pages\//, '');
-      if (!path) { if (this.s.openId) { this.s.openId = null; this.reader = null; this.renderReader(); this.renderList(); this.updateGraphHeader(); } return; }
+      // Back/forward to the root clears the focus (a draw() input), so re-fit and
+      // reheat the map — otherwise the dirty-driven canvas stays frozen on the old
+      // selection until an unrelated interaction (matches goHome/closeReader).
+      if (!path) { if (this.s.openId) { this.s.openId = null; this.reader = null; this.wantFit = true; this.reheat(); this.renderReader(); this.renderList(); this.updateGraphHeader(); } return; }
       if (this.s.byId[path] || (this.s.gmap && this.s.gmap[path])) {
         if (path !== this.s.openId) { this.s.openId = path; this.wantFit = true; this.centerOnId = path; this.reheat();
           const node = this.s.gmap && this.s.gmap[path];
@@ -437,10 +503,18 @@
         ${warn}
       </button>`;
     }
+    // Coalesce as-you-type search into one render (~140ms) instead of rebuilding
+    // the whole list innerHTML on every keystroke. renderList only rewrites #l2-list
+    // (never the search input), so the caret/focus survive the debounced rerender.
+    scheduleList() {
+      clearTimeout(this._listTimer);
+      this._listTimer = setTimeout(() => { this._listTimer = null; this.renderList(); }, 140);
+    }
     renderList() {
       const host = this.root.querySelector('#l2-list');
       const pc = this.root.querySelector('#l2-pagecount');
-      if (pc) pc.textContent = this.s.pages.length + (this.s.pages.length === 1 ? ' page' : ' pages');
+      const count = this.s.total != null ? this.s.total : this.s.pages.length;
+      if (pc) pc.textContent = count + (count === 1 ? ' page' : ' pages');
       const searching = this.s.query.trim().length > 0;
       let html = '';
       if (searching) {
@@ -493,15 +567,9 @@
         conn.push({ id: e.target, label: e.target_title || titleOf(e.target), rel: 'links to', dot: colorOf(e.target) }));
       (links.backlinks || []).forEach((e) =>
         conn.push({ id: e.source, label: e.source_title || titleOf(e.source), rel: 'linked from', dot: colorOf(e.source) }));
-      // typed graph neighbors (non-page)
-      (this.s.gedges || []).forEach((e) => {
-        let other = null, dir = 'out';
-        if (e.s === p.id) { other = e.t; dir = 'out'; } else if (e.t === p.id) { other = e.s; dir = 'in'; }
-        if (other && this.s.gmap[other] && this.s.gmap[other].type !== 'page') {
-          const on = this.s.gmap[other];
-          conn.push({ id: other, label: on.label, rel: (EDGE_LABEL[e.type] || e.type) + (dir === 'in' ? ' ←' : ''), dot: tc(on.type).color });
-        }
-      });
+      // NOTE: the knowledge map is page-only (buildGraph keeps page nodes), so there
+      // are no typed non-page neighbors to surface here — page connections come
+      // entirely from the wiki-link graph (links.outgoing / links.backlinks) above.
       return {
         kind: 'page', id: p.id, title: this.pageTitle(p), kindLabel: k.label.replace(/s$/, ''),
         dot: k.color, dotBg: chipBg(k.color), dotBorder: chipBd(k.color), visibility: p.visibility,
@@ -698,7 +766,7 @@
       }).join('');
       host.innerHTML = `<span style="font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dimmer);margin-right:2px">Legend</span>${items}`;
     }
-    cycleLabels() { const o = ['smart', 'all', 'off']; const i = o.indexOf(this.s.labelMode); this.s.labelMode = o[(i + 1) % o.length]; this.savePref({ labelMode: this.s.labelMode }); this.updateGraphHeader(); }
+    cycleLabels() { const o = ['smart', 'all', 'off']; const i = o.indexOf(this.s.labelMode); this.s.labelMode = o[(i + 1) % o.length]; this.savePref({ labelMode: this.s.labelMode }); this.updateGraphHeader(); this.requestDraw(); }
     resetView() { this.wantFit = true; this.reheat(); }
     toggleType(t) { if (!t) return; this.typeOff[t] = !this.typeOff[t]; this.savePref({ typeOff: this.typeOff }); this.reheat(); this.renderLegend(); }
 
@@ -725,9 +793,12 @@
       // exceeds the node cap) so the header can flag a partial view.
       // Page-only human map: totals reflect curated pages, not the full context
       // graph. Truncation only matters if the page set itself was capped.
+      // With a page-only payload, stats.page equals the returned node count; when the
+      // server truncated the page set to the node cap it also sets total_nodes /
+      // truncated, so prefer those for an honest "top N of M" header.
       const st = (g && g.stats) || {};
-      const totalPages = st.page || this.s.gnodes.length;
-      this.s.gtruncated = totalPages > this.s.gnodes.length;
+      const totalPages = st.total_nodes || st.page || this.s.gnodes.length;
+      this.s.gtruncated = !!st.truncated || totalPages > this.s.gnodes.length;
       this.s.gtotal = totalPages;
       // (re)seed positions
       this.pos = {};
@@ -739,7 +810,7 @@
       this._alpha = 1;
     }
     startGraph() {
-      if (this._graphStarted) { this.wantFit = true; return; }
+      if (this._graphStarted) { this.wantFit = true; this._alpha = Math.max(this._alpha || 0, 1); this.scheduleFrame(); return; }
       this._graphStarted = true;
       this.ctx = this.cv.getContext('2d');
       this.tf = { s: 1, ox: 0, oy: 0 };
@@ -747,12 +818,34 @@
       this.cv.onpointerdown = (e) => this.gDown(e);
       this.cv.onpointermove = (e) => this.gMove(e);
       this.cv.onpointerup = (e) => this.gUp(e);
-      this.cv.onpointerleave = () => { this.hoverId = null; };
+      this.cv.onpointerleave = () => { if (this.hoverId != null) { this.hoverId = null; this.requestDraw(); } };
       this.cv.onwheel = (e) => this.gWheel(e);
       this.sizeCanvas();
       this.wantFit = true; this._running = true;
-      const loop = () => { if (!this._running) return; this.simStep(); this.applyView(); this.draw(); this._raf = requestAnimationFrame(loop); };
-      loop();
+      this.scheduleFrame();
+    }
+    // Dirty-driven render loop. A frame runs only when there is work to do: physics
+    // still warm (_alpha > 0.02), or a one-off redraw/view-transition was requested.
+    // When the layout cools and nothing is dirty, the loop stops itself instead of
+    // clearing + redrawing every visible node forever (the old always-on RAF pinned
+    // idle CPU/GPU). Interactions reschedule it via reheat()/requestDraw().
+    scheduleFrame() {
+      if (!this._running || this._raf != null) return;
+      this._raf = requestAnimationFrame(() => this.tick());
+    }
+    // requestDraw = "appearance changed, repaint once" (hover/pan/zoom/labels);
+    // reheat = "physics changed, re-run the layout". Both just ensure a frame runs.
+    requestDraw() { this.scheduleFrame(); }
+    tick() {
+      this._raf = null;
+      if (!this._running) return;
+      const warm = (this._alpha || 0) > 0.02;
+      if (warm) this.simStep();     // integrate physics + cool _alpha
+      this.applyView();             // consume wantFit / centerOnId (fit/center reheats)
+      this.draw();
+      // Keep animating only while physics stays warm; a pending fit/center leaves
+      // _alpha warm via applyView, so this single check covers those transitions too.
+      if ((this._alpha || 0) > 0.02) this.scheduleFrame();
     }
     applyView() {
       if (this.wantFit) { this.wantFit = false; this.fitView(); }
@@ -768,7 +861,7 @@
       this.vw = r.width; this.vh = r.height;
       if (this.pos) this.draw();
     }
-    reheat() { this._alpha = Math.max(this._alpha || 0, 0.5); }
+    reheat() { this._alpha = Math.max(this._alpha || 0, 0.5); this.scheduleFrame(); }
     neighborhood(id) {
       const set = {}; if (!id) return set; set[id] = true;
       (this.s.gedges || []).forEach((e) => { if (e.s === id) set[e.t] = true; else if (e.t === id) set[e.s] = true; });
@@ -901,21 +994,21 @@
       const w = this.toWorld(e);
       if (this.drag && this.drag.id) {
         if (!this.drag.moved && Math.hypot(w.x - this.drag.sx, w.y - this.drag.sy) > 3) this.drag.moved = true;
-        if (this.drag.moved) { const p = this.pos[this.drag.id]; p.x = w.x; p.y = w.y; p.vx = p.vy = 0; this._alpha = Math.max(this._alpha, 0.3); }
+        if (this.drag.moved) { const p = this.pos[this.drag.id]; p.x = w.x; p.y = w.y; p.vx = p.vy = 0; this._alpha = Math.max(this._alpha, 0.3); this.scheduleFrame(); }
       } else if (this.drag && this.drag.pan) {
-        this.tf.ox += w.px - this.drag.lx; this.tf.oy += w.py - this.drag.ly; this.drag.lx = w.px; this.drag.ly = w.py;
-      } else { const n = this.hit(w); this.hoverId = n ? n.id : null; this.cv.classList.toggle('pointing', !!n); }
+        this.tf.ox += w.px - this.drag.lx; this.tf.oy += w.py - this.drag.ly; this.drag.lx = w.px; this.drag.ly = w.py; this.requestDraw();
+      } else { const n = this.hit(w); const id = n ? n.id : null; if (id !== this.hoverId) { this.hoverId = id; this.requestDraw(); } this.cv.classList.toggle('pointing', !!n); }
     }
     gUp() {
       const d = this.drag; this.drag = null; this.cv.classList.remove('grabbing');
-      if (d && d.id) { this.pos[d.id].pin = false; if (!d.moved) this.open(d.id); }
+      if (d && d.id) { this.pos[d.id].pin = false; if (!d.moved) this.open(d.id); else this.requestDraw(); }
     }
     gWheel(e) {
       e.preventDefault();
       const w = this.toWorld(e); const old = this.tf.s;
       let s = old * (e.deltaY < 0 ? 1.12 : 0.89); s = Math.max(0.35, Math.min(2.6, s));
       this.tf.ox = w.px - (w.px - this.tf.ox) * (s / old); this.tf.oy = w.py - (w.py - this.tf.oy) * (s / old);
-      this.tf.s = s;
+      this.tf.s = s; this.requestDraw();
     }
 
     // ======================================================
@@ -956,7 +1049,7 @@
     selectPick(sel, val) {
       if (sel === 'provider') { this.s.llm.provider = val; this.s.llmToast = ''; }
       else if (sel === 'role') { this.s.newKey.role = val; }
-      else if (sel === 'labelMode') { this.s.labelMode = val; this.savePref({ labelMode: val }); this.updateGraphHeader(); }
+      else if (sel === 'labelMode') { this.s.labelMode = val; this.savePref({ labelMode: val }); this.updateGraphHeader(); this.requestDraw(); }
       else if (sel === 'readerFont') { this.s.readerFont = val; this.root.setAttribute('data-font', val); this.savePref({ readerFont: val }); }
       this.s.openSelect = null; this.renderSettings();
     }
@@ -1192,7 +1285,7 @@
               <section id="lset-overview">
                 <div class="section-head"><div><div class="sec-kicker">04 — Overview</div><h3 class="sec-title">At a glance</h3><p class="sec-sub">A quick read on what's configured right now.</p></div></div>
                 <div class="grid-3">
-                  <div class="stat-card"><div class="stat-label">Pages</div><div class="stat-value">${this.s.pages.length}</div><div class="stat-sub">in the knowledge base</div></div>
+                  <div class="stat-card"><div class="stat-label">Pages</div><div class="stat-value">${this.s.total != null ? this.s.total : this.s.pages.length}</div><div class="stat-sub">in the knowledge base</div></div>
                   <div class="stat-card"><div class="stat-label">Active keys</div><div class="stat-value">${activeKeys}</div><div class="stat-sub">${st.apiKeys.length} total · ${revokedN} revoked</div></div>
                   <div class="stat-card"><div class="stat-label">Provider</div><div class="stat-value" style="font-size:20px">${esc(providerShort)}</div><div class="stat-sub">${esc(f.model || '—')}</div></div></div>
                 <div class="system-table">

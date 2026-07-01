@@ -56,9 +56,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[test,browser]"
           python -m playwright install --with-deps chromium
-      - name: Graph browser smoke test
+      - name: Graph + SPA reader browser smoke tests
         run: |
-          python -m pytest tests/test_graph_browser.py -v --timeout=120
+          python -m pytest tests/test_graph_browser.py tests/test_reader_browser.py -v --timeout=120
 
   lint:
     runs-on: ubuntu-latest

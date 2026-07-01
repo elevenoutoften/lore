@@ -26,6 +26,8 @@ from .schemas import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from .ledger import LedgerDB
 
 WIKILINK_PATTERN = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
@@ -215,6 +217,31 @@ def scope_context_graph(graph: ContextGraph, actor: str | None) -> ContextGraph:
 
     kept_ids = {node.id for node in kept_nodes}
     kept_edges = [edge for edge in graph.edges if edge.source in kept_ids and edge.target in kept_ids]
+    stats: dict[str, int] = {}
+    for node in kept_nodes:
+        stats[node.type.value] = stats.get(node.type.value, 0) + 1
+    stats["edges"] = len(kept_edges)
+    return ContextGraph(nodes=kept_nodes, edges=kept_edges, stats=stats)
+
+
+def filter_context_graph(graph: ContextGraph, node_types: Iterable[str] | None) -> ContextGraph:
+    """Restrict a graph to the given node types (and edges among them).
+
+    Applied *before* truncation so a type-scoped render payload never ships nodes
+    the client will only discard. The pages-only knowledge map uses this to fetch
+    ``node_types=page`` instead of pulling every claim/plan/trace/policy across the
+    wire just to drop them. ``stats`` is rebuilt for the kept set. A falsy/empty
+    selection returns the graph unchanged. Traversal endpoints keep the full graph;
+    only the render payload is scoped.
+    """
+    wanted = {node_type for node_type in (node_types or []) if node_type}
+    if not wanted:
+        return graph
+
+    kept_nodes = [node for node in graph.nodes if node.type.value in wanted]
+    kept_ids = {node.id for node in kept_nodes}
+    kept_edges = [edge for edge in graph.edges if edge.source in kept_ids and edge.target in kept_ids]
+
     stats: dict[str, int] = {}
     for node in kept_nodes:
         stats[node.type.value] = stats.get(node.type.value, 0) + 1

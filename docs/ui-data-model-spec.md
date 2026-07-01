@@ -216,10 +216,12 @@ Lore has **two graphs**. Design for the richer one.
 
 | Graph | What it is | API |
 |---|---|---|
-| **Link Graph** ("enriched") | Page-to-page wikilinks + source refs. Pages only. The current UI renders only this. | `/api/links`, `/api/graph/*` |
-| **Context Graph** | Full multi-type knowledge graph: pages, captures, claims, traces, plans, policies, actors, tools, tasks, sources. Built and queryable, **not yet visualized.** | `/api/context-graph*`, `/api/graph/analytics` |
+| **Link Graph** ("enriched") | Page-to-page wikilinks + source refs. Pages only. | `/api/links`, `/api/graph/*` |
+| **Context Graph** | Full multi-type knowledge graph: pages, captures, claims, traces, plans, policies, actors, tools, tasks, sources. The lore2 SPA visualizes a **page-scoped slice** of it (`node_types=page`) as the knowledge map; the full typed graph is API/MCP-queryable but not drawn. | `/api/context-graph*`, `/api/graph/analytics` |
 
-**The richer option:** the **Context Graph** is the full knowledge model (12 node types); the link graph is a strict subset (pages + wikilinks). Other systems split here too — OpenPaw and KuzuDB visualize a typed graph, while mem0 ships no graph at all. If Lore keeps a graph UI, the context graph is the more capable target; whether to ship one (and how heavy) is a design call (see §6.4).
+**What the lore2 SPA renders today:** the knowledge map is the **Context Graph fetched page-only** — `GET /api/context-graph?node_types=page&limit=1500` — drawn as a canvas force layout of page nodes plus their page-to-page edges (`mentions` wikilinks + `provenance`). The legend filters by page **kind** (projects/services/decisions/runbooks/procedures/concepts/pages); hover highlights a node's neighborhood, click opens the page reader. It requests the page-only slice deliberately: the map shows curated pages, so the server scopes the payload rather than shipping every claim/plan/trace/policy for the client to drop.
+
+**The richer option (not yet built):** the **Context Graph** is the full knowledge model (12 node types); the map above is a page-only projection of it. Visualizing the *typed* graph — claims, traces, plans, policies, actors, tools as first-class nodes with per-type selection panels — remains open. Other systems split here too: OpenPaw and KuzuDB visualize a typed graph, while mem0 ships no graph at all. If Lore grows the map into the typed graph, that is the more capable target; how heavy to make it is a design call (see §6.4).
 
 ### 5.1 Nodes
 
@@ -313,7 +315,7 @@ Graph-level `stats` (`ContextGraph.stats`): `dict[str,int]` — one count per no
 
 ### 5.3 Preview on hover / select (no page load required)
 
-- **Link-graph node**, today: tooltip shows title, `kind · {inbound} in / {outbound} out`, 160-char truncated `summary`; double-click navigates to `/{page_id}`.
+- **lore2 map node**, today: the pages-only knowledge map opens the page reader on click and highlights the hovered node's neighborhood; labels show by degree (Smart) or all/off. A hover/select preview panel per node is still available to design from the fields below.
 - **Richer preview without fetching the page** is available from data already in hand:
   - Enriched node fields: `title`, `kind`, `visibility`, `tags`, `summary`, `inbound_count`, `outbound_count`.
   - Context-graph node `metadata` (type-dependent): status, lane, actor, confidence, strength, `valid_from`/`valid_until`, `observed_at`, risk_level, reason_summary, policy gate/version, etc.
@@ -389,7 +391,7 @@ Computed on the **context graph** (scoped by actor); advisory, never canonical. 
 - **KuzuDB** — graph-DB browser UIs (Vela browser; the **Bighorn** fork) and React hooks in the TS port; a heavier, Cypher-results-on-a-canvas / query-driven explorer.
 - **mem0** — no graph viz at all (entity list only) — a reminder that a graph UI is optional, not mandatory.
 - **Honcho** — no graph visualization either (peer-collection model, not a graph engine).
-- **Lore today** — vis-network link graph (the laggy one from UAT). Redesign target is the richer context graph (§5); OpenPaw's click-to-detail + type-filter is the nearest reference.
+- **Lore today** — the lore2 SPA renders a pages-only knowledge map (the Context Graph fetched `node_types=page`) as a canvas force layout with kind-filter legend + click-to-read (§5). The next step toward the richer *typed* context graph is OpenPaw's click-to-detail + per-type filter.
 
 ### 6.5 Distinct to Lore (no precedent to copy)
 Lore's **capture-review queue**, **knowledge-quality lint dashboard**, and **policy/governance** views have no analog in the other systems — they're agent-ops, not reader surfaces. The owner wants the human UI minimal, so treat these as a separate "operate" console, kept out of the reader redesign.
